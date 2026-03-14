@@ -42,7 +42,7 @@ export class TripRepository {
   }
 
   async list(filters?: TripListFilters): Promise<Trip[]> {
-    let collection = db.trips.orderBy("startedAt");
+    const collection = db.trips.orderBy("startedAt");
 
     const results = await collection.reverse().toArray();
 
