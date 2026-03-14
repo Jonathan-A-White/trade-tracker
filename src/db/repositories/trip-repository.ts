@@ -63,4 +63,23 @@ export class TripRepository {
       updatedAt: Date.now(),
     });
   }
+
+  async delete(id: string): Promise<void> {
+    await db.transaction(
+      "rw",
+      [db.trips, db.tripItems, db.priceHistory],
+      async () => {
+        const tripItems = await db.tripItems
+          .where("tripId")
+          .equals(id)
+          .toArray();
+        const tripItemIds = new Set(tripItems.map((ti) => ti.id));
+        await db.priceHistory
+          .filter((entry) => tripItemIds.has(entry.tripItemId))
+          .delete();
+        await db.tripItems.where("tripId").equals(id).delete();
+        await db.trips.delete(id);
+      },
+    );
+  }
 }

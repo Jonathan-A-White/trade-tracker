@@ -1,5 +1,6 @@
+import { useState } from "react";
 import { useLiveQuery } from "dexie-react-hooks";
-import { useParams, Link } from "react-router";
+import { useParams, Link, useNavigate } from "react-router";
 import { db } from "@/db/database";
 import type { Item } from "@/contracts/types";
 import { TripRepository } from "@/db/repositories/trip-repository";
@@ -12,6 +13,8 @@ const tripItemRepo = new TripItemRepository();
 
 export default function TripDetailPage() {
   const { id } = useParams<{ id: string }>();
+  const navigate = useNavigate();
+  const [showDeleteConfirm, setShowDeleteConfirm] = useState(false);
 
   const trip = useLiveQuery(
     () => (id ? tripRepo.getById(id) : undefined),
@@ -43,7 +46,7 @@ export default function TripDetailPage() {
   if (!trip) {
     return (
       <div className="flex flex-col min-h-screen bg-gray-50 dark:bg-gray-900">
-        <PageHeader title="Trip Details" backTo="/trips" />
+        <PageHeader title="Trip Details" backTo="/trips/history" />
         <main className="flex-1 flex items-center justify-center p-4">
           <p className="text-gray-500 dark:text-gray-400">
             {id ? "Loading trip..." : "Trip not found."}
@@ -73,7 +76,7 @@ export default function TripDetailPage() {
     <div className="flex flex-col min-h-screen bg-gray-50 dark:bg-gray-900">
       <PageHeader
         title={storeName ?? "Loading..."}
-        backTo="/trips"
+        backTo="/trips/history"
         rightAction={
           <Link
             to={`/trips/${id}/edit`}
@@ -183,6 +186,43 @@ export default function TripDetailPage() {
                 );
               })}
             </ul>
+          )}
+        </div>
+
+        {/* Delete Trip */}
+        <div className="pt-2">
+          {!showDeleteConfirm ? (
+            <button
+              onClick={() => setShowDeleteConfirm(true)}
+              className="w-full rounded-lg border border-red-300 dark:border-red-700 px-4 py-3 text-sm font-medium text-red-600 dark:text-red-400 hover:bg-red-50 dark:hover:bg-red-900/20 transition-colors"
+            >
+              Delete Trip
+            </button>
+          ) : (
+            <div className="rounded-lg border border-red-300 dark:border-red-700 bg-red-50 dark:bg-red-900/20 p-4 space-y-3">
+              <p className="text-sm text-red-700 dark:text-red-300">
+                Delete this trip and all its items? This cannot be undone.
+              </p>
+              <div className="flex gap-3">
+                <button
+                  onClick={() => setShowDeleteConfirm(false)}
+                  className="flex-1 rounded-lg border border-gray-300 dark:border-gray-600 px-4 py-2 text-sm font-medium text-gray-700 dark:text-gray-300 hover:bg-gray-50 dark:hover:bg-gray-800 transition-colors"
+                >
+                  Cancel
+                </button>
+                <button
+                  onClick={async () => {
+                    if (id) {
+                      await tripRepo.delete(id);
+                      navigate("/trips/history", { replace: true });
+                    }
+                  }}
+                  className="flex-1 rounded-lg bg-red-600 px-4 py-2 text-sm font-medium text-white hover:bg-red-700 transition-colors"
+                >
+                  Delete
+                </button>
+              </div>
+            </div>
           )}
         </div>
       </main>

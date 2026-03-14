@@ -101,7 +101,7 @@ export function HomePage() {
             </h2>
             {recentTrips.length > 0 && (
               <Link
-                to="/trips"
+                to="/trips/history"
                 className="text-sm text-blue-600 dark:text-blue-400 hover:text-blue-700 dark:hover:text-blue-300"
               >
                 View all
