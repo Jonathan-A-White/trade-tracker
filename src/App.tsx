@@ -25,40 +25,45 @@ import { EditStorePage } from "@/pages/edit-store-page";
 import ExportPage from "@/pages/export-page";
 import { ErrorBoundary } from "@/components/feedback/error-boundary";
 
-const router = createBrowserRouter([
-  {
-    path: "/",
-    element: <AppShell />,
-    children: [
-      { index: true, element: <HomePage /> },
-      { path: "trips/new", element: <NewTripPage /> },
-      {
-        path: "trips/active",
-        element: <ActiveTripPage />,
-        children: [
-          { path: "scan", element: <ScannerPage /> },
-          { path: "add", element: <AddItemPage /> },
-        ],
-      },
-      { path: "trips/active/end", element: <EndTripPage /> },
-      { path: "trips/history", element: <TripHistoryPage /> },
-      { path: "trips/:id", element: <TripDetailPage /> },
-      { path: "trips/:id/edit", element: <TripEditPage /> },
-      { path: "items", element: <ItemLibraryPage /> },
-      { path: "items/new", element: <NewItemPage /> },
-      { path: "items/:id", element: <ItemDetailPage /> },
-      { path: "reports", element: <ReportsPage /> },
-      { path: "reports/spending", element: <SpendingReportPage /> },
-      { path: "reports/frequency", element: <FrequencyReportPage /> },
-      { path: "reports/price/:itemId", element: <PriceHistoryReportPage /> },
-      { path: "reports/comparison", element: <TripComparisonPage /> },
-      { path: "stores", element: <StoresPage /> },
-      { path: "stores/new", element: <NewStorePage /> },
-      { path: "stores/:id/edit", element: <EditStorePage /> },
-      { path: "export", element: <ExportPage /> },
-    ],
-  },
-]);
+const basename = import.meta.env.BASE_URL.replace(/\/$/, "") || "/";
+
+const router = createBrowserRouter(
+  [
+    {
+      path: "/",
+      element: <AppShell />,
+      children: [
+        { index: true, element: <HomePage /> },
+        { path: "trips/new", element: <NewTripPage /> },
+        {
+          path: "trips/active",
+          element: <ActiveTripPage />,
+          children: [
+            { path: "scan", element: <ScannerPage /> },
+            { path: "add", element: <AddItemPage /> },
+          ],
+        },
+        { path: "trips/active/end", element: <EndTripPage /> },
+        { path: "trips/history", element: <TripHistoryPage /> },
+        { path: "trips/:id", element: <TripDetailPage /> },
+        { path: "trips/:id/edit", element: <TripEditPage /> },
+        { path: "items", element: <ItemLibraryPage /> },
+        { path: "items/new", element: <NewItemPage /> },
+        { path: "items/:id", element: <ItemDetailPage /> },
+        { path: "reports", element: <ReportsPage /> },
+        { path: "reports/spending", element: <SpendingReportPage /> },
+        { path: "reports/frequency", element: <FrequencyReportPage /> },
+        { path: "reports/price/:itemId", element: <PriceHistoryReportPage /> },
+        { path: "reports/comparison", element: <TripComparisonPage /> },
+        { path: "stores", element: <StoresPage /> },
+        { path: "stores/new", element: <NewStorePage /> },
+        { path: "stores/:id/edit", element: <EditStorePage /> },
+        { path: "export", element: <ExportPage /> },
+      ],
+    },
+  ],
+  { basename },
+);
 
 export default function App() {
   return (
