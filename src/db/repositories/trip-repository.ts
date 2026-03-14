@@ -29,12 +29,15 @@ export class TripRepository {
 
   async complete(id: string, actualTotal?: number): Promise<void> {
     const now = Date.now();
-    await db.trips.update(id, {
+    const updates: Partial<Trip> = {
       status: "completed",
       endedAt: now,
-      actualTotal,
       updatedAt: now,
-    });
+    };
+    if (actualTotal !== undefined) {
+      updates.actualTotal = actualTotal;
+    }
+    await db.transaction("rw", db.trips, () => db.trips.update(id, updates));
   }
 
   async getActive(): Promise<Trip | undefined> {
