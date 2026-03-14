@@ -1,5 +1,6 @@
 import { useState } from "react";
 import type { FormEvent } from "react";
+import { isPLUCode } from "../../scanner/manual-entry";
 
 interface ItemFormValues {
   barcode: string;
@@ -41,16 +42,26 @@ export function ItemForm({
     <form onSubmit={handleSubmit} className="space-y-4">
       <div>
         <label htmlFor="item-barcode" className="block text-sm font-medium text-gray-700 dark:text-gray-300 mb-1">
-          Barcode
+          Barcode or PLU Code
         </label>
         <input
           id="item-barcode"
           type="text"
           value={barcode}
           onChange={(e) => setBarcode(e.target.value)}
+          placeholder="e.g. 94011 for organic bananas"
           className={inputClass}
           required
         />
+        {barcode && isPLUCode(barcode) ? (
+          <p className="mt-1 text-xs text-green-600">
+            PLU code detected (produce lookup)
+          </p>
+        ) : (
+          <p className="mt-1 text-xs text-gray-400">
+            For produce, enter the 4-5 digit PLU from the sticker
+          </p>
+        )}
       </div>
 
       <div>
