@@ -68,7 +68,7 @@ export default function PriceHistoryReportPage() {
     return (
       <div className="flex flex-col min-h-full">
         <PageHeader title="Price History" backTo="/reports" />
-        <div className="flex-1 flex items-center justify-center text-gray-400 text-sm">
+        <div className="flex-1 flex items-center justify-center text-gray-400 dark:text-gray-500 text-sm">
           No item selected
         </div>
       </div>
@@ -87,7 +87,7 @@ export default function PriceHistoryReportPage() {
         <div>
           <label
             htmlFor="store-filter"
-            className="block text-xs font-medium text-gray-500 mb-1"
+            className="block text-xs font-medium text-gray-500 dark:text-gray-400 mb-1"
           >
             Filter by Store
           </label>
@@ -95,7 +95,7 @@ export default function PriceHistoryReportPage() {
             id="store-filter"
             value={selectedStore}
             onChange={(e) => setSelectedStore(e.target.value)}
-            className="w-full rounded-lg border border-gray-300 px-3 py-2 text-sm focus:outline-none focus:ring-2 focus:ring-blue-500 focus:border-transparent"
+            className="w-full rounded-lg border border-gray-300 dark:border-gray-600 dark:bg-gray-700 dark:text-gray-100 px-3 py-2 text-sm focus:outline-none focus:ring-2 focus:ring-blue-500 focus:border-transparent"
           >
             <option value="">All Stores</option>
             {(stores ?? [])
@@ -118,35 +118,35 @@ export default function PriceHistoryReportPage() {
 
         {/* Chart */}
         <div>
-          <h2 className="text-sm font-medium text-gray-700 mb-3">
+          <h2 className="text-sm font-medium text-gray-700 dark:text-gray-300 mb-3">
             Price Over Time
           </h2>
-          <div className="bg-white rounded-lg border p-3">
+          <div className="bg-white dark:bg-gray-800 rounded-lg border dark:border-gray-700 p-3">
             <PriceChart data={chartData} height={220} />
           </div>
         </div>
 
         {/* History table */}
         <div>
-          <h2 className="text-sm font-medium text-gray-700 mb-3">
+          <h2 className="text-sm font-medium text-gray-700 dark:text-gray-300 mb-3">
             All Price Records
           </h2>
           {filteredHistory.length === 0 ? (
-            <div className="flex items-center justify-center h-24 text-gray-400 text-sm bg-white rounded-lg border">
+            <div className="flex items-center justify-center h-24 text-gray-400 dark:text-gray-500 text-sm bg-white dark:bg-gray-800 rounded-lg border dark:border-gray-700">
               No price records found
             </div>
           ) : (
-            <div className="bg-white rounded-lg border overflow-hidden">
+            <div className="bg-white dark:bg-gray-800 rounded-lg border dark:border-gray-700 overflow-hidden">
               <table className="w-full text-sm">
                 <thead>
-                  <tr className="border-b bg-gray-50">
-                    <th className="text-left px-3 py-2 font-medium text-gray-600">
+                  <tr className="border-b dark:border-gray-700 bg-gray-50 dark:bg-gray-700">
+                    <th className="text-left px-3 py-2 font-medium text-gray-600 dark:text-gray-400">
                       Date
                     </th>
-                    <th className="text-left px-3 py-2 font-medium text-gray-600">
+                    <th className="text-left px-3 py-2 font-medium text-gray-600 dark:text-gray-400">
                       Store
                     </th>
-                    <th className="text-right px-3 py-2 font-medium text-gray-600">
+                    <th className="text-right px-3 py-2 font-medium text-gray-600 dark:text-gray-400">
                       Price
                     </th>
                   </tr>
@@ -155,19 +155,19 @@ export default function PriceHistoryReportPage() {
                   {[...filteredHistory].reverse().map((entry) => (
                     <tr
                       key={entry.id}
-                      className="border-b last:border-b-0 hover:bg-gray-50"
+                      className="border-b dark:border-gray-700 last:border-b-0 hover:bg-gray-50 dark:hover:bg-gray-700"
                     >
-                      <td className="px-3 py-2.5 text-gray-700">
+                      <td className="px-3 py-2.5 text-gray-700 dark:text-gray-300">
                         {new Date(entry.recordedAt).toLocaleDateString("en-US", {
                           month: "short",
                           day: "numeric",
                           year: "numeric",
                         })}
                       </td>
-                      <td className="px-3 py-2.5 text-gray-700">
+                      <td className="px-3 py-2.5 text-gray-700 dark:text-gray-300">
                         {storeMap.get(entry.storeId)?.name ?? "Unknown"}
                       </td>
-                      <td className="px-3 py-2.5 text-right font-medium text-gray-900">
+                      <td className="px-3 py-2.5 text-right font-medium text-gray-900 dark:text-gray-100">
                         {formatCurrency(entry.price)}
                       </td>
                     </tr>

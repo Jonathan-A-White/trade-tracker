@@ -37,7 +37,7 @@ export function EditStorePage() {
       <div className="flex flex-col min-h-full">
         <PageHeader title="Edit Store" backTo="/stores" />
         <div className="flex-1 flex items-center justify-center">
-          <p className="text-sm text-gray-400">Loading...</p>
+          <p className="text-sm text-gray-400 dark:text-gray-500">Loading...</p>
         </div>
       </div>
     );
@@ -48,7 +48,7 @@ export function EditStorePage() {
       <div className="flex flex-col min-h-full">
         <PageHeader title="Edit Store" backTo="/stores" />
         <div className="flex-1 flex items-center justify-center">
-          <p className="text-sm text-gray-500">Store not found.</p>
+          <p className="text-sm text-gray-500 dark:text-gray-400">Store not found.</p>
         </div>
       </div>
     );
@@ -64,10 +64,10 @@ export function EditStorePage() {
           onCancel={() => navigate("/stores")}
         />
 
-        <div className="border-t pt-6">
+        <div className="border-t dark:border-gray-700 pt-6">
           {showDeleteConfirm ? (
-            <div className="rounded-lg border border-red-200 bg-red-50 p-4">
-              <p className="text-sm text-red-800 mb-3">
+            <div className="rounded-lg border border-red-200 dark:border-red-700 bg-red-50 dark:bg-red-900/30 p-4">
+              <p className="text-sm text-red-800 dark:text-red-300 mb-3">
                 Are you sure you want to delete this store? This action cannot
                 be undone.
               </p>
@@ -75,7 +75,7 @@ export function EditStorePage() {
                 <button
                   type="button"
                   onClick={() => setShowDeleteConfirm(false)}
-                  className="flex-1 rounded-lg border border-gray-300 px-4 py-2 text-sm font-medium text-gray-700 hover:bg-gray-50 transition-colors cursor-pointer"
+                  className="flex-1 rounded-lg border border-gray-300 dark:border-gray-600 px-4 py-2 text-sm font-medium text-gray-700 dark:text-gray-300 hover:bg-gray-50 dark:hover:bg-gray-700 transition-colors cursor-pointer"
                 >
                   Cancel
                 </button>
@@ -92,7 +92,7 @@ export function EditStorePage() {
             <button
               type="button"
               onClick={() => setShowDeleteConfirm(true)}
-              className="w-full rounded-lg border border-red-300 px-4 py-2 text-sm font-medium text-red-600 hover:bg-red-50 transition-colors cursor-pointer"
+              className="w-full rounded-lg border border-red-300 dark:border-red-600 px-4 py-2 text-sm font-medium text-red-600 dark:text-red-400 hover:bg-red-50 dark:hover:bg-red-900/30 transition-colors cursor-pointer"
             >
               Delete Store
             </button>

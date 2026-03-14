@@ -86,10 +86,10 @@ export default function TripComparisonPage() {
         {/* Chart */}
         {chartData.length > 0 && (
           <div>
-            <h2 className="text-sm font-medium text-gray-700 mb-3">
+            <h2 className="text-sm font-medium text-gray-700 dark:text-gray-300 mb-3">
               Difference per Trip
             </h2>
-            <div className="bg-white rounded-lg border p-3">
+            <div className="bg-white dark:bg-gray-800 rounded-lg border dark:border-gray-700 p-3">
               <ResponsiveContainer width="100%" height={200}>
                 <BarChart data={chartData} margin={{ top: 5, right: 10, bottom: 5, left: 0 }}>
                   <CartesianGrid strokeDasharray="3 3" stroke="#f3f4f6" />
@@ -121,11 +121,11 @@ export default function TripComparisonPage() {
 
         {/* Trip list */}
         <div>
-          <h2 className="text-sm font-medium text-gray-700 mb-3">
+          <h2 className="text-sm font-medium text-gray-700 dark:text-gray-300 mb-3">
             Completed Trips
           </h2>
           {rows.length === 0 ? (
-            <div className="flex flex-col items-center justify-center h-40 text-gray-400 bg-white rounded-lg border">
+            <div className="flex flex-col items-center justify-center h-40 text-gray-400 dark:text-gray-500 bg-white dark:bg-gray-800 rounded-lg border dark:border-gray-700">
               <svg
                 xmlns="http://www.w3.org/2000/svg"
                 width="36"
@@ -156,18 +156,18 @@ export default function TripComparisonPage() {
                 return (
                   <div
                     key={row.id}
-                    className="bg-white rounded-lg border p-3 flex items-center gap-3"
+                    className="bg-white dark:bg-gray-800 rounded-lg border dark:border-gray-700 p-3 flex items-center gap-3"
                   >
                     <div className="flex-1 min-w-0">
                       <div className="flex items-center gap-2">
-                        <span className="text-sm font-medium text-gray-900">
+                        <span className="text-sm font-medium text-gray-900 dark:text-gray-100">
                           {row.date}
                         </span>
-                        <span className="text-xs text-gray-500 truncate">
+                        <span className="text-xs text-gray-500 dark:text-gray-400 truncate">
                           {row.storeName}
                         </span>
                       </div>
-                      <div className="flex items-center gap-3 mt-1 text-xs text-gray-500">
+                      <div className="flex items-center gap-3 mt-1 text-xs text-gray-500 dark:text-gray-400">
                         <span>Scanned: {formatCurrency(row.scanned)}</span>
                         <span>Actual: {formatCurrency(row.actual)}</span>
                       </div>
@@ -179,13 +179,13 @@ export default function TripComparisonPage() {
                             ? "text-red-500"
                             : isUnder
                               ? "text-green-500"
-                              : "text-gray-500"
+                              : "text-gray-500 dark:text-gray-400"
                         }`}
                       >
                         {isOver ? "+" : ""}
                         {formatCurrency(row.diff)}
                       </span>
-                      <div className="text-xs text-gray-400 mt-0.5">
+                      <div className="text-xs text-gray-400 dark:text-gray-500 mt-0.5">
                         {isMatch ? "Exact" : isOver ? "Over" : "Under"}
                       </div>
                     </div>

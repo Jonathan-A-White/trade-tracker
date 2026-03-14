@@ -49,11 +49,11 @@ export function StoresPage() {
       <div className="flex-1 px-4 py-4">
         {stores === undefined ? (
           <div className="flex items-center justify-center py-12">
-            <div className="text-sm text-gray-400">Loading...</div>
+            <div className="text-sm text-gray-400 dark:text-gray-500">Loading...</div>
           </div>
         ) : stores.length === 0 ? (
-          <div className="rounded-lg border border-dashed border-gray-300 p-8 text-center">
-            <p className="text-sm text-gray-500 mb-3">
+          <div className="rounded-lg border border-dashed border-gray-300 dark:border-gray-600 p-8 text-center">
+            <p className="text-sm text-gray-500 dark:text-gray-400 mb-3">
               No stores added yet.
             </p>
             <Link
@@ -70,21 +70,21 @@ export function StoresPage() {
                 key={store.id}
                 type="button"
                 onClick={() => navigate(`/stores/${store.id}/edit`)}
-                className="w-full bg-white rounded-lg border p-4 text-left hover:bg-gray-50 transition-colors cursor-pointer"
+                className="w-full bg-white dark:bg-gray-800 rounded-lg border dark:border-gray-700 p-4 text-left hover:bg-gray-50 dark:hover:bg-gray-700 transition-colors cursor-pointer"
               >
                 <div className="flex items-center justify-between">
                   <div className="min-w-0 flex-1">
-                    <p className="font-medium text-gray-900 truncate">
+                    <p className="font-medium text-gray-900 dark:text-gray-100 truncate">
                       {store.name}
                     </p>
                     {store.notes && (
-                      <p className="text-sm text-gray-500 mt-0.5 truncate">
+                      <p className="text-sm text-gray-500 dark:text-gray-400 mt-0.5 truncate">
                         {store.notes}
                       </p>
                     )}
                   </div>
                   <div className="ml-3 flex items-center gap-2">
-                    <span className="text-xs text-gray-400">
+                    <span className="text-xs text-gray-400 dark:text-gray-500">
                       {tripCountByStore.get(store.id) ?? 0} trips
                     </span>
                     <svg
@@ -97,7 +97,7 @@ export function StoresPage() {
                       strokeWidth="2"
                       strokeLinecap="round"
                       strokeLinejoin="round"
-                      className="text-gray-400"
+                      className="text-gray-400 dark:text-gray-500"
                     >
                       <path d="m9 18 6-6-6-6" />
                     </svg>

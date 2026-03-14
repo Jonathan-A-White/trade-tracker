@@ -91,35 +91,35 @@ export default function ExportPage() {
 
       <div className="flex-1 p-4 space-y-6">
         {/* Data summary */}
-        <div className="bg-white rounded-lg border p-4">
-          <h2 className="text-sm font-medium text-gray-700 mb-3">
+        <div className="bg-white dark:bg-gray-800 rounded-lg border dark:border-gray-700 p-4">
+          <h2 className="text-sm font-medium text-gray-700 dark:text-gray-300 mb-3">
             Data Summary
           </h2>
           <div className="grid grid-cols-3 gap-4 text-center">
             <div>
-              <div className="text-2xl font-bold text-gray-900">
+              <div className="text-2xl font-bold text-gray-900 dark:text-gray-100">
                 {storeCount ?? 0}
               </div>
-              <div className="text-xs text-gray-500">Stores</div>
+              <div className="text-xs text-gray-500 dark:text-gray-400">Stores</div>
             </div>
             <div>
-              <div className="text-2xl font-bold text-gray-900">
+              <div className="text-2xl font-bold text-gray-900 dark:text-gray-100">
                 {itemCount ?? 0}
               </div>
-              <div className="text-xs text-gray-500">Items</div>
+              <div className="text-xs text-gray-500 dark:text-gray-400">Items</div>
             </div>
             <div>
-              <div className="text-2xl font-bold text-gray-900">
+              <div className="text-2xl font-bold text-gray-900 dark:text-gray-100">
                 {tripCount ?? 0}
               </div>
-              <div className="text-xs text-gray-500">Trips</div>
+              <div className="text-xs text-gray-500 dark:text-gray-400">Trips</div>
             </div>
           </div>
         </div>
 
         {/* Export section */}
-        <div className="bg-white rounded-lg border p-4 space-y-3">
-          <h2 className="text-sm font-medium text-gray-700">Export</h2>
+        <div className="bg-white dark:bg-gray-800 rounded-lg border dark:border-gray-700 p-4 space-y-3">
+          <h2 className="text-sm font-medium text-gray-700 dark:text-gray-300">Export</h2>
           <button
             type="button"
             onClick={handleExportJson}
@@ -145,7 +145,7 @@ export default function ExportPage() {
           <button
             type="button"
             onClick={handleExportCsv}
-            className="w-full flex items-center justify-center gap-2 rounded-lg border border-gray-300 text-gray-700 px-4 py-3 text-sm font-medium hover:bg-gray-50 active:bg-gray-100 transition-colors cursor-pointer"
+            className="w-full flex items-center justify-center gap-2 rounded-lg border border-gray-300 dark:border-gray-600 text-gray-700 dark:text-gray-300 px-4 py-3 text-sm font-medium hover:bg-gray-50 dark:hover:bg-gray-700 active:bg-gray-100 transition-colors cursor-pointer"
           >
             <svg
               xmlns="http://www.w3.org/2000/svg"
@@ -166,13 +166,13 @@ export default function ExportPage() {
         </div>
 
         {/* Import section */}
-        <div className="bg-white rounded-lg border p-4 space-y-3">
-          <h2 className="text-sm font-medium text-gray-700">Import</h2>
-          <p className="text-xs text-amber-600 bg-amber-50 border border-amber-200 rounded-lg p-3">
+        <div className="bg-white dark:bg-gray-800 rounded-lg border dark:border-gray-700 p-4 space-y-3">
+          <h2 className="text-sm font-medium text-gray-700 dark:text-gray-300">Import</h2>
+          <p className="text-xs text-amber-600 bg-amber-50 dark:bg-amber-900/30 border border-amber-200 dark:border-amber-700 rounded-lg p-3">
             Warning: Importing a backup will overwrite all existing data. Make
             sure to export a backup first.
           </p>
-          <label className="block w-full rounded-lg border-2 border-dashed border-gray-300 p-6 text-center cursor-pointer hover:border-gray-400 transition-colors">
+          <label className="block w-full rounded-lg border-2 border-dashed border-gray-300 dark:border-gray-600 p-6 text-center cursor-pointer hover:border-gray-400 dark:hover:border-gray-500 transition-colors">
             <svg
               xmlns="http://www.w3.org/2000/svg"
               width="24"
@@ -183,13 +183,13 @@ export default function ExportPage() {
               strokeWidth="2"
               strokeLinecap="round"
               strokeLinejoin="round"
-              className="mx-auto mb-2 text-gray-400"
+              className="mx-auto mb-2 text-gray-400 dark:text-gray-500"
             >
               <path d="M21 15v4a2 2 0 0 1-2 2H5a2 2 0 0 1-2-2v-4" />
               <polyline points="17 8 12 3 7 8" />
               <line x1="12" y1="3" x2="12" y2="15" />
             </svg>
-            <span className="text-sm text-gray-600">
+            <span className="text-sm text-gray-600 dark:text-gray-400">
               {importing ? "Importing..." : "Select a JSON backup file"}
             </span>
             <input
@@ -203,12 +203,12 @@ export default function ExportPage() {
           </label>
 
           {importError && (
-            <p className="text-sm text-red-600 bg-red-50 rounded-lg p-3">
+            <p className="text-sm text-red-600 dark:text-red-400 bg-red-50 dark:bg-red-900/30 rounded-lg p-3">
               {importError}
             </p>
           )}
           {importSuccess && (
-            <p className="text-sm text-green-600 bg-green-50 rounded-lg p-3">
+            <p className="text-sm text-green-600 dark:text-green-400 bg-green-50 dark:bg-green-900/30 rounded-lg p-3">
               Data imported successfully!
             </p>
           )}
@@ -218,11 +218,11 @@ export default function ExportPage() {
       {/* Confirm dialog */}
       {showConfirm && (
         <div className="fixed inset-0 z-50 flex items-center justify-center bg-black/50 p-4">
-          <div className="bg-white rounded-xl p-6 w-full max-w-sm shadow-xl space-y-4">
-            <h3 className="text-lg font-semibold text-gray-900">
+          <div className="bg-white dark:bg-gray-800 rounded-xl p-6 w-full max-w-sm shadow-xl space-y-4">
+            <h3 className="text-lg font-semibold text-gray-900 dark:text-gray-100">
               Confirm Import
             </h3>
-            <p className="text-sm text-gray-600">
+            <p className="text-sm text-gray-600 dark:text-gray-400">
               This will replace all existing data with the contents of the
               backup file. This action cannot be undone.
             </p>
@@ -230,7 +230,7 @@ export default function ExportPage() {
               <button
                 type="button"
                 onClick={handleCancelImport}
-                className="flex-1 rounded-lg border border-gray-300 px-4 py-2.5 text-sm font-medium text-gray-700 hover:bg-gray-50 cursor-pointer"
+                className="flex-1 rounded-lg border border-gray-300 dark:border-gray-600 px-4 py-2.5 text-sm font-medium text-gray-700 dark:text-gray-300 hover:bg-gray-50 dark:hover:bg-gray-700 cursor-pointer"
               >
                 Cancel
               </button>

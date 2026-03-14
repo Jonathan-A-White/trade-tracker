@@ -24,7 +24,7 @@ export function StoreForm({ initialValues, onSubmit, onCancel }: StoreFormProps)
   return (
     <form onSubmit={handleSubmit} className="space-y-4">
       <div>
-        <label htmlFor="store-name" className="block text-sm font-medium text-gray-700 mb-1">
+        <label htmlFor="store-name" className="block text-sm font-medium text-gray-700 dark:text-gray-300 mb-1">
           Store Name
         </label>
         <input
@@ -32,13 +32,13 @@ export function StoreForm({ initialValues, onSubmit, onCancel }: StoreFormProps)
           type="text"
           value={name}
           onChange={(e) => setName(e.target.value)}
-          className="w-full rounded-lg border border-gray-300 px-3 py-2 text-sm focus:outline-none focus:ring-2 focus:ring-blue-500 focus:border-transparent"
+          className="w-full rounded-lg border border-gray-300 dark:border-gray-600 bg-white dark:bg-gray-700 px-3 py-2 text-sm text-gray-900 dark:text-gray-100 focus:outline-none focus:ring-2 focus:ring-blue-500 focus:border-transparent"
           required
         />
       </div>
 
       <div>
-        <label htmlFor="store-notes" className="block text-sm font-medium text-gray-700 mb-1">
+        <label htmlFor="store-notes" className="block text-sm font-medium text-gray-700 dark:text-gray-300 mb-1">
           Notes (optional)
         </label>
         <textarea
@@ -46,7 +46,7 @@ export function StoreForm({ initialValues, onSubmit, onCancel }: StoreFormProps)
           value={notes}
           onChange={(e) => setNotes(e.target.value)}
           rows={3}
-          className="w-full rounded-lg border border-gray-300 px-3 py-2 text-sm focus:outline-none focus:ring-2 focus:ring-blue-500 focus:border-transparent resize-none"
+          className="w-full rounded-lg border border-gray-300 dark:border-gray-600 bg-white dark:bg-gray-700 px-3 py-2 text-sm text-gray-900 dark:text-gray-100 focus:outline-none focus:ring-2 focus:ring-blue-500 focus:border-transparent resize-none"
         />
       </div>
 
@@ -54,7 +54,7 @@ export function StoreForm({ initialValues, onSubmit, onCancel }: StoreFormProps)
         <button
           type="button"
           onClick={onCancel}
-          className="flex-1 rounded-lg border border-gray-300 px-4 py-2 text-sm font-medium text-gray-700 hover:bg-gray-50 transition-colors cursor-pointer"
+          className="flex-1 rounded-lg border border-gray-300 dark:border-gray-600 px-4 py-2 text-sm font-medium text-gray-700 dark:text-gray-300 hover:bg-gray-50 dark:hover:bg-gray-700 transition-colors cursor-pointer"
         >
           Cancel
         </button>

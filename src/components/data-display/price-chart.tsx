@@ -38,7 +38,7 @@ export function PriceChart({ data, storeFilter, height = 250 }: PriceChartProps)
   if (chartData.length === 0) {
     return (
       <div
-        className="flex items-center justify-center text-gray-400 text-sm"
+        className="flex items-center justify-center text-gray-400 dark:text-gray-500 text-sm"
         style={{ height }}
       >
         No price data available

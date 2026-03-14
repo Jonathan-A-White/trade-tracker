@@ -41,13 +41,13 @@ function TrendIndicator({ trend }: { trend: "up" | "down" | "stable" }) {
 
 export function StatCard({ label, value, trend, icon }: StatCardProps) {
   return (
-    <div className="bg-white rounded-lg border p-4">
+    <div className="bg-white dark:bg-gray-800 rounded-lg border dark:border-gray-700 p-4">
       <div className="flex items-center justify-between mb-2">
-        <span className="text-sm text-gray-500">{label}</span>
-        {icon && <div className="text-gray-400">{icon}</div>}
+        <span className="text-sm text-gray-500 dark:text-gray-400">{label}</span>
+        {icon && <div className="text-gray-400 dark:text-gray-500">{icon}</div>}
       </div>
       <div className="flex items-end justify-between">
-        <span className="text-2xl font-bold text-gray-900">{value}</span>
+        <span className="text-2xl font-bold text-gray-900 dark:text-gray-100">{value}</span>
         {trend && <TrendIndicator trend={trend} />}
       </div>
     </div>

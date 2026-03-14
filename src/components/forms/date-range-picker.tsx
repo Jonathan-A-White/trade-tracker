@@ -31,11 +31,13 @@ export function DateRangePicker({
     onChange(startDate, newEnd);
   }
 
+  const inputClass = "w-full rounded-lg border border-gray-300 dark:border-gray-600 bg-white dark:bg-gray-700 px-3 py-2 text-sm text-gray-900 dark:text-gray-100 focus:outline-none focus:ring-2 focus:ring-blue-500 focus:border-transparent";
+
   return (
     <div className="space-y-3">
       <div className="flex items-center gap-3">
         <div className="flex-1">
-          <label htmlFor="range-start" className="block text-xs font-medium text-gray-500 mb-1">
+          <label htmlFor="range-start" className="block text-xs font-medium text-gray-500 dark:text-gray-400 mb-1">
             From
           </label>
           <input
@@ -43,11 +45,11 @@ export function DateRangePicker({
             type="date"
             value={toInputValue(startDate)}
             onChange={(e) => handleStartChange(e.target.value)}
-            className="w-full rounded-lg border border-gray-300 px-3 py-2 text-sm focus:outline-none focus:ring-2 focus:ring-blue-500 focus:border-transparent"
+            className={inputClass}
           />
         </div>
         <div className="flex-1">
-          <label htmlFor="range-end" className="block text-xs font-medium text-gray-500 mb-1">
+          <label htmlFor="range-end" className="block text-xs font-medium text-gray-500 dark:text-gray-400 mb-1">
             To
           </label>
           <input
@@ -55,7 +57,7 @@ export function DateRangePicker({
             type="date"
             value={toInputValue(endDate)}
             onChange={(e) => handleEndChange(e.target.value)}
-            className="w-full rounded-lg border border-gray-300 px-3 py-2 text-sm focus:outline-none focus:ring-2 focus:ring-blue-500 focus:border-transparent"
+            className={inputClass}
           />
         </div>
       </div>
@@ -67,7 +69,7 @@ export function DateRangePicker({
               key={preset.label}
               type="button"
               onClick={() => onChange(preset.start, preset.end)}
-              className="rounded-full border border-gray-300 px-3 py-1 text-xs font-medium text-gray-700 hover:bg-gray-100 transition-colors cursor-pointer"
+              className="rounded-full border border-gray-300 dark:border-gray-600 px-3 py-1 text-xs font-medium text-gray-700 dark:text-gray-300 hover:bg-gray-100 dark:hover:bg-gray-700 transition-colors cursor-pointer"
             >
               {preset.label}
             </button>

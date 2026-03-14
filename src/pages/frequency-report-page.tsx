@@ -49,7 +49,7 @@ export default function FrequencyReportPage() {
 
       <div className="flex-1 p-4">
         {rankedItems.length === 0 ? (
-          <div className="flex flex-col items-center justify-center h-60 text-gray-400">
+          <div className="flex flex-col items-center justify-center h-60 text-gray-400 dark:text-gray-500">
             <svg
               xmlns="http://www.w3.org/2000/svg"
               width="40"
@@ -71,7 +71,7 @@ export default function FrequencyReportPage() {
           </div>
         ) : (
           <div className="space-y-2">
-            <div className="flex items-center px-3 py-2 text-xs font-medium text-gray-500 uppercase tracking-wider">
+            <div className="flex items-center px-3 py-2 text-xs font-medium text-gray-500 dark:text-gray-400 uppercase tracking-wider">
               <span className="w-8">#</span>
               <span className="flex-1">Item</span>
               <span className="w-16 text-right">Bought</span>
@@ -82,22 +82,22 @@ export default function FrequencyReportPage() {
               <Link
                 key={item.itemId}
                 to={`/reports/price/${item.itemId}`}
-                className="flex items-center px-3 py-3 bg-white rounded-lg border hover:bg-gray-50 transition-colors"
+                className="flex items-center px-3 py-3 bg-white dark:bg-gray-800 rounded-lg border dark:border-gray-700 hover:bg-gray-50 dark:hover:bg-gray-700 transition-colors"
               >
                 <span
                   className={`w-8 text-sm font-bold ${
-                    item.rank <= 3 ? "text-amber-500" : "text-gray-400"
+                    item.rank <= 3 ? "text-amber-500" : "text-gray-400 dark:text-gray-500"
                   }`}
                 >
                   {item.rank}
                 </span>
-                <span className="flex-1 text-sm font-medium text-gray-900 truncate">
+                <span className="flex-1 text-sm font-medium text-gray-900 dark:text-gray-100 truncate">
                   {item.name}
                 </span>
-                <span className="w-16 text-sm text-gray-600 text-right">
+                <span className="w-16 text-sm text-gray-600 dark:text-gray-400 text-right">
                   {item.timesBought}x
                 </span>
-                <span className="w-20 text-sm font-medium text-gray-900 text-right">
+                <span className="w-20 text-sm font-medium text-gray-900 dark:text-gray-100 text-right">
                   {formatCurrency(item.totalSpent)}
                 </span>
               </Link>
