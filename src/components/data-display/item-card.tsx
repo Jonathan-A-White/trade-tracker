@@ -18,13 +18,13 @@ export function ItemCard({ item, onPress, trailing }: ItemCardProps) {
   const content = (
     <>
       <div className="flex-1 min-w-0">
-        <p className="font-medium text-gray-900 truncate">{item.name}</p>
-        <p className="text-sm text-gray-500 mt-0.5">{item.barcode}</p>
+        <p className="font-medium text-gray-900 dark:text-gray-100 truncate">{item.name}</p>
+        <p className="text-sm text-gray-500 dark:text-gray-400 mt-0.5">{item.barcode}</p>
       </div>
       <div className="flex items-center gap-3 ml-3">
-        <span className="inline-flex items-center rounded-full bg-green-100 px-2.5 py-0.5 text-sm font-medium text-green-800">
+        <span className="inline-flex items-center rounded-full bg-green-100 dark:bg-green-900 px-2.5 py-0.5 text-sm font-medium text-green-800 dark:text-green-200">
           ${item.currentPrice.toFixed(2)}
-          <span className="text-xs text-green-600 ml-1">/{item.unitType}</span>
+          <span className="text-xs text-green-600 dark:text-green-400 ml-1">/{item.unitType}</span>
         </span>
         {trailing && <div>{trailing}</div>}
       </div>
@@ -32,14 +32,14 @@ export function ItemCard({ item, onPress, trailing }: ItemCardProps) {
   );
 
   const className =
-    "bg-white rounded-lg border p-4 flex items-center justify-between";
+    "bg-white dark:bg-gray-800 rounded-lg border dark:border-gray-700 p-4 flex items-center justify-between";
 
   if (onPress) {
     return (
       <button
         type="button"
         onClick={() => onPress(item)}
-        className={`${className} w-full text-left hover:bg-gray-50 transition-colors cursor-pointer`}
+        className={`${className} w-full text-left hover:bg-gray-50 dark:hover:bg-gray-700 transition-colors cursor-pointer`}
       >
         {content}
       </button>

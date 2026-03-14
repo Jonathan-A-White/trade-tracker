@@ -101,11 +101,11 @@ export default function ActiveTripPage() {
 
   if (!trip) {
     return (
-      <div className="flex flex-col min-h-screen bg-gray-50">
+      <div className="flex flex-col min-h-screen bg-gray-50 dark:bg-gray-900">
         <PageHeader title="Active Trip" backTo="/" />
         <main className="flex-1 flex items-center justify-center p-4">
           <div className="text-center space-y-4">
-            <p className="text-gray-500">No active trip</p>
+            <p className="text-gray-500 dark:text-gray-400">No active trip</p>
             <Link
               to="/trips/new"
               className="inline-block rounded-lg bg-blue-600 px-6 py-2 text-sm font-medium text-white hover:bg-blue-700 transition-colors"
@@ -122,12 +122,12 @@ export default function ActiveTripPage() {
   const map = itemsMap ?? {};
 
   return (
-    <div className="flex flex-col min-h-screen bg-gray-50">
+    <div className="flex flex-col min-h-screen bg-gray-50 dark:bg-gray-900">
       <PageHeader
         title={storeName ?? "Loading..."}
         backTo="/"
         rightAction={
-          <span className="text-sm text-gray-500">{elapsed}</span>
+          <span className="text-sm text-gray-500 dark:text-gray-400">{elapsed}</span>
         }
       />
 
@@ -142,7 +142,7 @@ export default function ActiveTripPage() {
           </Link>
           <Link
             to="/trips/active/add"
-            className="flex-1 rounded-lg border border-gray-300 px-4 py-3 text-sm font-medium text-gray-700 text-center hover:bg-gray-50 transition-colors"
+            className="flex-1 rounded-lg border border-gray-300 dark:border-gray-600 px-4 py-3 text-sm font-medium text-gray-700 dark:text-gray-300 text-center hover:bg-gray-50 dark:hover:bg-gray-700 transition-colors"
           >
             Add Manually
           </Link>
@@ -150,7 +150,7 @@ export default function ActiveTripPage() {
 
         {/* Trip items list */}
         {items.length === 0 ? (
-          <div className="p-4 text-center text-gray-500 text-sm">
+          <div className="p-4 text-center text-gray-500 dark:text-gray-400 text-sm">
             No items yet. Scan a barcode or add an item manually.
           </div>
         ) : (
@@ -159,8 +159,8 @@ export default function ActiveTripPage() {
               const item = map[ti.itemId];
               if (editingId === ti.id && editField) {
                 return (
-                  <div key={ti.id} className="bg-white border-b px-4 py-3">
-                    <p className="text-sm font-medium text-gray-900 mb-2">
+                  <div key={ti.id} className="bg-white dark:bg-gray-800 border-b dark:border-gray-700 px-4 py-3">
+                    <p className="text-sm font-medium text-gray-900 dark:text-gray-100 mb-2">
                       {item?.name ?? "Unknown Item"}
                     </p>
                     <InlineEditor

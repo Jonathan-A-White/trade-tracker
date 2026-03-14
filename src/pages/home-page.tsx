@@ -96,13 +96,13 @@ export function HomePage() {
 
         <section>
           <div className="flex items-center justify-between mb-3">
-            <h2 className="text-base font-semibold text-gray-900">
+            <h2 className="text-base font-semibold text-gray-900 dark:text-gray-100">
               Recent Trips
             </h2>
             {recentTrips.length > 0 && (
               <Link
                 to="/trips"
-                className="text-sm text-blue-600 hover:text-blue-700"
+                className="text-sm text-blue-600 dark:text-blue-400 hover:text-blue-700 dark:hover:text-blue-300"
               >
                 View all
               </Link>
@@ -110,8 +110,8 @@ export function HomePage() {
           </div>
 
           {recentTrips.length === 0 ? (
-            <div className="rounded-lg border border-dashed border-gray-300 p-6 text-center">
-              <p className="text-sm text-gray-500">
+            <div className="rounded-lg border border-dashed border-gray-300 dark:border-gray-600 p-6 text-center">
+              <p className="text-sm text-gray-500 dark:text-gray-400">
                 No completed trips yet. Start your first trip!
               </p>
             </div>

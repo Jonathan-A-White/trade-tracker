@@ -25,13 +25,13 @@ function formatDate(timestamp: number): string {
 function statusBadgeClass(status: string): string {
   switch (status) {
     case "active":
-      return "bg-blue-100 text-blue-800";
+      return "bg-blue-100 text-blue-800 dark:bg-blue-900 dark:text-blue-200";
     case "completed":
-      return "bg-green-100 text-green-800";
+      return "bg-green-100 text-green-800 dark:bg-green-900 dark:text-green-200";
     case "cancelled":
-      return "bg-red-100 text-red-800";
+      return "bg-red-100 text-red-800 dark:bg-red-900 dark:text-red-200";
     default:
-      return "bg-gray-100 text-gray-800";
+      return "bg-gray-100 text-gray-800 dark:bg-gray-700 dark:text-gray-200";
   }
 }
 
@@ -40,8 +40,8 @@ export function TripCard({ trip, storeName, onPress }: TripCardProps) {
     <>
       <div className="flex items-start justify-between">
         <div>
-          <p className="font-medium text-gray-900">{storeName}</p>
-          <p className="text-sm text-gray-500 mt-0.5">
+          <p className="font-medium text-gray-900 dark:text-gray-100">{storeName}</p>
+          <p className="text-sm text-gray-500 dark:text-gray-400 mt-0.5">
             {formatDate(trip.startedAt)}
           </p>
         </div>
@@ -53,15 +53,15 @@ export function TripCard({ trip, storeName, onPress }: TripCardProps) {
       </div>
       <div className="mt-3 flex items-center gap-4 text-sm">
         <div>
-          <span className="text-gray-500">Subtotal: </span>
-          <span className="font-medium text-gray-900">
+          <span className="text-gray-500 dark:text-gray-400">Subtotal: </span>
+          <span className="font-medium text-gray-900 dark:text-gray-100">
             ${trip.scannedSubtotal.toFixed(2)}
           </span>
         </div>
         {trip.actualTotal !== undefined && (
           <div>
-            <span className="text-gray-500">Actual: </span>
-            <span className="font-medium text-gray-900">
+            <span className="text-gray-500 dark:text-gray-400">Actual: </span>
+            <span className="font-medium text-gray-900 dark:text-gray-100">
               ${trip.actualTotal.toFixed(2)}
             </span>
           </div>
@@ -70,14 +70,14 @@ export function TripCard({ trip, storeName, onPress }: TripCardProps) {
     </>
   );
 
-  const className = "bg-white rounded-lg border p-4";
+  const className = "bg-white dark:bg-gray-800 rounded-lg border dark:border-gray-700 p-4";
 
   if (onPress) {
     return (
       <button
         type="button"
         onClick={() => onPress(trip)}
-        className={`${className} w-full text-left hover:bg-gray-50 transition-colors cursor-pointer`}
+        className={`${className} w-full text-left hover:bg-gray-50 dark:hover:bg-gray-700 transition-colors cursor-pointer`}
       >
         {content}
       </button>
