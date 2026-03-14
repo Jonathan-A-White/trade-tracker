@@ -16,6 +16,8 @@ export default function NewTripPage() {
   const [showStoreForm, setShowStoreForm] = useState(false);
   const [showConfirm, setShowConfirm] = useState(false);
   const [pendingStoreId, setPendingStoreId] = useState<string | null>(null);
+  const [loadingStoreId, setLoadingStoreId] = useState<string | null>(null);
+  const [error, setError] = useState<string | null>(null);
 
   const stores = useLiveQuery(() => db.stores.orderBy("name").toArray(), []);
   const activeTrip = useLiveQuery(() => tripRepo.getActive(), []);
@@ -30,21 +32,36 @@ export default function NewTripPage() {
 
   const handleStoreSelect = useCallback(
     async (store: { id: string; name: string }) => {
+      if (loadingStoreId) return;
+      setError(null);
       if (activeTrip) {
         setPendingStoreId(store.id);
         setShowConfirm(true);
         return;
       }
-      await startTrip(store.id);
+      setLoadingStoreId(store.id);
+      try {
+        await startTrip(store.id);
+      } catch {
+        setError("Failed to start trip. Please try again.");
+        setLoadingStoreId(null);
+      }
     },
-    [activeTrip, startTrip],
+    [activeTrip, startTrip, loadingStoreId],
   );
 
   const handleConfirmEnd = useCallback(async () => {
     if (!activeTrip || !pendingStoreId) return;
-    await tripRepo.complete(activeTrip.id);
-    setShowConfirm(false);
-    await startTrip(pendingStoreId);
+    setLoadingStoreId(pendingStoreId);
+    try {
+      await tripRepo.complete(activeTrip.id);
+      setShowConfirm(false);
+      await startTrip(pendingStoreId);
+    } catch {
+      setError("Failed to start trip. Please try again.");
+      setShowConfirm(false);
+      setLoadingStoreId(null);
+    }
   }, [activeTrip, pendingStoreId, startTrip]);
 
   const handleCreateStore = useCallback(
@@ -79,10 +96,14 @@ export default function NewTripPage() {
             <p className="text-sm text-gray-600 dark:text-gray-400">
               Select a store to begin your shopping trip.
             </p>
+            {error && (
+              <p className="text-sm text-red-600 dark:text-red-400">{error}</p>
+            )}
             <StoreSelector
               stores={stores ?? []}
               onSelect={handleStoreSelect}
               onCreateNew={() => setShowStoreForm(true)}
+              loadingStoreId={loadingStoreId}
             />
           </>
         )}
