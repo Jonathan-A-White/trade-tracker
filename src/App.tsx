@@ -24,6 +24,8 @@ import { StoresPage } from "@/pages/stores-page";
 import { NewStorePage } from "@/pages/new-store-page";
 import { EditStorePage } from "@/pages/edit-store-page";
 import ExportPage from "@/pages/export-page";
+import SettingsPage from "@/pages/settings-page";
+import { NotFoundPage } from "@/pages/not-found-page";
 import { ErrorBoundary } from "@/components/feedback/error-boundary";
 
 const basename = import.meta.env.BASE_URL.replace(/\/$/, "") || "/";
@@ -60,6 +62,8 @@ const router = createBrowserRouter(
         { path: "stores/new", element: <NewStorePage /> },
         { path: "stores/:id/edit", element: <EditStorePage /> },
         { path: "export", element: <ExportPage /> },
+        { path: "settings", element: <SettingsPage /> },
+        { path: "*", element: <NotFoundPage /> },
       ],
     },
   ],
