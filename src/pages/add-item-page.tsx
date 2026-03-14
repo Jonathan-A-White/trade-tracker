@@ -96,18 +96,18 @@ export default function AddItemPage() {
   );
 
   return (
-    <div className="flex flex-col min-h-screen bg-gray-50">
+    <div className="flex flex-col min-h-screen bg-gray-50 dark:bg-gray-900">
       <PageHeader title="Add Item" backTo="/trips/active" />
 
       <main className="flex-1 p-4 space-y-6">
         {/* Quantity/weight prompt */}
         {quantityPrompt && (
           <div className="fixed inset-0 z-50 flex items-center justify-center bg-black/40">
-            <div className="bg-white rounded-xl mx-4 p-6 max-w-sm w-full shadow-xl space-y-4">
-              <h2 className="text-lg font-semibold text-gray-900">
+            <div className="bg-white dark:bg-gray-800 rounded-xl mx-4 p-6 max-w-sm w-full shadow-xl space-y-4">
+              <h2 className="text-lg font-semibold text-gray-900 dark:text-gray-100">
                 {quantityPrompt.item.name}
               </h2>
-              <p className="text-sm text-gray-500">
+              <p className="text-sm text-gray-500 dark:text-gray-400">
                 {formatCurrency(quantityPrompt.item.currentPrice)} /{" "}
                 {quantityPrompt.item.unitType === "per_lb" ? "lb" : "each"}
               </p>
@@ -116,7 +116,7 @@ export default function AddItemPage() {
                 <div>
                   <label
                     htmlFor="add-weight"
-                    className="block text-sm font-medium text-gray-700 mb-1"
+                    className="block text-sm font-medium text-gray-700 dark:text-gray-300 mb-1"
                   >
                     Weight (lbs)
                   </label>
@@ -132,7 +132,7 @@ export default function AddItemPage() {
                       )
                     }
                     placeholder="0.00"
-                    className="w-full rounded-lg border border-gray-300 px-3 py-2 text-sm focus:outline-none focus:ring-2 focus:ring-blue-500 focus:border-transparent"
+                    className="w-full rounded-lg border border-gray-300 dark:border-gray-600 dark:bg-gray-700 dark:text-gray-100 px-3 py-2 text-sm focus:outline-none focus:ring-2 focus:ring-blue-500 focus:border-transparent"
                     autoFocus
                   />
                 </div>
@@ -140,7 +140,7 @@ export default function AddItemPage() {
                 <div>
                   <label
                     htmlFor="add-qty"
-                    className="block text-sm font-medium text-gray-700 mb-1"
+                    className="block text-sm font-medium text-gray-700 dark:text-gray-300 mb-1"
                   >
                     Quantity
                   </label>
@@ -157,11 +157,11 @@ export default function AddItemPage() {
                             : null,
                         )
                       }
-                      className="w-10 h-10 rounded-lg border border-gray-300 flex items-center justify-center text-lg font-medium text-gray-700 hover:bg-gray-50 cursor-pointer"
+                      className="w-10 h-10 rounded-lg border border-gray-300 dark:border-gray-600 flex items-center justify-center text-lg font-medium text-gray-700 dark:text-gray-300 hover:bg-gray-50 dark:hover:bg-gray-700 cursor-pointer"
                     >
                       -
                     </button>
-                    <span className="text-lg font-semibold text-gray-900 w-10 text-center">
+                    <span className="text-lg font-semibold text-gray-900 dark:text-gray-100 w-10 text-center">
                       {quantityPrompt.quantity}
                     </span>
                     <button
@@ -173,7 +173,7 @@ export default function AddItemPage() {
                             : null,
                         )
                       }
-                      className="w-10 h-10 rounded-lg border border-gray-300 flex items-center justify-center text-lg font-medium text-gray-700 hover:bg-gray-50 cursor-pointer"
+                      className="w-10 h-10 rounded-lg border border-gray-300 dark:border-gray-600 flex items-center justify-center text-lg font-medium text-gray-700 dark:text-gray-300 hover:bg-gray-50 dark:hover:bg-gray-700 cursor-pointer"
                     >
                       +
                     </button>
@@ -185,7 +185,7 @@ export default function AddItemPage() {
                 <button
                   type="button"
                   onClick={() => setQuantityPrompt(null)}
-                  className="flex-1 rounded-lg border border-gray-300 px-4 py-2 text-sm font-medium text-gray-700 hover:bg-gray-50 transition-colors cursor-pointer"
+                  className="flex-1 rounded-lg border border-gray-300 dark:border-gray-600 px-4 py-2 text-sm font-medium text-gray-700 dark:text-gray-300 hover:bg-gray-50 dark:hover:bg-gray-700 transition-colors cursor-pointer"
                 >
                   Cancel
                 </button>
@@ -209,7 +209,7 @@ export default function AddItemPage() {
 
         {/* Search existing items */}
         <section>
-          <h2 className="text-sm font-semibold text-gray-900 mb-2">
+          <h2 className="text-sm font-semibold text-gray-900 dark:text-gray-100 mb-2">
             Search Existing Items
           </h2>
           <input
@@ -217,29 +217,29 @@ export default function AddItemPage() {
             value={searchQuery}
             onChange={(e) => setSearchQuery(e.target.value)}
             placeholder="Search by item name..."
-            className="w-full rounded-lg border border-gray-300 px-3 py-2 text-sm focus:outline-none focus:ring-2 focus:ring-blue-500 focus:border-transparent"
+            className="w-full rounded-lg border border-gray-300 dark:border-gray-600 dark:bg-gray-700 dark:text-gray-100 px-3 py-2 text-sm focus:outline-none focus:ring-2 focus:ring-blue-500 focus:border-transparent"
           />
 
           {searchResults && searchResults.length > 0 && (
-            <ul className="mt-2 divide-y border rounded-lg overflow-hidden">
+            <ul className="mt-2 divide-y dark:divide-gray-700 border dark:border-gray-700 rounded-lg overflow-hidden">
               {searchResults.map((item) => (
                 <li key={item.id}>
                   <button
                     type="button"
                     onClick={() => handleSelectItem(item)}
-                    className="w-full text-left px-4 py-3 hover:bg-gray-50 transition-colors cursor-pointer"
+                    className="w-full text-left px-4 py-3 hover:bg-gray-50 dark:hover:bg-gray-700 transition-colors cursor-pointer"
                   >
                     <div className="flex items-center justify-between">
                       <div>
-                        <p className="text-sm font-medium text-gray-900">
+                        <p className="text-sm font-medium text-gray-900 dark:text-gray-100">
                           {item.name}
                         </p>
-                        <p className="text-xs text-gray-500">
+                        <p className="text-xs text-gray-500 dark:text-gray-400">
                           {item.barcode} &middot;{" "}
                           {item.unitType === "per_lb" ? "per lb" : "each"}
                         </p>
                       </div>
-                      <p className="text-sm font-medium text-gray-900">
+                      <p className="text-sm font-medium text-gray-900 dark:text-gray-100">
                         {formatCurrency(item.currentPrice)}
                       </p>
                     </div>
@@ -250,7 +250,7 @@ export default function AddItemPage() {
           )}
 
           {searchResults && searchResults.length === 0 && searchQuery.length >= 2 && (
-            <p className="mt-2 text-sm text-gray-500">
+            <p className="mt-2 text-sm text-gray-500 dark:text-gray-400">
               No items found matching "{searchQuery}"
             </p>
           )}
@@ -259,8 +259,8 @@ export default function AddItemPage() {
         {/* Create new item */}
         <section>
           {showCreateForm ? (
-            <div className="bg-white rounded-lg border p-4">
-              <h2 className="text-sm font-semibold text-gray-900 mb-3">
+            <div className="bg-white dark:bg-gray-800 rounded-lg border dark:border-gray-700 p-4">
+              <h2 className="text-sm font-semibold text-gray-900 dark:text-gray-100 mb-3">
                 Create New Item
               </h2>
               <ItemForm
@@ -276,11 +276,11 @@ export default function AddItemPage() {
             <button
               type="button"
               onClick={() => setShowCreateForm(true)}
-              className="w-full rounded-lg border-2 border-dashed border-gray-300 px-4 py-4 text-sm font-medium text-blue-600 hover:border-blue-400 hover:bg-blue-50 transition-colors cursor-pointer"
+              className="w-full rounded-lg border-2 border-dashed border-gray-300 dark:border-gray-600 px-4 py-4 text-sm font-medium text-blue-600 dark:text-blue-400 hover:border-blue-400 hover:bg-blue-50 transition-colors cursor-pointer"
             >
               + Create New Item
               {barcodeFromScanner && (
-                <span className="block text-xs text-gray-500 mt-1">
+                <span className="block text-xs text-gray-500 dark:text-gray-400 mt-1">
                   Barcode: {barcodeFromScanner}
                 </span>
               )}

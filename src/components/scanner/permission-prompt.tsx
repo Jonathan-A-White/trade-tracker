@@ -5,7 +5,7 @@ interface PermissionPromptProps {
 export function PermissionPrompt({ onRetry }: PermissionPromptProps) {
   return (
     <div className="flex flex-col items-center justify-center p-8 text-center">
-      <div className="mb-4 text-gray-400">
+      <div className="mb-4 text-gray-400 dark:text-gray-500">
         <svg
           xmlns="http://www.w3.org/2000/svg"
           width="48"
@@ -22,10 +22,10 @@ export function PermissionPrompt({ onRetry }: PermissionPromptProps) {
         </svg>
       </div>
 
-      <h3 className="text-lg font-semibold text-gray-900 mb-2">
+      <h3 className="text-lg font-semibold text-gray-900 dark:text-gray-100 mb-2">
         Camera Permission Required
       </h3>
-      <p className="text-sm text-gray-500 mb-6 max-w-xs">
+      <p className="text-sm text-gray-500 dark:text-gray-400 mb-6 max-w-xs">
         TradeTracker needs camera access to scan barcodes. Please allow camera
         access in your browser settings and try again.
       </p>

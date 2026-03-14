@@ -21,12 +21,12 @@ export function BarcodeInput({
         onChange={(e) => onChange(e.target.value)}
         placeholder={placeholder}
         autoFocus={autoFocus}
-        className="w-full rounded-lg border border-gray-300 px-3 py-2 pr-12 text-sm focus:outline-none focus:ring-2 focus:ring-blue-500 focus:border-transparent"
+        className="w-full rounded-lg border border-gray-300 dark:border-gray-600 bg-white dark:bg-gray-700 px-3 py-2 pr-12 text-sm text-gray-900 dark:text-gray-100 focus:outline-none focus:ring-2 focus:ring-blue-500 focus:border-transparent"
       />
       <button
         type="button"
         onClick={onScanPress}
-        className="absolute right-1 top-1/2 -translate-y-1/2 p-2 text-gray-500 hover:text-blue-600 transition-colors cursor-pointer"
+        className="absolute right-1 top-1/2 -translate-y-1/2 p-2 text-gray-500 dark:text-gray-400 hover:text-blue-600 dark:hover:text-blue-400 transition-colors cursor-pointer"
         aria-label="Scan barcode"
       >
         <svg

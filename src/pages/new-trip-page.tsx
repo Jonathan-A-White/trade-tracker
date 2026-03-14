@@ -60,13 +60,13 @@ export default function NewTripPage() {
   );
 
   return (
-    <div className="flex flex-col min-h-screen bg-gray-50">
+    <div className="flex flex-col min-h-screen bg-gray-50 dark:bg-gray-900">
       <PageHeader title="Start Trip" backTo="/" />
 
       <main className="flex-1 p-4 space-y-4">
         {showStoreForm ? (
-          <div className="bg-white rounded-lg border p-4">
-            <h2 className="text-sm font-semibold text-gray-900 mb-3">
+          <div className="bg-white dark:bg-gray-800 rounded-lg border dark:border-gray-700 p-4">
+            <h2 className="text-sm font-semibold text-gray-900 dark:text-gray-100 mb-3">
               Create New Store
             </h2>
             <StoreForm
@@ -76,7 +76,7 @@ export default function NewTripPage() {
           </div>
         ) : (
           <>
-            <p className="text-sm text-gray-600">
+            <p className="text-sm text-gray-600 dark:text-gray-400">
               Select a store to begin your shopping trip.
             </p>
             <StoreSelector
@@ -91,11 +91,11 @@ export default function NewTripPage() {
       {/* Confirm dialog to end active trip */}
       {showConfirm && (
         <div className="fixed inset-0 z-50 flex items-center justify-center bg-black/40">
-          <div className="bg-white rounded-xl mx-4 p-6 max-w-sm w-full shadow-xl">
-            <h2 className="text-lg font-semibold text-gray-900 mb-2">
+          <div className="bg-white dark:bg-gray-800 rounded-xl mx-4 p-6 max-w-sm w-full shadow-xl">
+            <h2 className="text-lg font-semibold text-gray-900 dark:text-gray-100 mb-2">
               Active Trip in Progress
             </h2>
-            <p className="text-sm text-gray-600 mb-6">
+            <p className="text-sm text-gray-600 dark:text-gray-400 mb-6">
               You already have an active trip. Would you like to end it and
               start a new one?
             </p>
@@ -106,7 +106,7 @@ export default function NewTripPage() {
                   setShowConfirm(false);
                   setPendingStoreId(null);
                 }}
-                className="flex-1 rounded-lg border border-gray-300 px-4 py-2 text-sm font-medium text-gray-700 hover:bg-gray-50 transition-colors cursor-pointer"
+                className="flex-1 rounded-lg border border-gray-300 dark:border-gray-600 px-4 py-2 text-sm font-medium text-gray-700 dark:text-gray-300 hover:bg-gray-50 dark:hover:bg-gray-700 transition-colors cursor-pointer"
               >
                 Cancel
               </button>

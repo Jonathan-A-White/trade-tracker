@@ -168,11 +168,11 @@ export default function SpendingReportPage() {
         </div>
 
         <div>
-          <h2 className="text-sm font-medium text-gray-700 mb-3">
+          <h2 className="text-sm font-medium text-gray-700 dark:text-gray-300 mb-3">
             Spending per {groupBy === "week" ? "Week" : "Month"}
           </h2>
           {chartData.length > 0 ? (
-            <div className="bg-white rounded-lg border p-3">
+            <div className="bg-white dark:bg-gray-800 rounded-lg border dark:border-gray-700 p-3">
               <ResponsiveContainer width="100%" height={220}>
                 <BarChart data={chartData} margin={{ top: 5, right: 10, bottom: 5, left: 0 }}>
                   <CartesianGrid strokeDasharray="3 3" stroke="#f3f4f6" />
@@ -196,7 +196,7 @@ export default function SpendingReportPage() {
               </ResponsiveContainer>
             </div>
           ) : (
-            <div className="flex items-center justify-center h-40 text-gray-400 text-sm bg-white rounded-lg border">
+            <div className="flex items-center justify-center h-40 text-gray-400 dark:text-gray-500 text-sm bg-white dark:bg-gray-800 rounded-lg border dark:border-gray-700">
               No completed trips in this period
             </div>
           )}

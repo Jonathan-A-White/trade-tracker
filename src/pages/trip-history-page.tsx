@@ -85,16 +85,16 @@ export default function TripHistoryPage() {
   }, []);
 
   return (
-    <div className="flex flex-col min-h-screen bg-gray-50">
+    <div className="flex flex-col min-h-screen bg-gray-50 dark:bg-gray-900">
       <PageHeader title="Trip History" backTo="/" />
 
       <main className="flex-1 p-4 space-y-4">
         {/* Filter bar */}
-        <div className="bg-white rounded-lg border p-4 space-y-3">
+        <div className="bg-white dark:bg-gray-800 rounded-lg border dark:border-gray-700 p-4 space-y-3">
           <div>
             <label
               htmlFor="store-filter"
-              className="block text-xs font-medium text-gray-500 mb-1"
+              className="block text-xs font-medium text-gray-500 dark:text-gray-400 mb-1"
             >
               Store
             </label>
@@ -102,7 +102,7 @@ export default function TripHistoryPage() {
               id="store-filter"
               value={selectedStoreId}
               onChange={(e) => setSelectedStoreId(e.target.value)}
-              className="w-full rounded-lg border border-gray-300 px-3 py-2 text-sm focus:outline-none focus:ring-2 focus:ring-blue-500 focus:border-transparent"
+              className="w-full rounded-lg border border-gray-300 dark:border-gray-600 dark:bg-gray-700 dark:text-gray-100 px-3 py-2 text-sm focus:outline-none focus:ring-2 focus:ring-blue-500 focus:border-transparent"
             >
               <option value="">All Stores</option>
               {(stores ?? []).map((store) => (
@@ -134,14 +134,14 @@ export default function TripHistoryPage() {
               strokeWidth="1.5"
               strokeLinecap="round"
               strokeLinejoin="round"
-              className="text-gray-300 mb-3"
+              className="text-gray-300 dark:text-gray-600 mb-3"
             >
               <path d="M6 2 3 6v14a2 2 0 0 0 2 2h14a2 2 0 0 0 2-2V6l-3-4Z" />
               <line x1="3" x2="21" y1="6" y2="6" />
               <path d="M16 10a4 4 0 0 1-8 0" />
             </svg>
-            <p className="text-gray-500 text-sm">No trips found</p>
-            <p className="text-gray-400 text-xs mt-1">
+            <p className="text-gray-500 dark:text-gray-400 text-sm">No trips found</p>
+            <p className="text-gray-400 dark:text-gray-500 text-xs mt-1">
               Try adjusting your filters or start a new trip.
             </p>
           </div>

@@ -73,7 +73,7 @@ export function BottomNav() {
   }
 
   return (
-    <nav className="fixed bottom-0 left-0 right-0 z-20 bg-white border-t grid grid-cols-5">
+    <nav className="fixed bottom-0 left-0 right-0 z-20 bg-white dark:bg-gray-800 border-t dark:border-gray-700 grid grid-cols-5">
       {tabs.map((tab) => {
         const active = isActive(tab.path);
         return (
@@ -81,7 +81,7 @@ export function BottomNav() {
             key={tab.path}
             to={tab.path}
             className={`flex flex-col items-center justify-center py-2 text-xs ${
-              active ? "text-blue-600" : "text-gray-500 hover:text-gray-700"
+              active ? "text-blue-600 dark:text-blue-400" : "text-gray-500 dark:text-gray-400 hover:text-gray-700 dark:hover:text-gray-300"
             }`}
           >
             {tab.icon(active)}

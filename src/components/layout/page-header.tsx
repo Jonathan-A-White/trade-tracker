@@ -9,12 +9,12 @@ interface PageHeaderProps {
 
 export function PageHeader({ title, backTo, rightAction }: PageHeaderProps) {
   return (
-    <header className="sticky top-0 z-10 bg-white border-b px-4 py-3 flex items-center justify-between">
+    <header className="sticky top-0 z-10 bg-white dark:bg-gray-800 border-b dark:border-gray-700 px-4 py-3 flex items-center justify-between">
       <div className="flex items-center gap-2">
         {backTo && (
           <Link
             to={backTo}
-            className="text-gray-600 hover:text-gray-900 p-1 -ml-1"
+            className="text-gray-600 dark:text-gray-400 hover:text-gray-900 dark:hover:text-gray-200 p-1 -ml-1"
             aria-label="Go back"
           >
             <svg
@@ -33,7 +33,7 @@ export function PageHeader({ title, backTo, rightAction }: PageHeaderProps) {
             </svg>
           </Link>
         )}
-        <h1 className="text-lg font-semibold text-gray-900">{title}</h1>
+        <h1 className="text-lg font-semibold text-gray-900 dark:text-gray-100">{title}</h1>
       </div>
       {rightAction && <div>{rightAction}</div>}
     </header>

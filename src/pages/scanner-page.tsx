@@ -88,13 +88,13 @@ export default function ScannerPage() {
       {/* Item found confirmation overlay */}
       {foundItem && (
         <div className="fixed inset-0 z-[60] flex items-end justify-center bg-black/50">
-          <div className="bg-white w-full max-w-lg rounded-t-2xl p-6 space-y-4 animate-slide-up">
+          <div className="bg-white dark:bg-gray-800 w-full max-w-lg rounded-t-2xl p-6 space-y-4 animate-slide-up">
             <div className="flex items-start justify-between">
               <div>
-                <h2 className="text-lg font-semibold text-gray-900">
+                <h2 className="text-lg font-semibold text-gray-900 dark:text-gray-100">
                   {foundItem.name}
                 </h2>
-                <p className="text-sm text-gray-500 mt-0.5">
+                <p className="text-sm text-gray-500 dark:text-gray-400 mt-0.5">
                   Barcode: {foundItem.barcode}
                 </p>
               </div>
@@ -103,7 +103,7 @@ export default function ScannerPage() {
               </p>
             </div>
 
-            <div className="text-xs text-gray-500">
+            <div className="text-xs text-gray-500 dark:text-gray-400">
               Last price: {formatCurrency(foundItem.currentPrice)} /{" "}
               {foundItem.unitType === "per_lb" ? "lb" : "each"}
             </div>
@@ -112,7 +112,7 @@ export default function ScannerPage() {
               <div>
                 <label
                   htmlFor="scanner-weight"
-                  className="block text-sm font-medium text-gray-700 mb-1"
+                  className="block text-sm font-medium text-gray-700 dark:text-gray-300 mb-1"
                 >
                   Weight (lbs)
                 </label>
@@ -124,7 +124,7 @@ export default function ScannerPage() {
                   value={weightLbs}
                   onChange={(e) => setWeightLbs(e.target.value)}
                   placeholder="0.00"
-                  className="w-full rounded-lg border border-gray-300 px-3 py-2 text-sm focus:outline-none focus:ring-2 focus:ring-blue-500 focus:border-transparent"
+                  className="w-full rounded-lg border border-gray-300 dark:border-gray-600 dark:bg-gray-700 dark:text-gray-100 px-3 py-2 text-sm focus:outline-none focus:ring-2 focus:ring-blue-500 focus:border-transparent"
                   autoFocus
                 />
               </div>
@@ -132,7 +132,7 @@ export default function ScannerPage() {
               <div>
                 <label
                   htmlFor="scanner-qty"
-                  className="block text-sm font-medium text-gray-700 mb-1"
+                  className="block text-sm font-medium text-gray-700 dark:text-gray-300 mb-1"
                 >
                   Quantity
                 </label>
@@ -140,17 +140,17 @@ export default function ScannerPage() {
                   <button
                     type="button"
                     onClick={() => setQuantity((q) => Math.max(1, q - 1))}
-                    className="w-10 h-10 rounded-lg border border-gray-300 flex items-center justify-center text-lg font-medium text-gray-700 hover:bg-gray-50 cursor-pointer"
+                    className="w-10 h-10 rounded-lg border border-gray-300 dark:border-gray-600 flex items-center justify-center text-lg font-medium text-gray-700 dark:text-gray-300 hover:bg-gray-50 dark:hover:bg-gray-700 cursor-pointer"
                   >
                     -
                   </button>
-                  <span className="text-lg font-semibold text-gray-900 w-10 text-center">
+                  <span className="text-lg font-semibold text-gray-900 dark:text-gray-100 w-10 text-center">
                     {quantity}
                   </span>
                   <button
                     type="button"
                     onClick={() => setQuantity((q) => q + 1)}
-                    className="w-10 h-10 rounded-lg border border-gray-300 flex items-center justify-center text-lg font-medium text-gray-700 hover:bg-gray-50 cursor-pointer"
+                    className="w-10 h-10 rounded-lg border border-gray-300 dark:border-gray-600 flex items-center justify-center text-lg font-medium text-gray-700 dark:text-gray-300 hover:bg-gray-50 dark:hover:bg-gray-700 cursor-pointer"
                   >
                     +
                   </button>
@@ -162,7 +162,7 @@ export default function ScannerPage() {
               <button
                 type="button"
                 onClick={handleScanAgain}
-                className="flex-1 rounded-lg border border-gray-300 px-4 py-3 text-sm font-medium text-gray-700 hover:bg-gray-50 transition-colors cursor-pointer"
+                className="flex-1 rounded-lg border border-gray-300 dark:border-gray-600 px-4 py-3 text-sm font-medium text-gray-700 dark:text-gray-300 hover:bg-gray-50 dark:hover:bg-gray-700 transition-colors cursor-pointer"
               >
                 Scan Again
               </button>
@@ -183,7 +183,7 @@ export default function ScannerPage() {
             <button
               type="button"
               onClick={handleClose}
-              className="w-full text-center text-sm text-gray-500 hover:text-gray-700 py-1 cursor-pointer"
+              className="w-full text-center text-sm text-gray-500 dark:text-gray-400 hover:text-gray-700 dark:hover:text-gray-300 py-1 cursor-pointer"
             >
               Close Scanner
             </button>

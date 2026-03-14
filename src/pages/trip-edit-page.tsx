@@ -98,10 +98,10 @@ export default function TripEditPage() {
 
   if (!trip) {
     return (
-      <div className="flex flex-col min-h-screen bg-gray-50">
+      <div className="flex flex-col min-h-screen bg-gray-50 dark:bg-gray-900">
         <PageHeader title="Edit Trip" backTo={id ? `/trips/${id}` : "/trips"} />
         <main className="flex-1 flex items-center justify-center p-4">
-          <p className="text-gray-500">
+          <p className="text-gray-500 dark:text-gray-400">
             {id ? "Loading trip..." : "Trip not found."}
           </p>
         </main>
@@ -113,13 +113,13 @@ export default function TripEditPage() {
   const map = itemsMap ?? {};
 
   return (
-    <div className="flex flex-col min-h-screen bg-gray-50">
+    <div className="flex flex-col min-h-screen bg-gray-50 dark:bg-gray-900">
       <PageHeader title="Edit Trip" backTo={`/trips/${id}`} />
 
       <main className="flex-1 pb-24">
         {/* Items list */}
         {items.length === 0 ? (
-          <div className="p-4 text-center text-gray-500 text-sm">
+          <div className="p-4 text-center text-gray-500 dark:text-gray-400 text-sm">
             No items in this trip.
           </div>
         ) : (
@@ -128,8 +128,8 @@ export default function TripEditPage() {
               const item = map[ti.itemId];
               if (editingId === ti.id && editField) {
                 return (
-                  <div key={ti.id} className="bg-white border-b px-4 py-3">
-                    <p className="text-sm font-medium text-gray-900 mb-2">
+                  <div key={ti.id} className="bg-white dark:bg-gray-800 border-b dark:border-gray-700 px-4 py-3">
+                    <p className="text-sm font-medium text-gray-900 dark:text-gray-100 mb-2">
                       {item?.name ?? "Unknown Item"}
                     </p>
                     <InlineEditor
@@ -163,7 +163,7 @@ export default function TripEditPage() {
           <button
             type="button"
             onClick={() => navigate(`/trips/active/add`)}
-            className="w-full rounded-lg border-2 border-dashed border-gray-300 px-4 py-3 text-sm font-medium text-blue-600 hover:border-blue-400 hover:bg-blue-50 transition-colors cursor-pointer"
+            className="w-full rounded-lg border-2 border-dashed border-gray-300 dark:border-gray-600 px-4 py-3 text-sm font-medium text-blue-600 dark:text-blue-400 hover:border-blue-400 hover:bg-blue-50 transition-colors cursor-pointer"
           >
             + Add Item
           </button>
@@ -171,7 +171,7 @@ export default function TripEditPage() {
       </main>
 
       {/* Save bar */}
-      <div className="fixed bottom-0 left-0 right-0 z-10 bg-white border-t px-4 py-3">
+      <div className="fixed bottom-0 left-0 right-0 z-10 bg-white dark:bg-gray-800 border-t dark:border-gray-700 px-4 py-3">
         <button
           type="button"
           onClick={handleSaveChanges}
@@ -185,11 +185,11 @@ export default function TripEditPage() {
       {/* Confirm remove dialog */}
       {confirmRemoveId && (
         <div className="fixed inset-0 z-50 flex items-center justify-center bg-black/40">
-          <div className="bg-white rounded-xl mx-4 p-6 max-w-sm w-full shadow-xl">
-            <h2 className="text-lg font-semibold text-gray-900 mb-2">
+          <div className="bg-white dark:bg-gray-800 rounded-xl mx-4 p-6 max-w-sm w-full shadow-xl">
+            <h2 className="text-lg font-semibold text-gray-900 dark:text-gray-100 mb-2">
               Remove Item
             </h2>
-            <p className="text-sm text-gray-600 mb-6">
+            <p className="text-sm text-gray-600 dark:text-gray-400 mb-6">
               Are you sure you want to remove{" "}
               <span className="font-medium">
                 {map[
@@ -202,7 +202,7 @@ export default function TripEditPage() {
               <button
                 type="button"
                 onClick={() => setConfirmRemoveId(null)}
-                className="flex-1 rounded-lg border border-gray-300 px-4 py-2 text-sm font-medium text-gray-700 hover:bg-gray-50 transition-colors cursor-pointer"
+                className="flex-1 rounded-lg border border-gray-300 dark:border-gray-600 px-4 py-2 text-sm font-medium text-gray-700 dark:text-gray-300 hover:bg-gray-50 dark:hover:bg-gray-700 transition-colors cursor-pointer"
               >
                 Cancel
               </button>

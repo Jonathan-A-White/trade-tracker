@@ -1,6 +1,7 @@
 import { createBrowserRouter, RouterProvider } from "react-router";
 import { ActiveTripProvider } from "@/contexts/active-trip-context";
 import { ToastProvider } from "@/contexts/toast-context";
+import { ThemeProvider } from "@/contexts/theme-context";
 import { AppShell } from "@/components/layout/app-shell";
 import { HomePage } from "@/pages/home-page";
 import NewTripPage from "@/pages/new-trip-page";
@@ -68,11 +69,13 @@ const router = createBrowserRouter(
 export default function App() {
   return (
     <ErrorBoundary>
-      <ActiveTripProvider>
-        <ToastProvider>
-          <RouterProvider router={router} />
-        </ToastProvider>
-      </ActiveTripProvider>
+      <ThemeProvider>
+        <ActiveTripProvider>
+          <ToastProvider>
+            <RouterProvider router={router} />
+          </ToastProvider>
+        </ActiveTripProvider>
+      </ThemeProvider>
     </ErrorBoundary>
   );
 }

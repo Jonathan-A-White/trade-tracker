@@ -50,14 +50,14 @@ export class ErrorBoundary extends Component<ErrorBoundaryProps, ErrorBoundarySt
             </svg>
           </div>
 
-          <h3 className="text-lg font-semibold text-gray-900 mb-2">
+          <h3 className="text-lg font-semibold text-gray-900 dark:text-gray-100 mb-2">
             Something went wrong
           </h3>
-          <p className="text-sm text-gray-500 max-w-xs mb-2">
+          <p className="text-sm text-gray-500 dark:text-gray-400 max-w-xs mb-2">
             An unexpected error occurred. Please try again.
           </p>
           {this.state.error && (
-            <p className="text-xs text-gray-400 mb-6 max-w-xs break-words">
+            <p className="text-xs text-gray-400 dark:text-gray-500 mb-6 max-w-xs break-words">
               {this.state.error.message}
             </p>
           )}
