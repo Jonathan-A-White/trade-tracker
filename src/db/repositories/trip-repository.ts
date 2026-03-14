@@ -1,0 +1,66 @@
+import { db } from "../database";
+import type { Trip, CreateTripInput } from "../../contracts/types";
+
+export interface TripListFilters {
+  storeId?: string;
+  status?: "active" | "completed";
+  startAfter?: number;
+  startBefore?: number;
+}
+
+export class TripRepository {
+  async create(input: CreateTripInput): Promise<Trip> {
+    const now = Date.now();
+    const trip: Trip = {
+      id: crypto.randomUUID(),
+      ...input,
+      status: "active",
+      scannedSubtotal: 0,
+      createdAt: now,
+      updatedAt: now,
+    };
+    await db.trips.put(trip);
+    return trip;
+  }
+
+  async getById(id: string): Promise<Trip | undefined> {
+    return db.trips.get(id);
+  }
+
+  async complete(id: string, actualTotal?: number): Promise<void> {
+    const now = Date.now();
+    await db.trips.update(id, {
+      status: "completed",
+      endedAt: now,
+      actualTotal,
+      updatedAt: now,
+    });
+  }
+
+  async getActive(): Promise<Trip | undefined> {
+    return db.trips.where("status").equals("active").first();
+  }
+
+  async list(filters?: TripListFilters): Promise<Trip[]> {
+    let collection = db.trips.orderBy("startedAt");
+
+    const results = await collection.reverse().toArray();
+
+    return results.filter((trip) => {
+      if (filters?.storeId && trip.storeId !== filters.storeId) return false;
+      if (filters?.status && trip.status !== filters.status) return false;
+      if (filters?.startAfter && trip.startedAt < filters.startAfter)
+        return false;
+      if (filters?.startBefore && trip.startedAt > filters.startBefore)
+        return false;
+      return true;
+    });
+  }
+
+  async updateSubtotal(id: string, subtotal: number): Promise<void> {
+    await db.trips.update(id, {
+      scannedSubtotal: subtotal,
+      updatedAt: Date.now(),
+    });
+  }
+}
