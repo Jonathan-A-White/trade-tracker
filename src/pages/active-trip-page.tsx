@@ -159,23 +159,23 @@ export default function ActiveTripPage() {
         }
       />
 
-      <main className="flex-1 pb-40">
-        {/* Action buttons */}
-        <div className="flex gap-3 p-4">
-          <Link
-            to="/trips/active/scan"
-            className="flex-1 rounded-lg bg-blue-600 px-4 py-3 text-sm font-medium text-white text-center hover:bg-blue-700 transition-colors"
-          >
-            Scan
-          </Link>
-          <Link
-            to="/trips/active/add"
-            className="flex-1 rounded-lg border border-gray-300 dark:border-gray-600 px-4 py-3 text-sm font-medium text-gray-700 dark:text-gray-300 text-center hover:bg-gray-50 dark:hover:bg-gray-700 transition-colors"
-          >
-            Add Manually
-          </Link>
-        </div>
+      {/* Sticky action buttons */}
+      <div className="sticky top-0 z-10 flex gap-3 p-4 bg-gray-50 dark:bg-gray-900">
+        <Link
+          to="/trips/active/scan"
+          className="flex-1 rounded-lg bg-blue-600 px-4 py-3 text-sm font-medium text-white text-center hover:bg-blue-700 transition-colors"
+        >
+          Scan
+        </Link>
+        <Link
+          to="/trips/active/add"
+          className="flex-1 rounded-lg border border-gray-300 dark:border-gray-600 px-4 py-3 text-sm font-medium text-gray-700 dark:text-gray-300 text-center hover:bg-gray-50 dark:hover:bg-gray-700 transition-colors"
+        >
+          Add Manually
+        </Link>
+      </div>
 
+      <main className="flex-1 overflow-y-auto pb-40">
         {/* Trip items list */}
         {items.length === 0 ? (
           <div className="p-4 text-center text-gray-500 dark:text-gray-400 text-sm">
