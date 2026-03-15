@@ -60,6 +60,13 @@ export class TripRepository {
     });
   }
 
+  async updateBudget(id: string, budget: number | undefined): Promise<void> {
+    await db.trips.update(id, {
+      budget,
+      updatedAt: Date.now(),
+    });
+  }
+
   async updateSubtotal(id: string, subtotal: number): Promise<void> {
     await db.trips.update(id, {
       scannedSubtotal: subtotal,

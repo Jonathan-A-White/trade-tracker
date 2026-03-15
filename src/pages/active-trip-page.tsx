@@ -44,6 +44,8 @@ export default function ActiveTripPage() {
   const navigate = useNavigate();
   const [editingId, setEditingId] = useState<string | null>(null);
   const [editField, setEditField] = useState<"price" | "quantity" | null>(null);
+  const [editingBudget, setEditingBudget] = useState(false);
+  const [budgetInput, setBudgetInput] = useState("");
 
   const trip = useLiveQuery(() => tripRepo.getActive(), []);
   const tripItems = useLiveQuery(
@@ -98,6 +100,18 @@ export default function ActiveTripPage() {
     await tripItemRepo.remove(id);
   }, []);
 
+  const handleOpenBudgetEdit = useCallback(() => {
+    setBudgetInput(trip?.budget?.toFixed(2) ?? "");
+    setEditingBudget(true);
+  }, [trip?.budget]);
+
+  const handleSaveBudget = useCallback(async () => {
+    if (!trip) return;
+    const value = budgetInput.trim() ? parseFloat(budgetInput) : undefined;
+    await tripRepo.updateBudget(trip.id, value && value > 0 ? value : undefined);
+    setEditingBudget(false);
+  }, [trip, budgetInput]);
+
   const handleCancelEdit = useCallback(() => {
     setEditingId(null);
     setEditField(null);
@@ -131,7 +145,17 @@ export default function ActiveTripPage() {
         title={storeName ?? "Loading..."}
         backTo="/"
         rightAction={
-          <span className="text-sm text-gray-500 dark:text-gray-400">{elapsed}</span>
+          <div className="flex items-center gap-3">
+            <button
+              type="button"
+              onClick={handleOpenBudgetEdit}
+              className="text-xs text-blue-500 hover:text-blue-400 transition-colors cursor-pointer"
+              title="Set budget"
+            >
+              {trip.budget ? `$${trip.budget.toFixed(2)} budget` : "+ Budget"}
+            </button>
+            <span className="text-sm text-gray-500 dark:text-gray-400">{elapsed}</span>
+          </div>
         }
       />
 
@@ -197,8 +221,53 @@ export default function ActiveTripPage() {
       <SubtotalBar
         subtotal={trip.scannedSubtotal}
         itemCount={items.length}
+        budget={trip.budget}
         onEndTrip={() => navigate("/trips/active/end")}
       />
+
+      {/* Budget edit modal */}
+      {editingBudget && (
+        <div className="fixed inset-0 z-50 flex items-center justify-center bg-black/40">
+          <div className="bg-white dark:bg-gray-800 rounded-xl mx-4 p-6 max-w-sm w-full shadow-xl">
+            <h2 className="text-lg font-semibold text-gray-900 dark:text-gray-100 mb-4">
+              Trip Budget
+            </h2>
+            <div className="relative mb-4">
+              <span className="absolute left-3 top-1/2 -translate-y-1/2 text-gray-400">$</span>
+              <input
+                type="number"
+                inputMode="decimal"
+                min="0"
+                step="0.01"
+                placeholder="0.00"
+                value={budgetInput}
+                onChange={(e) => setBudgetInput(e.target.value)}
+                autoFocus
+                className="w-full rounded-lg border border-gray-300 dark:border-gray-600 bg-white dark:bg-gray-700 pl-7 pr-3 py-2.5 text-gray-900 dark:text-gray-100 placeholder-gray-400 focus:border-blue-500 focus:ring-1 focus:ring-blue-500 outline-none"
+              />
+            </div>
+            <p className="text-xs text-gray-500 dark:text-gray-400 mb-4">
+              Leave empty to remove budget.
+            </p>
+            <div className="flex gap-3">
+              <button
+                type="button"
+                onClick={() => setEditingBudget(false)}
+                className="flex-1 rounded-lg border border-gray-300 dark:border-gray-600 px-4 py-2 text-sm font-medium text-gray-700 dark:text-gray-300 hover:bg-gray-50 dark:hover:bg-gray-700 transition-colors cursor-pointer"
+              >
+                Cancel
+              </button>
+              <button
+                type="button"
+                onClick={handleSaveBudget}
+                className="flex-1 rounded-lg bg-blue-600 px-4 py-2 text-sm font-medium text-white hover:bg-blue-700 transition-colors cursor-pointer"
+              >
+                Save
+              </button>
+            </div>
+          </div>
+        </div>
+      )}
 
       <Outlet />
     </div>

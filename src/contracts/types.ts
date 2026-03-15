@@ -29,6 +29,7 @@ export interface Trip {
   endedAt?: number;
   scannedSubtotal: number;
   actualTotal?: number;
+  budget?: number;
   note?: string;
   createdAt: number;
   updatedAt: number;
