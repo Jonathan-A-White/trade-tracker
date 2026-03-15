@@ -116,25 +116,43 @@ export function CategoryAutocomplete({
 
   return (
     <div ref={containerRef} className="relative">
-      <input
-        id="item-category"
-        type="text"
-        value={value}
-        onChange={(e) => {
-          onChange(e.target.value);
-          setIsOpen(true);
-          setHighlightedIndex(-1);
-        }}
-        onFocus={() => setIsOpen(true)}
-        onKeyDown={handleKeyDown}
-        placeholder="e.g. Produce, Dairy & Eggs"
-        className={className}
-        autoComplete="off"
-        role="combobox"
-        aria-expanded={showDropdown}
-        aria-autocomplete="list"
-        aria-controls="category-listbox"
-      />
+      <div className="relative">
+        <input
+          id="item-category"
+          type="text"
+          value={value}
+          onChange={(e) => {
+            onChange(e.target.value);
+            setIsOpen(true);
+            setHighlightedIndex(-1);
+          }}
+          onFocus={() => setIsOpen(true)}
+          onKeyDown={handleKeyDown}
+          placeholder="e.g. Produce, Dairy & Eggs"
+          className={`${className} ${value ? "pr-8" : ""}`}
+          autoComplete="off"
+          role="combobox"
+          aria-expanded={showDropdown}
+          aria-autocomplete="list"
+          aria-controls="category-listbox"
+        />
+        {value && (
+          <button
+            type="button"
+            onClick={() => {
+              onChange("");
+              setIsOpen(false);
+              setHighlightedIndex(-1);
+            }}
+            className="absolute right-2 top-1/2 -translate-y-1/2 text-gray-400 hover:text-gray-600 dark:hover:text-gray-200 p-0.5 rounded-full hover:bg-gray-200 dark:hover:bg-gray-600 transition-colors"
+            aria-label="Clear category"
+          >
+            <svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 20 20" fill="currentColor" className="w-4 h-4">
+              <path fillRule="evenodd" d="M10 18a8 8 0 100-16 8 8 0 000 16zM8.28 7.22a.75.75 0 00-1.06 1.06L8.94 10l-1.72 1.72a.75.75 0 101.06 1.06L10 11.06l1.72 1.72a.75.75 0 101.06-1.06L11.06 10l1.72-1.72a.75.75 0 00-1.06-1.06L10 8.94 8.28 7.22z" clipRule="evenodd" />
+            </svg>
+          </button>
+        )}
+      </div>
       {showDropdown && (
         <ul
           id="category-listbox"
