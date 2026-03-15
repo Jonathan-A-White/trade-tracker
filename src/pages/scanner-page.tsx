@@ -1,13 +1,11 @@
-import { useState, useCallback } from "react";
+import { useState, useCallback, useRef } from "react";
 import { useNavigate } from "react-router";
 import { db } from "@/db/database";
 import type { Item } from "@/contracts/types";
-import { TripRepository } from "@/db/repositories/trip-repository";
 import { TripItemRepository } from "@/db/repositories/trip-item-repository";
 import { ScannerViewfinder } from "@/components/scanner/scanner-viewfinder";
 import { formatCurrency } from "@/core/pricing";
 
-const tripRepo = new TripRepository();
 const tripItemRepo = new TripItemRepository();
 
 export default function ScannerPage() {
@@ -17,6 +15,7 @@ export default function ScannerPage() {
   const [quantity, setQuantity] = useState(1);
   const [weightLbs, setWeightLbs] = useState("");
   const [adding, setAdding] = useState(false);
+  const savingRef = useRef(false);
 
   const handleBarcodeDetected = useCallback(
     async (barcode: string) => {
@@ -34,34 +33,37 @@ export default function ScannerPage() {
   );
 
   const handleAddToTrip = useCallback(async () => {
-    if (!foundItem || adding) return;
+    if (!foundItem || adding || savingRef.current) return;
+    savingRef.current = true;
     setAdding(true);
 
     try {
-      const trip = await tripRepo.getActive();
-      if (!trip) {
-        navigate("/trips/active");
-        return;
-      }
+      await db.transaction("rw", [db.tripItems, db.priceHistory, db.trips], async () => {
+        const trip = await db.trips.where("status").equals("active").first();
+        if (!trip) return;
 
-      await tripItemRepo.addToTrip({
-        tripId: trip.id,
-        itemId: foundItem.id,
-        price: foundItem.currentPrice,
-        quantity,
-        weightLbs:
-          foundItem.unitType === "per_lb" && weightLbs
-            ? parseFloat(weightLbs)
-            : undefined,
-        onSale: false,
+        await tripItemRepo.addToTrip({
+          tripId: trip.id,
+          itemId: foundItem.id,
+          price: foundItem.currentPrice,
+          quantity,
+          weightLbs:
+            foundItem.unitType === "per_lb" && weightLbs
+              ? parseFloat(weightLbs)
+              : undefined,
+          onSale: false,
+        });
       });
 
-      // Reset and allow scanning again
       setFoundItem(null);
       setQuantity(1);
       setWeightLbs("");
       setScannerActive(true);
+    } catch (err) {
+      console.error("Failed to add item to trip:", err);
+      alert("Failed to add item. Please try again.");
     } finally {
+      savingRef.current = false;
       setAdding(false);
     }
   }, [foundItem, quantity, weightLbs, adding, navigate]);
