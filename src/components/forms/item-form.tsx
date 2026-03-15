@@ -2,6 +2,7 @@ import { useState, useCallback } from "react";
 import type { FormEvent } from "react";
 import { isPLUCode } from "../../scanner/manual-entry";
 import { BarcodeInput } from "./barcode-input";
+import { CategoryAutocomplete } from "./category-autocomplete";
 import { ScannerViewfinder } from "../scanner/scanner-viewfinder";
 
 interface ItemFormValues {
@@ -124,11 +125,9 @@ export function ItemForm({
         <label htmlFor="item-category" className="block text-sm font-medium text-gray-700 dark:text-gray-300 mb-1">
           Category (optional)
         </label>
-        <input
-          id="item-category"
-          type="text"
+        <CategoryAutocomplete
           value={category}
-          onChange={(e) => setCategory(e.target.value)}
+          onChange={setCategory}
           className={inputClass}
         />
       </div>
