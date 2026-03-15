@@ -82,39 +82,39 @@ export function HomePage() {
         )}
 
         <div className="grid grid-cols-2 gap-3">
-          <StatCard label="Trips This Month" value={tripsCount} />
+          <StatCard label="Trips This Month" value={tripsCount} to="/trips/history" />
           <StatCard
             label="Spent This Month"
             value={formatCurrency(spentThisMonth)}
+            to="/reports/spending"
           />
-          <StatCard label="Items Tracked" value={totalItems ?? 0} />
+          <StatCard label="Items Tracked" value={totalItems ?? 0} to="/items" />
           <StatCard
             label="Avg Trip Total"
             value={formatCurrency(averageTripTotal)}
+            to="/reports/spending"
           />
         </div>
 
         <section>
-          <div className="flex items-center justify-between mb-3">
-            <h2 className="text-base font-semibold text-gray-900 dark:text-gray-100">
+          <Link to="/trips/history" className="flex items-center justify-between mb-3 group">
+            <h2 className="text-base font-semibold text-gray-900 dark:text-gray-100 group-hover:text-blue-600 dark:group-hover:text-blue-400 transition-colors">
               Recent Trips
             </h2>
-            {recentTrips.length > 0 && (
-              <Link
-                to="/trips/history"
-                className="text-sm text-blue-600 dark:text-blue-400 hover:text-blue-700 dark:hover:text-blue-300"
-              >
-                View all
-              </Link>
-            )}
-          </div>
+            <span className="text-sm text-blue-600 dark:text-blue-400 group-hover:text-blue-700 dark:group-hover:text-blue-300">
+              View all
+            </span>
+          </Link>
 
           {recentTrips.length === 0 ? (
-            <div className="rounded-lg border border-dashed border-gray-300 dark:border-gray-600 p-6 text-center">
+            <Link
+              to="/trips/new"
+              className="block rounded-lg border border-dashed border-gray-300 dark:border-gray-600 p-6 text-center hover:border-blue-400 dark:hover:border-blue-500 transition-colors"
+            >
               <p className="text-sm text-gray-500 dark:text-gray-400">
                 No completed trips yet. Start your first trip!
               </p>
-            </div>
+            </Link>
           ) : (
             <div className="space-y-3">
               {recentTrips.map((trip) => (

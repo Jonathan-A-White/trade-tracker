@@ -1,10 +1,12 @@
 import type { ReactNode } from "react";
+import { Link } from "react-router";
 
 interface StatCardProps {
   label: string;
   value: string | number;
   trend?: "up" | "down" | "stable";
   icon?: ReactNode;
+  to?: string;
 }
 
 function TrendIndicator({ trend }: { trend: "up" | "down" | "stable" }) {
@@ -39,9 +41,9 @@ function TrendIndicator({ trend }: { trend: "up" | "down" | "stable" }) {
   }
 }
 
-export function StatCard({ label, value, trend, icon }: StatCardProps) {
-  return (
-    <div className="bg-white dark:bg-gray-800 rounded-lg border dark:border-gray-700 p-4">
+export function StatCard({ label, value, trend, icon, to }: StatCardProps) {
+  const content = (
+    <>
       <div className="flex items-center justify-between mb-2">
         <span className="text-sm text-gray-500 dark:text-gray-400">{label}</span>
         {icon && <div className="text-gray-400 dark:text-gray-500">{icon}</div>}
@@ -50,6 +52,23 @@ export function StatCard({ label, value, trend, icon }: StatCardProps) {
         <span className="text-2xl font-bold text-gray-900 dark:text-gray-100">{value}</span>
         {trend && <TrendIndicator trend={trend} />}
       </div>
+    </>
+  );
+
+  if (to) {
+    return (
+      <Link
+        to={to}
+        className="block bg-white dark:bg-gray-800 rounded-lg border dark:border-gray-700 p-4 hover:border-blue-400 dark:hover:border-blue-500 transition-colors active:bg-gray-50 dark:active:bg-gray-700"
+      >
+        {content}
+      </Link>
+    );
+  }
+
+  return (
+    <div className="bg-white dark:bg-gray-800 rounded-lg border dark:border-gray-700 p-4">
+      {content}
     </div>
   );
 }
