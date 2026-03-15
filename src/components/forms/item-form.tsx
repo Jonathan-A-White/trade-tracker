@@ -1,6 +1,8 @@
-import { useState } from "react";
+import { useState, useCallback } from "react";
 import type { FormEvent } from "react";
 import { isPLUCode } from "../../scanner/manual-entry";
+import { BarcodeInput } from "./barcode-input";
+import { ScannerViewfinder } from "../scanner/scanner-viewfinder";
 
 interface ItemFormValues {
   barcode: string;
@@ -30,6 +32,12 @@ export function ItemForm({
   );
   const [unitType, setUnitType] = useState(initialValues?.unitType ?? "each");
   const [category, setCategory] = useState(initialValues?.category ?? "");
+  const [scannerOpen, setScannerOpen] = useState(false);
+
+  const handleBarcodeDetected = useCallback((detectedBarcode: string) => {
+    setBarcode(detectedBarcode);
+    setScannerOpen(false);
+  }, []);
 
   function handleSubmit(e: FormEvent) {
     e.preventDefault();
@@ -44,14 +52,11 @@ export function ItemForm({
         <label htmlFor="item-barcode" className="block text-sm font-medium text-gray-700 dark:text-gray-300 mb-1">
           Barcode or PLU Code
         </label>
-        <input
-          id="item-barcode"
-          type="text"
+        <BarcodeInput
           value={barcode}
-          onChange={(e) => setBarcode(e.target.value)}
+          onChange={setBarcode}
+          onScanPress={() => setScannerOpen(true)}
           placeholder="e.g. 94011 for organic bananas"
-          className={inputClass}
-          required
         />
         {barcode && isPLUCode(barcode) ? (
           <p className="mt-1 text-xs text-green-600">
@@ -63,6 +68,12 @@ export function ItemForm({
           </p>
         )}
       </div>
+
+      <ScannerViewfinder
+        isActive={scannerOpen}
+        onBarcodeDetected={handleBarcodeDetected}
+        onClose={() => setScannerOpen(false)}
+      />
 
       <div>
         <label htmlFor="item-name" className="block text-sm font-medium text-gray-700 dark:text-gray-300 mb-1">
