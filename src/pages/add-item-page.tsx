@@ -89,7 +89,7 @@ export default function AddItemPage() {
       });
 
       // Immediately add to active trip
-      const trip = await tripRepo.getActive();
+      const trip = await db.trips.where("status").equals("active").first();
       if (trip) {
         handleSelectItem(item);
       }
