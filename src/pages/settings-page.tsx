@@ -2,6 +2,7 @@ import { useState, useEffect, useRef } from "react";
 import { db } from "@/db/database";
 import { seedPLUCodes } from "@/db/seed-plu-codes";
 import { seedTJBarcodes } from "@/db/seed-tj-barcodes";
+import { seedTJReceipt } from "@/db/seed-tj-receipt";
 import { PageHeader } from "@/components/layout/page-header";
 import { useTheme } from "@/contexts/theme-context";
 import { exportItemsData, exportTripsData, downloadAsFile } from "@/services/export-service";
@@ -25,6 +26,8 @@ export default function SettingsPage() {
   const [seedResult, setSeedResult] = useState<{ added: number; skipped: number } | null>(null);
   const [seedingTJ, setSeedingTJ] = useState(false);
   const [seedTJResult, setSeedTJResult] = useState<{ added: number; skipped: number } | null>(null);
+  const [seedingReceipt, setSeedingReceipt] = useState(false);
+  const [seedReceiptResult, setSeedReceiptResult] = useState<{ added: number; skipped: number } | null>(null);
 
   // Items export/import state
   const [importingItems, setImportingItems] = useState(false);
@@ -321,6 +324,41 @@ export default function SettingsPage() {
               className="w-full rounded-lg border border-blue-300 dark:border-blue-600 text-blue-600 dark:text-blue-400 px-4 py-2.5 text-sm font-medium hover:bg-blue-50 dark:hover:bg-blue-900/30 active:bg-blue-100 transition-colors cursor-pointer disabled:opacity-50"
             >
               {seedingTJ ? "Loading..." : "Load TJ Barcodes"}
+            </button>
+          )}
+        </div>
+
+        {/* Pre-populate TJ Receipt (03/14/2026) */}
+        <div className="bg-white dark:bg-gray-800 rounded-lg border dark:border-gray-700 p-4 space-y-3">
+          <h2 className="text-sm font-medium text-gray-700 dark:text-gray-300">TJ's Receipt (03/14/2026)</h2>
+          <p className="text-xs text-gray-500 dark:text-gray-400">
+            Load ~40 items from the Trader Joe's Danbury receipt (03/14/2026) with prices as purchased.
+            Items with placeholder barcodes (TJR prefix) can be updated by scanning the actual product.
+            Existing items won't be overwritten.
+          </p>
+          {seedReceiptResult ? (
+            <div className="rounded-lg bg-green-50 dark:bg-green-900/30 border border-green-200 dark:border-green-700 p-3 text-sm text-green-700 dark:text-green-300">
+              Added {seedReceiptResult.added} item{seedReceiptResult.added !== 1 ? "s" : ""}.
+              {seedReceiptResult.skipped > 0 && ` Skipped ${seedReceiptResult.skipped} already in library.`}
+            </div>
+          ) : (
+            <button
+              type="button"
+              disabled={seedingReceipt}
+              onClick={async () => {
+                setSeedingReceipt(true);
+                try {
+                  const result = await seedTJReceipt();
+                  setSeedReceiptResult(result);
+                } catch {
+                  // silently fail
+                } finally {
+                  setSeedingReceipt(false);
+                }
+              }}
+              className="w-full rounded-lg border border-blue-300 dark:border-blue-600 text-blue-600 dark:text-blue-400 px-4 py-2.5 text-sm font-medium hover:bg-blue-50 dark:hover:bg-blue-900/30 active:bg-blue-100 transition-colors cursor-pointer disabled:opacity-50"
+            >
+              {seedingReceipt ? "Loading..." : "Load Receipt Items"}
             </button>
           )}
         </div>
