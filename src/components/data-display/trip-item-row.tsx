@@ -39,6 +39,7 @@ export function TripItemRow({
   // Swipe state
   const [offsetX, setOffsetX] = useState(0);
   const [swiped, setSwiped] = useState(false);
+  const [animateTransition, setAnimateTransition] = useState(true);
   const touchStartX = useRef(0);
   const touchStartY = useRef(0);
   const isTracking = useRef(false);
@@ -122,6 +123,7 @@ export function TripItemRow({
       if (!isTracking.current) {
         if (Math.abs(dx) > 10 && Math.abs(dx) > Math.abs(dy)) {
           isTracking.current = true;
+          setAnimateTransition(false);
         } else if (Math.abs(dy) > 10) {
           // Vertical scroll, bail
           return;
@@ -146,6 +148,8 @@ export function TripItemRow({
   const handleTouchEnd = useCallback(() => {
     if (!editable) return;
     clearLongPress();
+
+    setAnimateTransition(true);
 
     if (swiped && !isTracking.current) {
       // Tap while swiped = close
@@ -196,7 +200,7 @@ export function TripItemRow({
         className="relative bg-white dark:bg-gray-800 px-4 py-3"
         style={{
           transform: `translateX(${offsetX}px)`,
-          transition: isTracking.current ? "none" : "transform 0.2s ease-out",
+          transition: animateTransition ? "transform 0.2s ease-out" : "none",
         }}
         onTouchStart={handleTouchStart}
         onTouchMove={handleTouchMove}
