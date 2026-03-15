@@ -47,7 +47,7 @@ export function ItemLibraryPage() {
         }
       />
 
-      <div className="px-4 py-3">
+      <div className="sticky top-0 z-10 bg-gray-50 dark:bg-gray-900 px-4 py-3">
         <div className="relative">
           <svg
             xmlns="http://www.w3.org/2000/svg"
