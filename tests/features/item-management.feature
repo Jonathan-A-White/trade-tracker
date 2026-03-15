@@ -1,87 +1,98 @@
 Feature: Item Management
   As a grocery shopper
   I want to manage my item library
-  So that I can track products and their prices over time
+  So that I can quickly add items to trips and track prices
 
   Background:
     Given the app is loaded
 
-  # From commit: Implement TradeTracker grocery tracking PWA
+  # Commit: Implement TradeTracker grocery tracking PWA
   Scenario: View item library
-    Given I have items "Bananas", "Milk", and "Bread" in my library
+    Given items exist in the database
     When I navigate to the Items page
-    Then I see all 3 items listed
-    And each item shows its name, price, and category
+    Then I should see a list of all items
+    And each item should show its name, price, and category
 
-  # From commit: Implement TradeTracker grocery tracking PWA
+  # Commit: Implement TradeTracker grocery tracking PWA
+  Scenario: Search for an item in the library
+    Given an item "Organic Bananas" exists
+    And an item "Whole Milk" exists
+    When I navigate to the Items page
+    And I type "banana" in the search bar
+    Then I should see "Organic Bananas" in the results
+    And I should not see "Whole Milk" in the results
+
+  # Commit: Make search bar sticky at top of Items page
+  Scenario: Search bar stays visible while scrolling item library
+    Given many items exist in the database
+    When I navigate to the Items page
+    And I scroll down through the item list
+    Then the search bar should remain sticky at the top of the page
+
+  # Commit: Implement TradeTracker grocery tracking PWA
   Scenario: Create a new item manually
     When I navigate to the New Item page
-    And I enter the name "Organic Eggs"
-    And I enter the barcode "012345678901"
-    And I enter the price "$5.99"
+    And I enter the name "Almond Milk"
+    And I enter the barcode "041570054529"
+    And I enter the price "$3.99"
     And I select unit type "each"
     And I tap "Save"
-    Then the item "Organic Eggs" is created in the database
-    And I am navigated back to the item library
+    Then the item "Almond Milk" should be created in the database
+    And the item should have barcode "041570054529"
 
-  # From commit: Implement TradeTracker grocery tracking PWA
+  # Commit: Implement TradeTracker grocery tracking PWA
   Scenario: Create a per-pound item
     When I navigate to the New Item page
     And I enter the name "Chicken Breast"
     And I enter the price "$6.99"
     And I select unit type "per_lb"
     And I tap "Save"
-    Then the item "Chicken Breast" is created with unit type "per_lb"
+    Then the item "Chicken Breast" should be created with unit type "per_lb"
 
-  # From commit: Improve barcode field UI to indicate PLU codes are accepted
-  Scenario: PLU code recognition in item form
+  # Commit: Improve barcode field UI to indicate PLU codes are accepted
+  Scenario: PLU code is recognized in barcode field
     When I navigate to the New Item page
-    And I enter the barcode "4011"
-    Then I see a hint indicating PLU codes are accepted
-    And the barcode field label indicates "Barcode / PLU Code"
+    And I enter "4011" in the barcode field
+    Then I should see a hint indicating this is a PLU code
+    And the field label should indicate "Barcode / PLU Code"
 
-  # From commit: Implement TradeTracker grocery tracking PWA
+  # Commit: Implement TradeTracker grocery tracking PWA
   Scenario: View item detail with price history
-    Given I have an item "Bananas" with price history across 5 trips
-    When I tap on "Bananas" in the item library
-    Then I see the item detail page
-    And I see the current price per unit
-    And I see the unit type
-    And I see a price history chart showing trends over time
+    Given an item "Organic Bananas" exists with price history
+    When I navigate to the Item Detail page for "Organic Bananas"
+    Then I should see the current price
+    And I should see the unit type
+    And I should see a price history chart
+    And I should see a link to the full price history report
 
-  # From commit: Make search bar sticky at top of Items page
-  Scenario: Search bar stays sticky while scrolling items
-    Given I have many items in my library
-    When I navigate to the Items page
-    And I scroll down through the item list
-    Then the search bar remains fixed at the top of the page
+  # Commit: Implement TradeTracker grocery tracking PWA
+  Scenario: Edit an existing item
+    Given an item "Almond Milk" exists with price "$3.99"
+    When I navigate to the Item Detail page for "Almond Milk"
+    And I tap "Edit"
+    And I change the name to "Vanilla Almond Milk"
+    And I tap "Save"
+    Then the item name should be updated to "Vanilla Almond Milk"
 
-  # From commit: Implement TradeTracker grocery tracking PWA
-  Scenario: Search items by name
-    Given I have items "Bananas", "Banana Chips", "Bread", and "Butter"
-    When I navigate to the Items page
-    And I type "Banana" in the search bar
-    Then I see "Bananas" and "Banana Chips" in the results
-    And I do not see "Bread" or "Butter"
+  # Commit: Remove unused picture field from Item interface
+  Scenario: Item does not have a picture field
+    When I create a new item "Test Item"
+    Then the item should not have a "picture" property
+    And the item form should not show a picture upload field
 
-  # From commit: Remove unused picture field from Item interface
-  Scenario: Item interface does not include picture field
-    When I create a new item
-    Then the item form does not show a picture upload field
-    And the item is saved without a picture property
-
-  # From commit: Add grocery category autocomplete with typeahead search
-  Scenario: Category autocomplete when creating an item
-    Given I have items with categories "Produce", "Dairy", and "Bakery"
+  # Commit: Add grocery category autocomplete with typeahead search
+  Scenario: Category autocomplete suggests existing categories
+    Given items exist with categories "Produce", "Dairy", "Bakery"
     When I navigate to the New Item page
     And I start typing "Pro" in the category field
-    Then I see a dropdown suggestion showing "Produce"
+    Then I should see "Produce" as a suggestion
     When I select "Produce"
-    Then the category field is populated with "Produce"
+    Then the category field should be filled with "Produce"
 
-  # From commit: Add grocery category autocomplete with typeahead search
-  Scenario: Category autocomplete shows all matching categories
-    Given I have items with categories "Produce", "Protein", and "Dairy"
-    When I start typing "Pro" in the category field
-    Then I see suggestions for "Produce" and "Protein"
-    But I do not see "Dairy"
+  # Commit: Add grocery category autocomplete with typeahead search
+  Scenario: Enter a custom category not in suggestions
+    Given items exist with categories "Produce", "Dairy"
+    When I navigate to the New Item page
+    And I type "Frozen Foods" in the category field
+    And I tap away from the field
+    Then the category should be set to "Frozen Foods"
