@@ -1,4 +1,4 @@
-import { useState, useMemo, useCallback } from "react";
+import { useState, useMemo, useCallback, useRef } from "react";
 import { useLiveQuery } from "dexie-react-hooks";
 import { useNavigate } from "react-router";
 import { db } from "@/db/database";
@@ -14,6 +14,8 @@ export default function EndTripPage() {
   const navigate = useNavigate();
   const [receiptTotal, setReceiptTotal] = useState("");
   const [saving, setSaving] = useState(false);
+  const [saveError, setSaveError] = useState<string | null>(null);
+  const savingRef = useRef(false);
 
   const trip = useLiveQuery(() => tripRepo.getActive(), []);
 
@@ -48,18 +50,23 @@ export default function EndTripPage() {
   }, [receiptTotal, absDifference]);
 
   const handleSaveTrip = useCallback(async () => {
-    if (!trip || saving) return;
+    if (!trip || savingRef.current) return;
+    savingRef.current = true;
     setSaving(true);
+    setSaveError(null);
     try {
       await tripRepo.complete(
         trip.id,
         receiptTotal ? receiptValue : undefined,
       );
       navigate("/");
-    } finally {
+    } catch (error) {
+      console.error("Failed to save trip:", error);
+      setSaveError("Failed to save trip. Please try again.");
+      savingRef.current = false;
       setSaving(false);
     }
-  }, [trip, receiptTotal, receiptValue, saving, navigate]);
+  }, [trip, receiptTotal, receiptValue, navigate]);
 
   if (!trip) {
     return (
@@ -155,6 +162,13 @@ export default function EndTripPage() {
             </p>
           )}
         </div>
+
+        {/* Error message */}
+        {saveError && (
+          <div className="rounded-lg border border-red-300 dark:border-red-700 bg-red-50 dark:bg-red-900/30 p-3">
+            <p className="text-sm text-red-700 dark:text-red-300">{saveError}</p>
+          </div>
+        )}
 
         {/* Action buttons */}
         <div className="space-y-3 pt-2">
