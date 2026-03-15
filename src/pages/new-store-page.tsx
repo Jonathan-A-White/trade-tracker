@@ -7,9 +7,11 @@ export function NewStorePage() {
   const navigate = useNavigate();
   const storeRepo = new StoreRepository();
 
-  async function handleSubmit(values: { name: string; notes: string }) {
+  async function handleSubmit(values: { name: string; city: string; state: string; notes: string }) {
     await storeRepo.create({
       name: values.name,
+      city: values.city || undefined,
+      state: values.state || undefined,
       notes: values.notes || undefined,
     });
     navigate("/stores");

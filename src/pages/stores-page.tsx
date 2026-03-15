@@ -77,8 +77,13 @@ export function StoresPage() {
                     <p className="font-medium text-gray-900 dark:text-gray-100 truncate">
                       {store.name}
                     </p>
-                    {store.notes && (
+                    {(store.city || store.state) && (
                       <p className="text-sm text-gray-500 dark:text-gray-400 mt-0.5 truncate">
+                        {[store.city, store.state].filter(Boolean).join(", ")}
+                      </p>
+                    )}
+                    {store.notes && (
+                      <p className="text-xs text-gray-400 dark:text-gray-500 mt-0.5 truncate">
                         {store.notes}
                       </p>
                     )}

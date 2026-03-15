@@ -4,6 +4,8 @@ export type TripStatus = "active" | "completed";
 export interface Store {
   id: string;
   name: string;
+  city?: string;
+  state?: string;
   notes?: string;
   createdAt: number;
   updatedAt: number;

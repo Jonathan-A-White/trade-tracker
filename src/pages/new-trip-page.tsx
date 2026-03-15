@@ -75,9 +75,11 @@ export default function NewTripPage() {
   }, [activeTrip, pendingStoreId, stores]);
 
   const handleCreateStore = useCallback(
-    async (values: { name: string; notes: string }) => {
+    async (values: { name: string; city: string; state: string; notes: string }) => {
       const store = await storeRepo.create({
         name: values.name,
+        city: values.city || undefined,
+        state: values.state || undefined,
         notes: values.notes || undefined,
       });
       setShowStoreForm(false);
