@@ -1,6 +1,7 @@
 import { useState, useEffect } from "react";
 import { db } from "@/db/database";
 import { seedPLUCodes } from "@/db/seed-plu-codes";
+import { seedTJBarcodes } from "@/db/seed-tj-barcodes";
 import { PageHeader } from "@/components/layout/page-header";
 import { useTheme } from "@/contexts/theme-context";
 
@@ -15,6 +16,8 @@ export default function SettingsPage() {
   const [cleared, setCleared] = useState(false);
   const [seeding, setSeeding] = useState(false);
   const [seedResult, setSeedResult] = useState<{ added: number; skipped: number } | null>(null);
+  const [seedingTJ, setSeedingTJ] = useState(false);
+  const [seedTJResult, setSeedTJResult] = useState<{ added: number; skipped: number } | null>(null);
 
   useEffect(() => {
     async function estimateStorage() {
@@ -167,6 +170,40 @@ export default function SettingsPage() {
               className="w-full rounded-lg border border-blue-300 dark:border-blue-600 text-blue-600 dark:text-blue-400 px-4 py-2.5 text-sm font-medium hover:bg-blue-50 dark:hover:bg-blue-900/30 active:bg-blue-100 transition-colors cursor-pointer disabled:opacity-50"
             >
               {seeding ? "Loading..." : "Load PLU Codes"}
+            </button>
+          )}
+        </div>
+
+        {/* Pre-populate Trader Joe's barcodes */}
+        <div className="bg-white dark:bg-gray-800 rounded-lg border dark:border-gray-700 p-4 space-y-3">
+          <h2 className="text-sm font-medium text-gray-700 dark:text-gray-300">Trader Joe's Barcodes</h2>
+          <p className="text-xs text-gray-500 dark:text-gray-400">
+            Load ~30 popular Trader Joe's product barcodes (frozen, dairy, snacks, dips, and more)
+            with approximate prices. Existing items won't be overwritten.
+          </p>
+          {seedTJResult ? (
+            <div className="rounded-lg bg-green-50 dark:bg-green-900/30 border border-green-200 dark:border-green-700 p-3 text-sm text-green-700 dark:text-green-300">
+              Added {seedTJResult.added} item{seedTJResult.added !== 1 ? "s" : ""}.
+              {seedTJResult.skipped > 0 && ` Skipped ${seedTJResult.skipped} already in library.`}
+            </div>
+          ) : (
+            <button
+              type="button"
+              disabled={seedingTJ}
+              onClick={async () => {
+                setSeedingTJ(true);
+                try {
+                  const result = await seedTJBarcodes();
+                  setSeedTJResult(result);
+                } catch {
+                  // silently fail
+                } finally {
+                  setSeedingTJ(false);
+                }
+              }}
+              className="w-full rounded-lg border border-blue-300 dark:border-blue-600 text-blue-600 dark:text-blue-400 px-4 py-2.5 text-sm font-medium hover:bg-blue-50 dark:hover:bg-blue-900/30 active:bg-blue-100 transition-colors cursor-pointer disabled:opacity-50"
+            >
+              {seedingTJ ? "Loading..." : "Load TJ Barcodes"}
             </button>
           )}
         </div>
