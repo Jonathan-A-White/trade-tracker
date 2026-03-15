@@ -42,9 +42,10 @@ export default function EndTripPage() {
   }, [tripItems]);
 
   // Calculate tax estimate if a tax module is available for this store's state
+  const storeState = store?.state;
   const taxEstimate = useMemo((): TaxEstimate | null => {
-    if (!store?.state || !tripItems || !itemsById) return null;
-    const taxModule = getTaxModule(store.state);
+    if (!storeState || !tripItems || !itemsById) return null;
+    const taxModule = getTaxModule(storeState);
     if (!taxModule) return null;
 
     const lineItems = tripItems.map((ti) => {
@@ -57,7 +58,7 @@ export default function EndTripPage() {
     });
 
     return taxModule.calculate(lineItems);
-  }, [store?.state, tripItems, itemsById]);
+  }, [storeState, tripItems, itemsById]);
 
   const receiptValue = parseFloat(receiptTotal) || 0;
   const scannedSubtotal = trip?.scannedSubtotal ?? 0;
