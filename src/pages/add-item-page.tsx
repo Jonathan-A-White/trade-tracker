@@ -44,21 +44,19 @@ export default function AddItemPage() {
     savingRef.current = true;
     setAddingItemId(item.id);
     try {
-      await db.transaction("rw", [db.tripItems, db.priceHistory, db.trips], async () => {
-        const trip = await db.trips.where("status").equals("active").first();
-        if (!trip) return;
+      const trip = await db.trips.where("status").equals("active").first();
+      if (!trip) throw new Error("No active trip");
 
-        await tripItemRepo.addToTrip({
-          tripId: trip.id,
-          itemId: item.id,
-          price: item.currentPrice,
-          quantity,
-          weightLbs:
-            item.unitType === "per_lb" && weightLbs
-              ? parseFloat(weightLbs)
-              : undefined,
-          onSale: false,
-        });
+      await tripItemRepo.addToTrip({
+        tripId: trip.id,
+        itemId: item.id,
+        price: item.currentPrice,
+        quantity,
+        weightLbs:
+          item.unitType === "per_lb" && weightLbs
+            ? parseFloat(weightLbs)
+            : undefined,
+        onSale: false,
       });
 
       setQuantityPrompt(null);

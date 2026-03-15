@@ -38,21 +38,19 @@ export default function ScannerPage() {
     setAdding(true);
 
     try {
-      await db.transaction("rw", [db.tripItems, db.priceHistory, db.trips], async () => {
-        const trip = await db.trips.where("status").equals("active").first();
-        if (!trip) return;
+      const trip = await db.trips.where("status").equals("active").first();
+      if (!trip) throw new Error("No active trip");
 
-        await tripItemRepo.addToTrip({
-          tripId: trip.id,
-          itemId: foundItem.id,
-          price: foundItem.currentPrice,
-          quantity,
-          weightLbs:
-            foundItem.unitType === "per_lb" && weightLbs
-              ? parseFloat(weightLbs)
-              : undefined,
-          onSale: false,
-        });
+      await tripItemRepo.addToTrip({
+        tripId: trip.id,
+        itemId: foundItem.id,
+        price: foundItem.currentPrice,
+        quantity,
+        weightLbs:
+          foundItem.unitType === "per_lb" && weightLbs
+            ? parseFloat(weightLbs)
+            : undefined,
+        onSale: false,
       });
 
       setFoundItem(null);
