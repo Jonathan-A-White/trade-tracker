@@ -13,7 +13,6 @@ export interface Item {
   id: string;
   barcode: string;
   name: string;
-  picture?: Blob;
   currentPrice: number;
   unitType: UnitType;
   category?: string;
