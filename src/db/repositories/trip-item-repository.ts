@@ -121,7 +121,8 @@ export class TripItemRepository {
   }
 
   async getByTrip(tripId: string): Promise<TripItem[]> {
-    return db.tripItems.where("tripId").equals(tripId).toArray();
+    const items = await db.tripItems.where("tripId").equals(tripId).toArray();
+    return items.sort((a, b) => a.addedAt - b.addedAt);
   }
 
   private async recalcTripSubtotal(tripId: string): Promise<void> {
