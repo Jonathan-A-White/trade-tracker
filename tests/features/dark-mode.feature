@@ -6,45 +6,46 @@ Feature: Dark Mode
   Background:
     Given the app is loaded
 
-  # From commit: Add dark mode support with theme toggle
+  # Commit: Add dark mode support with theme toggle
   Scenario: Toggle dark mode on
     Given the app is in light mode
     When I navigate to the Settings page
-    And I tap the dark mode toggle
-    Then the app switches to dark mode
-    And all UI components use dark theme colors
-    And the preference is saved to localStorage
+    And I toggle the dark mode switch on
+    Then the app should switch to dark mode
+    And all pages should use dark mode colors
+    And the preference should be persisted to localStorage
 
-  # From commit: Add dark mode support with theme toggle
+  # Commit: Add dark mode support with theme toggle
   Scenario: Toggle dark mode off
     Given the app is in dark mode
     When I navigate to the Settings page
-    And I tap the dark mode toggle
-    Then the app switches to light mode
-    And all UI components use light theme colors
+    And I toggle the dark mode switch off
+    Then the app should switch to light mode
+    And all pages should use light mode colors
 
-  # From commit: Add dark mode support with theme toggle
-  Scenario: Dark mode persists across sessions
-    Given I have previously enabled dark mode
+  # Commit: Add dark mode support with theme toggle
+  Scenario: Dark mode preference persists across sessions
+    Given I have enabled dark mode
     When I reload the app
-    Then the app starts in dark mode
+    Then the app should start in dark mode
 
-  # From commit: Add dark mode support with theme toggle
-  Scenario: Dark mode respects system preference on first load
-    Given this is a fresh install with no saved theme preference
-    And the system color scheme is set to dark
-    When I load the app for the first time
-    Then the app starts in dark mode
+  # Commit: Add dark mode support with theme toggle
+  Scenario: Respect system preference on first load
+    Given the user has not set a theme preference
+    And the system prefers dark mode
+    When the app loads for the first time
+    Then the app should start in dark mode
 
-  # From commit: Add dark mode support with theme toggle
+  # Commit: Remove theme toggle from page headers
+  Scenario: Theme toggle is only available in Settings
+    When I navigate to any page in the app
+    Then the page header should not contain a theme toggle
+    When I navigate to the Settings page
+    Then I should see the dark mode toggle option
+
+  # Commit: Add dark mode support with theme toggle
   Scenario: Charts adapt to dark mode
     Given the app is in dark mode
     When I view a price history chart
-    Then the chart colors are adapted for dark backgrounds
-    And text labels are readable against the dark background
-
-  # From commit: Remove theme toggle from page headers
-  Scenario: Theme toggle is only in Settings
-    When I navigate to any page with a header
-    Then the header does not contain a theme toggle button
-    And the theme toggle is only available on the Settings page
+    Then the chart colors should be adapted for dark backgrounds
+    And the chart should remain readable
