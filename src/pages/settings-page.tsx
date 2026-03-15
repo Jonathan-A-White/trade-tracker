@@ -1,9 +1,16 @@
-import { useState, useEffect } from "react";
+import { useState, useEffect, useRef } from "react";
 import { db } from "@/db/database";
 import { seedPLUCodes } from "@/db/seed-plu-codes";
 import { seedTJBarcodes } from "@/db/seed-tj-barcodes";
 import { PageHeader } from "@/components/layout/page-header";
 import { useTheme } from "@/contexts/theme-context";
+import { exportItemsData, exportTripsData, downloadAsFile } from "@/services/export-service";
+import {
+  validateItemsImportData,
+  validateTripsImportData,
+  importItemsData,
+  importTripsData,
+} from "@/services/import-service";
 
 export default function SettingsPage() {
   const [storageUsage, setStorageUsage] = useState<{
@@ -18,6 +25,22 @@ export default function SettingsPage() {
   const [seedResult, setSeedResult] = useState<{ added: number; skipped: number } | null>(null);
   const [seedingTJ, setSeedingTJ] = useState(false);
   const [seedTJResult, setSeedTJResult] = useState<{ added: number; skipped: number } | null>(null);
+
+  // Items export/import state
+  const [importingItems, setImportingItems] = useState(false);
+  const [itemsImportResult, setItemsImportResult] = useState<{ added: number; skipped: number } | null>(null);
+  const [itemsImportError, setItemsImportError] = useState<string | null>(null);
+  const [showItemsImportConfirm, setShowItemsImportConfirm] = useState(false);
+  const [pendingItemsImportData, setPendingItemsImportData] = useState<string | null>(null);
+  const itemsFileRef = useRef<HTMLInputElement>(null);
+
+  // Trips export/import state
+  const [importingTrips, setImportingTrips] = useState(false);
+  const [tripsImportResult, setTripsImportResult] = useState<{ added: number; skipped: number } | null>(null);
+  const [tripsImportError, setTripsImportError] = useState<string | null>(null);
+  const [showTripsImportConfirm, setShowTripsImportConfirm] = useState(false);
+  const [pendingTripsImportData, setPendingTripsImportData] = useState<string | null>(null);
+  const tripsFileRef = useRef<HTMLInputElement>(null);
 
   useEffect(() => {
     async function estimateStorage() {
@@ -60,6 +83,100 @@ export default function SettingsPage() {
       // silently fail
     } finally {
       setClearing(false);
+    }
+  }
+
+  async function handleExportItems() {
+    const json = await exportItemsData();
+    const timestamp = new Date().toISOString().split("T")[0];
+    downloadAsFile(json, `tradetracker-items-${timestamp}.json`, "application/json");
+  }
+
+  async function handleExportTrips() {
+    const json = await exportTripsData();
+    const timestamp = new Date().toISOString().split("T")[0];
+    downloadAsFile(json, `tradetracker-trips-${timestamp}.json`, "application/json");
+  }
+
+  function handleItemsFileSelect(e: React.ChangeEvent<HTMLInputElement>) {
+    setItemsImportError(null);
+    setItemsImportResult(null);
+    const file = e.target.files?.[0];
+    if (!file) return;
+
+    const reader = new FileReader();
+    reader.onload = (event) => {
+      const text = event.target?.result as string;
+      try {
+        const parsed = JSON.parse(text);
+        const validation = validateItemsImportData(parsed);
+        if (!validation.valid) {
+          setItemsImportError(`Invalid file: ${validation.errors.join(", ")}`);
+          return;
+        }
+        setPendingItemsImportData(text);
+        setShowItemsImportConfirm(true);
+      } catch {
+        setItemsImportError("Could not parse file. Make sure it is a valid JSON items export.");
+      }
+    };
+    reader.readAsText(file);
+  }
+
+  async function handleConfirmItemsImport() {
+    if (!pendingItemsImportData) return;
+    setImportingItems(true);
+    setShowItemsImportConfirm(false);
+    try {
+      const result = await importItemsData(pendingItemsImportData);
+      setItemsImportResult(result);
+      setPendingItemsImportData(null);
+    } catch (err) {
+      setItemsImportError(err instanceof Error ? err.message : "Import failed");
+    } finally {
+      setImportingItems(false);
+      if (itemsFileRef.current) itemsFileRef.current.value = "";
+    }
+  }
+
+  function handleTripsFileSelect(e: React.ChangeEvent<HTMLInputElement>) {
+    setTripsImportError(null);
+    setTripsImportResult(null);
+    const file = e.target.files?.[0];
+    if (!file) return;
+
+    const reader = new FileReader();
+    reader.onload = (event) => {
+      const text = event.target?.result as string;
+      try {
+        const parsed = JSON.parse(text);
+        const validation = validateTripsImportData(parsed);
+        if (!validation.valid) {
+          setTripsImportError(`Invalid file: ${validation.errors.join(", ")}`);
+          return;
+        }
+        setPendingTripsImportData(text);
+        setShowTripsImportConfirm(true);
+      } catch {
+        setTripsImportError("Could not parse file. Make sure it is a valid JSON trips export.");
+      }
+    };
+    reader.readAsText(file);
+  }
+
+  async function handleConfirmTripsImport() {
+    if (!pendingTripsImportData) return;
+    setImportingTrips(true);
+    setShowTripsImportConfirm(false);
+    try {
+      const result = await importTripsData(pendingTripsImportData);
+      setTripsImportResult(result);
+      setPendingTripsImportData(null);
+    } catch (err) {
+      setTripsImportError(err instanceof Error ? err.message : "Import failed");
+    } finally {
+      setImportingTrips(false);
+      if (tripsFileRef.current) tripsFileRef.current.value = "";
     }
   }
 
@@ -208,6 +325,86 @@ export default function SettingsPage() {
           )}
         </div>
 
+        {/* Export/Import Items */}
+        <div className="bg-white dark:bg-gray-800 rounded-lg border dark:border-gray-700 p-4 space-y-3">
+          <h2 className="text-sm font-medium text-gray-700 dark:text-gray-300">Export / Import Items</h2>
+          <p className="text-xs text-gray-500 dark:text-gray-400">
+            Export all items as a JSON file, or import items from a previously exported file.
+            Importing will add new items without overwriting existing ones.
+          </p>
+          <div className="flex gap-3">
+            <button
+              type="button"
+              onClick={handleExportItems}
+              className="flex-1 rounded-lg border border-blue-300 dark:border-blue-600 text-blue-600 dark:text-blue-400 px-4 py-2.5 text-sm font-medium hover:bg-blue-50 dark:hover:bg-blue-900/30 active:bg-blue-100 transition-colors cursor-pointer"
+            >
+              Export Items
+            </button>
+            <label className="flex-1 rounded-lg border border-blue-300 dark:border-blue-600 text-blue-600 dark:text-blue-400 px-4 py-2.5 text-sm font-medium hover:bg-blue-50 dark:hover:bg-blue-900/30 active:bg-blue-100 transition-colors cursor-pointer text-center">
+              {importingItems ? "Importing..." : "Import Items"}
+              <input
+                ref={itemsFileRef}
+                type="file"
+                accept=".json"
+                onChange={handleItemsFileSelect}
+                disabled={importingItems}
+                className="hidden"
+              />
+            </label>
+          </div>
+          {itemsImportError && (
+            <p className="text-sm text-red-600 dark:text-red-400 bg-red-50 dark:bg-red-900/30 rounded-lg p-3">
+              {itemsImportError}
+            </p>
+          )}
+          {itemsImportResult && (
+            <div className="rounded-lg bg-green-50 dark:bg-green-900/30 border border-green-200 dark:border-green-700 p-3 text-sm text-green-700 dark:text-green-300">
+              Added {itemsImportResult.added} item{itemsImportResult.added !== 1 ? "s" : ""}.
+              {itemsImportResult.skipped > 0 && ` Skipped ${itemsImportResult.skipped} already in library.`}
+            </div>
+          )}
+        </div>
+
+        {/* Export/Import Trips */}
+        <div className="bg-white dark:bg-gray-800 rounded-lg border dark:border-gray-700 p-4 space-y-3">
+          <h2 className="text-sm font-medium text-gray-700 dark:text-gray-300">Export / Import Trips</h2>
+          <p className="text-xs text-gray-500 dark:text-gray-400">
+            Export all trip data (trips, stores, and price history) as a JSON file, or import from a
+            previously exported file. Importing will add new trips without overwriting existing ones.
+          </p>
+          <div className="flex gap-3">
+            <button
+              type="button"
+              onClick={handleExportTrips}
+              className="flex-1 rounded-lg border border-blue-300 dark:border-blue-600 text-blue-600 dark:text-blue-400 px-4 py-2.5 text-sm font-medium hover:bg-blue-50 dark:hover:bg-blue-900/30 active:bg-blue-100 transition-colors cursor-pointer"
+            >
+              Export Trips
+            </button>
+            <label className="flex-1 rounded-lg border border-blue-300 dark:border-blue-600 text-blue-600 dark:text-blue-400 px-4 py-2.5 text-sm font-medium hover:bg-blue-50 dark:hover:bg-blue-900/30 active:bg-blue-100 transition-colors cursor-pointer text-center">
+              {importingTrips ? "Importing..." : "Import Trips"}
+              <input
+                ref={tripsFileRef}
+                type="file"
+                accept=".json"
+                onChange={handleTripsFileSelect}
+                disabled={importingTrips}
+                className="hidden"
+              />
+            </label>
+          </div>
+          {tripsImportError && (
+            <p className="text-sm text-red-600 dark:text-red-400 bg-red-50 dark:bg-red-900/30 rounded-lg p-3">
+              {tripsImportError}
+            </p>
+          )}
+          {tripsImportResult && (
+            <div className="rounded-lg bg-green-50 dark:bg-green-900/30 border border-green-200 dark:border-green-700 p-3 text-sm text-green-700 dark:text-green-300">
+              Added {tripsImportResult.added} trip{tripsImportResult.added !== 1 ? "s" : ""}.
+              {tripsImportResult.skipped > 0 && ` Skipped ${tripsImportResult.skipped} already imported.`}
+            </div>
+          )}
+        </div>
+
         {/* Clear data */}
         <div className="bg-white dark:bg-gray-800 rounded-lg border dark:border-gray-700 p-4 space-y-3">
           <h2 className="text-sm font-medium text-gray-700 dark:text-gray-300">Danger Zone</h2>
@@ -247,6 +444,76 @@ export default function SettingsPage() {
           </div>
         </div>
       </div>
+
+      {/* Confirm items import dialog */}
+      {showItemsImportConfirm && (
+        <div className="fixed inset-0 z-50 flex items-center justify-center bg-black/50 p-4">
+          <div className="bg-white dark:bg-gray-800 rounded-xl p-6 w-full max-w-sm shadow-xl space-y-4">
+            <h3 className="text-lg font-semibold text-gray-900 dark:text-gray-100">
+              Import Items?
+            </h3>
+            <p className="text-sm text-gray-600 dark:text-gray-400">
+              New items will be added to your library. Existing items with the same
+              ID will be skipped.
+            </p>
+            <div className="flex gap-3">
+              <button
+                type="button"
+                onClick={() => {
+                  setShowItemsImportConfirm(false);
+                  setPendingItemsImportData(null);
+                  if (itemsFileRef.current) itemsFileRef.current.value = "";
+                }}
+                className="flex-1 rounded-lg border border-gray-300 dark:border-gray-600 px-4 py-2.5 text-sm font-medium text-gray-700 dark:text-gray-300 hover:bg-gray-50 dark:hover:bg-gray-700 cursor-pointer"
+              >
+                Cancel
+              </button>
+              <button
+                type="button"
+                onClick={handleConfirmItemsImport}
+                className="flex-1 rounded-lg bg-blue-600 px-4 py-2.5 text-sm font-medium text-white hover:bg-blue-700 cursor-pointer"
+              >
+                Import
+              </button>
+            </div>
+          </div>
+        </div>
+      )}
+
+      {/* Confirm trips import dialog */}
+      {showTripsImportConfirm && (
+        <div className="fixed inset-0 z-50 flex items-center justify-center bg-black/50 p-4">
+          <div className="bg-white dark:bg-gray-800 rounded-xl p-6 w-full max-w-sm shadow-xl space-y-4">
+            <h3 className="text-lg font-semibold text-gray-900 dark:text-gray-100">
+              Import Trips?
+            </h3>
+            <p className="text-sm text-gray-600 dark:text-gray-400">
+              New trips and their associated stores will be added. Existing trips
+              with the same ID will be skipped.
+            </p>
+            <div className="flex gap-3">
+              <button
+                type="button"
+                onClick={() => {
+                  setShowTripsImportConfirm(false);
+                  setPendingTripsImportData(null);
+                  if (tripsFileRef.current) tripsFileRef.current.value = "";
+                }}
+                className="flex-1 rounded-lg border border-gray-300 dark:border-gray-600 px-4 py-2.5 text-sm font-medium text-gray-700 dark:text-gray-300 hover:bg-gray-50 dark:hover:bg-gray-700 cursor-pointer"
+              >
+                Cancel
+              </button>
+              <button
+                type="button"
+                onClick={handleConfirmTripsImport}
+                className="flex-1 rounded-lg bg-blue-600 px-4 py-2.5 text-sm font-medium text-white hover:bg-blue-700 cursor-pointer"
+              >
+                Import
+              </button>
+            </div>
+          </div>
+        </div>
+      )}
 
       {/* Confirm dialog */}
       {showClearConfirm && (
