@@ -98,10 +98,10 @@ export default function AddItemPage() {
   );
 
   return (
-    <div className="flex flex-col min-h-screen bg-gray-50 dark:bg-gray-900">
+    <div className="fixed inset-0 z-50 flex flex-col bg-gray-50 dark:bg-gray-900">
       <PageHeader title="Add Item" backTo="/trips/active" />
 
-      <main className="flex-1 p-4 space-y-6">
+      <main className="flex-1 overflow-y-auto p-4 space-y-6">
         {/* Quantity/weight prompt */}
         {quantityPrompt && (
           <div className="fixed inset-0 z-50 flex items-center justify-center bg-black/40">
