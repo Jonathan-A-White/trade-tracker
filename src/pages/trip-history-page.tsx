@@ -88,8 +88,9 @@ export default function TripHistoryPage() {
     <div className="flex flex-col min-h-screen bg-gray-50 dark:bg-gray-900">
       <PageHeader title="Trip History" backTo="/" />
 
-      <main className="flex-1 p-4 space-y-4">
-        {/* Filter bar */}
+      <main className="flex-1 overflow-y-auto">
+        {/* Filter bar – sticky */}
+        <div className="sticky top-0 z-10 p-4 pb-0 bg-gray-50 dark:bg-gray-900">
         <div className="bg-white dark:bg-gray-800 rounded-lg border dark:border-gray-700 p-4 space-y-3">
           <div>
             <label
@@ -120,8 +121,10 @@ export default function TripHistoryPage() {
             presets={presets}
           />
         </div>
+        </div>
 
         {/* Trip list */}
+        <div className="p-4 pt-4 space-y-4">
         {!trips || trips.length === 0 ? (
           <div className="flex flex-col items-center justify-center py-16 text-center">
             <svg
@@ -157,6 +160,7 @@ export default function TripHistoryPage() {
             ))}
           </div>
         )}
+        </div>
       </main>
     </div>
   );
