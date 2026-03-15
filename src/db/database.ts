@@ -23,6 +23,9 @@ export class TradeTrackerDB extends Dexie {
       tripItems: "id, tripId, itemId, [tripId+itemId], addedAt",
       priceHistory: "id, itemId, storeId, [itemId+storeId], recordedAt",
     });
+
+    // Version 2: Add optional budget field to trips (no index needed)
+    this.version(2).stores({});
   }
 }
 
