@@ -17,10 +17,12 @@ export function EditStorePage() {
     return db.stores.get(id);
   }, [id]);
 
-  async function handleSubmit(values: { name: string; notes: string }) {
+  async function handleSubmit(values: { name: string; city: string; state: string; notes: string }) {
     if (!id) return;
     await storeRepo.update(id, {
       name: values.name,
+      city: values.city || undefined,
+      state: values.state || undefined,
       notes: values.notes || undefined,
     });
     navigate("/stores");
@@ -59,7 +61,7 @@ export function EditStorePage() {
       <PageHeader title="Edit Store" backTo="/stores" />
       <div className="flex-1 px-4 py-4 space-y-6">
         <StoreForm
-          initialValues={{ name: store.name, notes: store.notes ?? "" }}
+          initialValues={{ name: store.name, city: store.city ?? "", state: store.state ?? "", notes: store.notes ?? "" }}
           onSubmit={handleSubmit}
           onCancel={() => navigate("/stores")}
         />

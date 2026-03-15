@@ -6,6 +6,8 @@ import { TripRepository } from "@/db/repositories/trip-repository";
 import { TripItemRepository } from "@/db/repositories/trip-item-repository";
 import { PageHeader } from "@/components/layout/page-header";
 import { formatCurrency } from "@/core/pricing";
+import { getTaxModule } from "@/core/tax";
+import type { TaxEstimate } from "@/core/tax";
 
 const tripRepo = new TripRepository();
 const tripItemRepo = new TripItemRepository();
@@ -24,15 +26,45 @@ export default function EndTripPage() {
     [trip?.id],
   );
 
-  const storeName = useLiveQuery(async () => {
-    if (!trip) return "";
-    const store = await db.stores.get(trip.storeId);
-    return store?.name ?? "Unknown Store";
+  const store = useLiveQuery(async () => {
+    if (!trip) return undefined;
+    return db.stores.get(trip.storeId);
   }, [trip?.storeId]);
+
+  const storeName = store?.name ?? "Unknown Store";
+
+  // Load items to get categories for tax calculation
+  const itemsById = useLiveQuery(async () => {
+    if (!tripItems || tripItems.length === 0) return new Map<string, { name: string; category?: string }>();
+    const itemIds = tripItems.map((ti) => ti.itemId);
+    const items = await db.items.where("id").anyOf(itemIds).toArray();
+    return new Map(items.map((item) => [item.id, { name: item.name, category: item.category }]));
+  }, [tripItems]);
+
+  // Calculate tax estimate if a tax module is available for this store's state
+  const taxEstimate = useMemo((): TaxEstimate | null => {
+    if (!store?.state || !tripItems || !itemsById) return null;
+    const taxModule = getTaxModule(store.state);
+    if (!taxModule) return null;
+
+    const lineItems = tripItems.map((ti) => {
+      const item = itemsById.get(ti.itemId);
+      return {
+        name: item?.name ?? "Unknown Item",
+        lineTotal: ti.lineTotal,
+        category: item?.category,
+      };
+    });
+
+    return taxModule.calculate(lineItems);
+  }, [store?.state, tripItems, itemsById]);
 
   const receiptValue = parseFloat(receiptTotal) || 0;
   const scannedSubtotal = trip?.scannedSubtotal ?? 0;
-  const difference = receiptValue - scannedSubtotal;
+  const estimatedTotal = taxEstimate
+    ? scannedSubtotal + taxEstimate.totalTax
+    : scannedSubtotal;
+  const difference = receiptValue - estimatedTotal;
   const absDifference = Math.abs(difference);
 
   const diffColorClass = useMemo(() => {
@@ -117,13 +149,42 @@ export default function EndTripPage() {
           </div>
         </div>
 
+        {/* Tax estimate */}
+        {taxEstimate && (
+          <div className="bg-white dark:bg-gray-800 rounded-lg border dark:border-gray-700 p-4 space-y-3">
+            <h2 className="text-sm font-semibold text-gray-900 dark:text-gray-100">
+              Estimated Tax ({taxEstimate.moduleName})
+            </h2>
+            <div className="space-y-2 text-sm">
+              <div className="flex justify-between">
+                <span className="text-gray-500 dark:text-gray-400">Tax-exempt items</span>
+                <span className="text-gray-900 dark:text-gray-100">{formatCurrency(taxEstimate.exemptAmount)}</span>
+              </div>
+              <div className="flex justify-between">
+                <span className="text-gray-500 dark:text-gray-400">Taxable items</span>
+                <span className="text-gray-900 dark:text-gray-100">{formatCurrency(taxEstimate.taxableAmount)}</span>
+              </div>
+              <div className="flex justify-between">
+                <span className="text-gray-500 dark:text-gray-400">
+                  Tax ({(taxEstimate.lines.find((l) => l.taxable)?.taxRate ?? 0) * 100}%)
+                </span>
+                <span className="font-medium text-gray-900 dark:text-gray-100">{formatCurrency(taxEstimate.totalTax)}</span>
+              </div>
+              <div className="border-t dark:border-gray-700 pt-2 flex justify-between font-medium">
+                <span className="text-gray-700 dark:text-gray-300">Estimated Total</span>
+                <span className="text-gray-900 dark:text-gray-100">{formatCurrency(estimatedTotal)}</span>
+              </div>
+            </div>
+          </div>
+        )}
+
         {/* Receipt total input */}
         <div className="bg-white dark:bg-gray-800 rounded-lg border dark:border-gray-700 p-4 space-y-3">
           <h2 className="text-sm font-semibold text-gray-900 dark:text-gray-100">
             Receipt Total
           </h2>
           <p className="text-xs text-gray-500 dark:text-gray-400">
-            Enter the total from your receipt to compare with scanned items.
+            Enter the total from your receipt to compare with {taxEstimate ? "estimated" : "scanned"} total.
           </p>
           <div className="relative">
             <span className="absolute left-3 top-1/2 -translate-y-1/2 text-2xl text-gray-400 dark:text-gray-500">
