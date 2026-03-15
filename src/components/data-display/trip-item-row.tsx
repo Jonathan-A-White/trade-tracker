@@ -1,4 +1,5 @@
 import { useRef, useState, useCallback, useEffect } from "react";
+import { createPortal } from "react-dom";
 
 interface TripItem {
   id: string;
@@ -47,6 +48,7 @@ export function TripItemRow({
 
   // Long press state
   const [showMenu, setShowMenu] = useState(false);
+  const [menuPosition, setMenuPosition] = useState<{ top: number; left: number } | null>(null);
   const longPressTimer = useRef<ReturnType<typeof setTimeout> | null>(null);
   const didLongPress = useRef(false);
 
@@ -58,10 +60,14 @@ export function TripItemRow({
   }, []);
 
   // Close menu on outside click
+  const menuRef = useRef<HTMLDivElement | null>(null);
   useEffect(() => {
     if (!showMenu) return;
     const handler = (e: MouseEvent | TouchEvent) => {
-      if (rowRef.current && !rowRef.current.contains(e.target as Node)) {
+      const target = e.target as Node;
+      const inRow = rowRef.current?.contains(target);
+      const inMenu = menuRef.current?.contains(target);
+      if (!inRow && !inMenu) {
         setShowMenu(false);
       }
     };
@@ -104,6 +110,10 @@ export function TripItemRow({
 
       longPressTimer.current = setTimeout(() => {
         didLongPress.current = true;
+        if (rowRef.current) {
+          const rect = rowRef.current.getBoundingClientRect();
+          setMenuPosition({ top: rect.bottom, left: rect.left + 16 });
+        }
         setShowMenu(true);
       }, LONG_PRESS_MS);
     },
@@ -229,9 +239,13 @@ export function TripItemRow({
         </div>
       </div>
 
-      {/* Long press edit menu */}
-      {showMenu && editable && (
-        <div className="absolute left-4 top-full z-50 -mt-1 bg-white dark:bg-gray-700 rounded-lg shadow-xl border border-gray-200 dark:border-gray-600 overflow-hidden min-w-[140px]">
+      {/* Long press edit menu (portal to escape overflow-hidden) */}
+      {showMenu && editable && menuPosition && createPortal(
+        <div
+          ref={menuRef}
+          className="fixed z-50 bg-white dark:bg-gray-700 rounded-lg shadow-xl border border-gray-200 dark:border-gray-600 overflow-hidden min-w-[140px]"
+          style={{ top: menuPosition.top, left: menuPosition.left }}
+        >
           {onEditPrice && (
             <button
               type="button"
@@ -256,7 +270,8 @@ export function TripItemRow({
               Edit Quantity
             </button>
           )}
-        </div>
+        </div>,
+        document.body
       )}
     </div>
   );
