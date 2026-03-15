@@ -58,7 +58,8 @@ export function ActiveTripProvider({ children }: { children: ReactNode }) {
   }, [activeTripItems]);
 
   const itemCount = useMemo(() => {
-    return activeTripItems?.length ?? 0;
+    if (!activeTripItems || activeTripItems.length === 0) return 0;
+    return activeTripItems.reduce((sum, item) => sum + item.quantity, 0);
   }, [activeTripItems]);
 
   const startTrip = useCallback(
