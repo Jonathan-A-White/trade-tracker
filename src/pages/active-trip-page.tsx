@@ -94,6 +94,10 @@ export default function ActiveTripPage() {
     [editingId, editField],
   );
 
+  const handleRemove = useCallback(async (id: string) => {
+    await tripItemRepo.remove(id);
+  }, []);
+
   const handleCancelEdit = useCallback(() => {
     setEditingId(null);
     setEditField(null);
@@ -182,6 +186,7 @@ export default function ActiveTripPage() {
                   editable
                   onEditPrice={handleEditPrice}
                   onEditQuantity={handleEditQuantity}
+                  onRemove={handleRemove}
                 />
               );
             })}
