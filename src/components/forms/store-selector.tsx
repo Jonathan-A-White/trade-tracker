@@ -9,9 +9,10 @@ interface StoreSelectorProps {
   stores: Store[];
   onSelect: (store: Store) => void;
   onCreateNew: () => void;
+  loadingStoreId?: string | null;
 }
 
-export function StoreSelector({ stores, onSelect, onCreateNew }: StoreSelectorProps) {
+export function StoreSelector({ stores, onSelect, onCreateNew, loadingStoreId }: StoreSelectorProps) {
   const [search, setSearch] = useState("");
 
   const filtered = stores.filter((store) =>
@@ -29,17 +30,25 @@ export function StoreSelector({ stores, onSelect, onCreateNew }: StoreSelectorPr
       />
 
       <ul className="divide-y dark:divide-gray-700 border dark:border-gray-700 rounded-lg overflow-hidden">
-        {filtered.map((store) => (
-          <li key={store.id}>
-            <button
-              type="button"
-              onClick={() => onSelect(store)}
-              className="w-full text-left px-4 py-3 text-sm font-medium text-gray-900 dark:text-gray-100 hover:bg-gray-50 dark:hover:bg-gray-700 transition-colors cursor-pointer"
-            >
-              {store.name}
-            </button>
-          </li>
-        ))}
+        {filtered.map((store) => {
+          const isLoading = loadingStoreId === store.id;
+          return (
+            <li key={store.id}>
+              <button
+                type="button"
+                disabled={!!loadingStoreId}
+                onClick={() => onSelect(store)}
+                className={`w-full text-left px-4 py-3 text-sm font-medium transition-colors ${
+                  isLoading
+                    ? "bg-blue-50 dark:bg-blue-900/30 text-blue-700 dark:text-blue-300"
+                    : "text-gray-900 dark:text-gray-100 hover:bg-gray-50 dark:hover:bg-gray-700 cursor-pointer"
+                } ${loadingStoreId && !isLoading ? "opacity-50" : ""}`}
+              >
+                {isLoading ? `Starting trip at ${store.name}...` : store.name}
+              </button>
+            </li>
+          );
+        })}
         {filtered.length === 0 && (
           <li className="px-4 py-3 text-sm text-gray-500 dark:text-gray-400">
             No stores found
