@@ -1,5 +1,6 @@
 import { useState, useEffect } from "react";
 import { db } from "@/db/database";
+import { seedPLUCodes } from "@/db/seed-plu-codes";
 import { PageHeader } from "@/components/layout/page-header";
 import { useTheme } from "@/contexts/theme-context";
 
@@ -12,6 +13,8 @@ export default function SettingsPage() {
   const [showClearConfirm, setShowClearConfirm] = useState(false);
   const [clearing, setClearing] = useState(false);
   const [cleared, setCleared] = useState(false);
+  const [seeding, setSeeding] = useState(false);
+  const [seedResult, setSeedResult] = useState<{ added: number; skipped: number } | null>(null);
 
   useEffect(() => {
     async function estimateStorage() {
@@ -131,6 +134,40 @@ export default function SettingsPage() {
             <p className="text-sm text-gray-400 dark:text-gray-500">
               Storage estimate not available
             </p>
+          )}
+        </div>
+
+        {/* Pre-populate PLU codes */}
+        <div className="bg-white dark:bg-gray-800 rounded-lg border dark:border-gray-700 p-4 space-y-3">
+          <h2 className="text-sm font-medium text-gray-700 dark:text-gray-300">Produce PLU Codes</h2>
+          <p className="text-xs text-gray-500 dark:text-gray-400">
+            Load ~65 common fruit and vegetable PLU codes with approximate Trader Joe's prices.
+            Existing items won't be overwritten.
+          </p>
+          {seedResult ? (
+            <div className="rounded-lg bg-green-50 dark:bg-green-900/30 border border-green-200 dark:border-green-700 p-3 text-sm text-green-700 dark:text-green-300">
+              Added {seedResult.added} item{seedResult.added !== 1 ? "s" : ""}.
+              {seedResult.skipped > 0 && ` Skipped ${seedResult.skipped} already in library.`}
+            </div>
+          ) : (
+            <button
+              type="button"
+              disabled={seeding}
+              onClick={async () => {
+                setSeeding(true);
+                try {
+                  const result = await seedPLUCodes();
+                  setSeedResult(result);
+                } catch {
+                  // silently fail
+                } finally {
+                  setSeeding(false);
+                }
+              }}
+              className="w-full rounded-lg border border-blue-300 dark:border-blue-600 text-blue-600 dark:text-blue-400 px-4 py-2.5 text-sm font-medium hover:bg-blue-50 dark:hover:bg-blue-900/30 active:bg-blue-100 transition-colors cursor-pointer disabled:opacity-50"
+            >
+              {seeding ? "Loading..." : "Load PLU Codes"}
+            </button>
           )}
         </div>
 
