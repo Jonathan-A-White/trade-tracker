@@ -144,7 +144,7 @@ export default function SettingsPage() {
         <div className="bg-white dark:bg-gray-800 rounded-lg border dark:border-gray-700 p-4 space-y-3">
           <h2 className="text-sm font-medium text-gray-700 dark:text-gray-300">Produce PLU Codes</h2>
           <p className="text-xs text-gray-500 dark:text-gray-400">
-            Load ~65 common fruit and vegetable PLU codes with approximate Trader Joe's prices.
+            Load ~120 common fruit and vegetable PLU codes (including organics) with approximate Trader Joe's prices.
             Existing items won't be overwritten.
           </p>
           {seedResult ? (
