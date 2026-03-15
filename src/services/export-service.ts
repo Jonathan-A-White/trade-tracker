@@ -16,6 +16,26 @@ export async function exportAllData(): Promise<string> {
   );
 }
 
+export async function exportItemsData(): Promise<string> {
+  const items = await db.items.toArray();
+  return JSON.stringify({ type: "items", items }, null, 2);
+}
+
+export async function exportTripsData(): Promise<string> {
+  const [stores, trips, tripItems, priceHistory] = await Promise.all([
+    db.stores.toArray(),
+    db.trips.toArray(),
+    db.tripItems.toArray(),
+    db.priceHistory.toArray(),
+  ]);
+
+  return JSON.stringify(
+    { type: "trips", stores, trips, tripItems, priceHistory },
+    null,
+    2,
+  );
+}
+
 export function downloadAsFile(
   data: string,
   filename: string,
