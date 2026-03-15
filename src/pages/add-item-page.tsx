@@ -1,16 +1,15 @@
-import { useState, useCallback } from "react";
+import { useState, useCallback, useRef } from "react";
 import { useNavigate, useSearchParams } from "react-router";
 import { useLiveQuery } from "dexie-react-hooks";
 
 import type { Item, UnitType } from "@/contracts/types";
-import { TripRepository } from "@/db/repositories/trip-repository";
+import { db } from "@/db/database";
 import { TripItemRepository } from "@/db/repositories/trip-item-repository";
 import { ItemRepository } from "@/db/repositories/item-repository";
 import { PageHeader } from "@/components/layout/page-header";
 import { ItemForm } from "@/components/forms/item-form";
 import { formatCurrency } from "@/core/pricing";
 
-const tripRepo = new TripRepository();
 const tripItemRepo = new TripItemRepository();
 const itemRepo = new ItemRepository();
 
@@ -22,6 +21,7 @@ export default function AddItemPage() {
   const [searchQuery, setSearchQuery] = useState("");
   const [showCreateForm, setShowCreateForm] = useState(!!barcodeFromScanner);
   const [addingItemId, setAddingItemId] = useState<string | null>(null);
+  const savingRef = useRef(false);
   const [quantityPrompt, setQuantityPrompt] = useState<{
     item: Item;
     quantity: number;
@@ -38,32 +38,36 @@ export default function AddItemPage() {
   }, []);
 
   const handleAddToTrip = useCallback(async () => {
-    if (!quantityPrompt) return;
+    if (!quantityPrompt || savingRef.current) return;
     const { item, quantity, weightLbs } = quantityPrompt;
 
+    savingRef.current = true;
     setAddingItemId(item.id);
     try {
-      const trip = await tripRepo.getActive();
-      if (!trip) {
-        navigate("/trips/active");
-        return;
-      }
+      await db.transaction("rw", [db.tripItems, db.priceHistory, db.trips], async () => {
+        const trip = await db.trips.where("status").equals("active").first();
+        if (!trip) return;
 
-      await tripItemRepo.addToTrip({
-        tripId: trip.id,
-        itemId: item.id,
-        price: item.currentPrice,
-        quantity,
-        weightLbs:
-          item.unitType === "per_lb" && weightLbs
-            ? parseFloat(weightLbs)
-            : undefined,
-        onSale: false,
+        await tripItemRepo.addToTrip({
+          tripId: trip.id,
+          itemId: item.id,
+          price: item.currentPrice,
+          quantity,
+          weightLbs:
+            item.unitType === "per_lb" && weightLbs
+              ? parseFloat(weightLbs)
+              : undefined,
+          onSale: false,
+        });
       });
 
       setQuantityPrompt(null);
       navigate("/trips/active");
+    } catch (err) {
+      console.error("Failed to add item to trip:", err);
+      alert("Failed to add item. Please try again.");
     } finally {
+      savingRef.current = false;
       setAddingItemId(null);
     }
   }, [quantityPrompt, navigate]);
