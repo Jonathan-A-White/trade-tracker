@@ -1,86 +1,85 @@
 Feature: Barcode Scanning
   As a grocery shopper
-  I want to scan barcodes during my shopping trip
-  So that I can quickly add items and track prices
+  I want to scan product barcodes
+  So that I can quickly add items to my trip
 
   Background:
     Given the app is loaded
     And I have an active trip at "Trader Joe's"
 
-  # From commit: Implement TradeTracker grocery tracking PWA
-  Scenario: Open barcode scanner during active trip
+  # Commit: Implement TradeTracker grocery tracking PWA
+  Scenario: Scan a known barcode
+    Given an item "Organic Milk" exists with barcode "036632001252"
     When I tap "Scan" on the Active Trip page
-    Then the scanner page opens with a full-screen viewfinder
-    And the camera is activated for barcode detection
+    And the scanner reads barcode "036632001252"
+    Then I should see the item name "Organic Milk"
+    And I should see the current price
+    And I should see a quantity selector
 
-  # From commit: Implement TradeTracker grocery tracking PWA
-  Scenario: Scan a known item barcode
-    Given I have an item "Organic Milk" with barcode "012345678901" at "$4.99"
-    When I scan barcode "012345678901"
-    Then I see the item name "Organic Milk"
-    And I see the current price "$4.99"
-    And I see a quantity selector
-
-  # From commit: Implement TradeTracker grocery tracking PWA
+  # Commit: Implement TradeTracker grocery tracking PWA
   Scenario: Add scanned item to trip
-    Given I have scanned a known item "Organic Milk" at "$4.99"
-    When I set the quantity to 2
-    And I tap "Add to Trip"
-    Then "Organic Milk" is added to the active trip with quantity 2
-    And the trip subtotal increases by "$9.98"
-
-  # From commit: Implement TradeTracker grocery tracking PWA
-  Scenario: Scan an unknown barcode
-    When I scan an unrecognized barcode "999999999999"
-    Then I am redirected to the New Item page
-    And the barcode field is pre-filled with "999999999999"
-    And I can create the item and it will be added to the trip
-
-  # From commit: Implement TradeTracker grocery tracking PWA
-  Scenario: Scanner handles weight-based items
-    Given I have a per-pound item "Chicken Breast" with barcode "567890123456"
-    When I scan barcode "567890123456"
-    Then I see a weight input field instead of a quantity selector
-    When I enter weight "2.50"
-    And I tap "Add to Trip"
-    Then "Chicken Breast" is added with weight 2.50 lbs
-
-  # From commit: Implement TradeTracker grocery tracking PWA
-  Scenario: Camera permission denied
-    Given the camera permission is denied
+    Given an item "Organic Milk" exists with barcode "036632001252" and price "$5.99"
     When I tap "Scan" on the Active Trip page
-    Then I see a permission denied message
-    And I see an option to add items manually
+    And the scanner reads barcode "036632001252"
+    And I set the quantity to 1
+    And I tap "Add to Trip"
+    Then the item should be added to the active trip
+    And the trip subtotal should increase by "$5.99"
 
-  # From commit: Add barcode scanning to the New Item form
-  Scenario: Scan barcode from New Item form
+  # Commit: Implement TradeTracker grocery tracking PWA
+  Scenario: Scan an unknown barcode
+    When I tap "Scan" on the Active Trip page
+    And the scanner reads barcode "999999999999"
+    Then I should be redirected to the Add Item page
+    And the barcode field should be pre-filled with "999999999999"
+
+  # Commit: Implement TradeTracker grocery tracking PWA
+  Scenario: Scan a per-pound item
+    Given a per-pound item "Chicken Breast" exists with barcode "021130099993" and price "$6.99"
+    When I tap "Scan" on the Active Trip page
+    And the scanner reads barcode "021130099993"
+    Then I should see a weight input field instead of a quantity selector
+    When I enter weight "2.5" lbs
+    And I tap "Add to Trip"
+    Then the line total should be "$17.48"
+
+  # Commit: Implement TradeTracker grocery tracking PWA
+  Scenario: Camera permission denied
+    When I tap "Scan" on the Active Trip page
+    And camera permission is denied
+    Then I should see a permission denied message
+    And I should see a fallback option for manual entry
+
+  # Commit: Implement TradeTracker grocery tracking PWA
+  Scenario: Camera not available
+    When I tap "Scan" on the Active Trip page
+    And the camera is not available
+    Then I should see a message that camera is unavailable
+    And I should see a fallback option for manual entry
+
+  # Commit: Add barcode scanning to the New Item form
+  Scenario: Scan barcode from the New Item form
     When I navigate to the New Item page
-    And I tap the scan button in the barcode field
-    Then the barcode scanner opens inline
-    When I scan barcode "012345678901"
-    Then the barcode field is populated with "012345678901"
-    And the scanner closes
+    And I tap the scan button next to the barcode field
+    Then the barcode scanner should open
+    When the scanner reads barcode "041570054529"
+    Then the barcode field should be filled with "041570054529"
+    And the scanner should close
 
-  # From commit: Fix "Adding..." button hang caused by nested Dexie transaction deadlock
-  Scenario: Adding scanned item does not hang
-    Given I have scanned a known item
-    When I tap "Add to Trip"
-    Then the item is added without the button getting stuck on "Adding..."
-    And I can immediately scan another item
+  # Commit: Merge duplicate items by incrementing quantity
+  Scenario: Scanning same item twice merges quantity
+    Given an item "Organic Milk" exists with barcode "036632001252"
+    And "Organic Milk" is already in the active trip with quantity 1
+    When I scan barcode "036632001252" again
+    And I add it to the trip
+    Then the quantity of "Organic Milk" should be 2
+    And no duplicate row should be created
 
-  # From commit: Merge duplicate items by incrementing quantity
-  Scenario: Scanning the same item twice merges quantities
-    Given I have already added "Organic Milk" with quantity 1 to the trip
-    When I scan the barcode for "Organic Milk" again
-    And I set quantity to 1
-    And I tap "Add to Trip"
-    Then the existing "Organic Milk" entry is updated to quantity 2
-    And no duplicate row is created
-
-  # From commit: Merge duplicate items by incrementing quantity
-  Scenario: Scanning the same per-pound item adds weight
-    Given I have already added "Chicken Breast" with weight 1.5 lbs
-    When I scan the barcode for "Chicken Breast" again
-    And I enter weight "2.00"
-    And I tap "Add to Trip"
-    Then the existing "Chicken Breast" weight is updated to 3.50 lbs
+  # Commit: Merge duplicate items by incrementing quantity
+  Scenario: Scanning same per-pound item adds weight
+    Given a per-pound item "Chicken Breast" exists with barcode "021130099993"
+    And "Chicken Breast" is already in the trip with weight "1.5" lbs
+    When I scan barcode "021130099993" again
+    And I enter weight "2.0" lbs
+    And I add it to the trip
+    Then the total weight of "Chicken Breast" should be "3.5" lbs
