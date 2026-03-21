@@ -2,21 +2,29 @@ import { useState } from "react";
 import { useLiveQuery } from "dexie-react-hooks";
 import { useParams, Link, useNavigate } from "react-router";
 import { db } from "@/db/database";
-import type { Item } from "@/contracts/types";
+import type { Item, UnitType } from "@/contracts/types";
 import { TripRepository } from "@/db/repositories/trip-repository";
 import { TripItemRepository } from "@/db/repositories/trip-item-repository";
+import { ItemRepository } from "@/db/repositories/item-repository";
 import { PageHeader } from "@/components/layout/page-header";
 import { formatCurrency } from "@/core/pricing";
 import { exportTripForAI, isManualBarcode } from "@/services/trip-exchange-service";
 import { downloadAsFile } from "@/services/export-service";
+import { FixUnknownItemModal } from "@/components/forms/fix-unknown-item-modal";
 
 const tripRepo = new TripRepository();
 const tripItemRepo = new TripItemRepository();
+const itemRepo = new ItemRepository();
 
 export default function TripDetailPage() {
   const { id } = useParams<{ id: string }>();
   const navigate = useNavigate();
   const [showDeleteConfirm, setShowDeleteConfirm] = useState(false);
+  const [fixingItem, setFixingItem] = useState<{
+    itemId: string;
+    price: number;
+    item?: Item;
+  } | null>(null);
 
   const trip = useLiveQuery(
     () => (id ? tripRepo.getById(id) : undefined),
@@ -159,16 +167,36 @@ export default function TripDetailPage() {
                     ? `${ti.weightLbs.toFixed(2)} lbs`
                     : `x${ti.quantity}`;
 
+                const isUnknown = !item;
+                const hasManualBarcode = item && isManualBarcode(item.barcode);
+                const needsFix = isUnknown || hasManualBarcode;
+
                 return (
                   <li key={ti.id} className="px-4 py-3">
                     <div className="flex items-center justify-between">
                       <div className="flex-1 min-w-0">
-                        <Link
-                          to={`/items/${ti.itemId}`}
-                          className="text-sm font-medium text-blue-600 dark:text-blue-400 hover:text-blue-800 dark:hover:text-blue-300 hover:underline truncate block"
-                        >
-                          {item?.name ?? "Unknown Item"}
-                        </Link>
+                        {needsFix ? (
+                          <button
+                            type="button"
+                            onClick={() =>
+                              setFixingItem({
+                                itemId: ti.itemId,
+                                price: ti.price,
+                                item: item ?? undefined,
+                              })
+                            }
+                            className="text-sm font-medium text-blue-600 dark:text-blue-400 hover:text-blue-800 dark:hover:text-blue-300 hover:underline truncate block text-left cursor-pointer"
+                          >
+                            {item?.name ?? "Unknown Item"}
+                          </button>
+                        ) : (
+                          <Link
+                            to={`/items/${ti.itemId}`}
+                            className="text-sm font-medium text-blue-600 dark:text-blue-400 hover:text-blue-800 dark:hover:text-blue-300 hover:underline truncate block"
+                          >
+                            {item.name}
+                          </Link>
+                        )}
                         <p className="text-xs text-gray-500 dark:text-gray-400 mt-0.5">
                           {formatCurrency(ti.price)} /{" "}
                           {item?.unitType === "per_lb" ? "lb" : "each"}{" "}
@@ -178,7 +206,12 @@ export default function TripDetailPage() {
                               SALE
                             </span>
                           )}
-                          {item && isManualBarcode(item.barcode) && (
+                          {isUnknown && (
+                            <span className="ml-1 text-yellow-600 dark:text-yellow-400 font-medium">
+                              TAP TO FIX
+                            </span>
+                          )}
+                          {hasManualBarcode && (
                             <span className="ml-1 text-purple-600 dark:text-purple-400 font-medium">
                               NO BARCODE
                             </span>
@@ -266,6 +299,41 @@ export default function TripDetailPage() {
           )}
         </div>
       </main>
+
+      {fixingItem && (
+        <FixUnknownItemModal
+          itemId={fixingItem.itemId}
+          currentPrice={fixingItem.price}
+          existingName={fixingItem.item?.name}
+          existingBarcode={fixingItem.item?.barcode}
+          existingUnitType={fixingItem.item?.unitType}
+          existingCategory={fixingItem.item?.category}
+          onCancel={() => setFixingItem(null)}
+          onSave={async (data) => {
+            if (fixingItem.item) {
+              await itemRepo.update(data.itemId, {
+                name: data.name,
+                barcode: data.barcode,
+                currentPrice: data.currentPrice,
+                unitType: data.unitType as UnitType,
+                category: data.category || undefined,
+              });
+            } else {
+              await db.items.put({
+                id: data.itemId,
+                name: data.name,
+                barcode: data.barcode,
+                currentPrice: data.currentPrice,
+                unitType: data.unitType as UnitType,
+                category: data.category || undefined,
+                createdAt: Date.now(),
+                updatedAt: Date.now(),
+              });
+            }
+            setFixingItem(null);
+          }}
+        />
+      )}
     </div>
   );
 }
