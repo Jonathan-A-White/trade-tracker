@@ -68,11 +68,33 @@ export default function TripDetailPage() {
         name: item?.name ?? "Unknown Item",
         lineTotal: ti.lineTotal,
         category: item?.category,
+        taxOverride: ti.taxOverride,
       };
     });
 
     return taxModule.calculate(lineItems);
   }, [storeState, tripItems, itemsMap]);
+
+  // Build a map from tripItem index to its tax line result
+  const taxLineByIndex = useMemo(() => {
+    if (!taxEstimate) return null;
+    return taxEstimate.lines;
+  }, [taxEstimate]);
+
+  const handleToggleTax = async (tripItemId: string, currentTaxOverride: boolean | undefined, currentlyTaxable: boolean) => {
+    if (currentTaxOverride !== undefined) {
+      // Currently overridden — clear back to heuristic
+      // Dexie ignores undefined in update(), so we modify the record directly
+      const record = await db.tripItems.get(tripItemId);
+      if (record) {
+        delete record.taxOverride;
+        await db.tripItems.put(record);
+      }
+    } else {
+      // Currently using heuristic — flip to explicit override
+      await tripItemRepo.update(tripItemId, { taxOverride: !currentlyTaxable });
+    }
+  };
 
   if (!trip) {
     return (
@@ -207,7 +229,7 @@ export default function TripDetailPage() {
             </div>
           ) : (
             <ul className="divide-y dark:divide-gray-700">
-              {items.map((ti) => {
+              {items.map((ti, idx) => {
                 const item = map[ti.itemId];
                 const quantityDisplay =
                   item?.unitType === "per_lb" && ti.weightLbs !== undefined
@@ -217,6 +239,10 @@ export default function TripDetailPage() {
                 const isUnknown = !item;
                 const hasManualBarcode = item && isManualBarcode(item.barcode);
                 const needsFix = isUnknown || hasManualBarcode;
+
+                const taxLine = taxLineByIndex?.[idx];
+                const isTaxable = taxLine?.taxable ?? false;
+                const hasOverride = ti.taxOverride !== undefined;
 
                 return (
                   <li key={ti.id} className="px-4 py-3">
@@ -265,9 +291,33 @@ export default function TripDetailPage() {
                           )}
                         </p>
                       </div>
-                      <p className="text-sm font-medium text-gray-900 dark:text-gray-100 ml-3">
-                        {formatCurrency(ti.lineTotal)}
-                      </p>
+                      <div className="flex items-center gap-2 ml-3">
+                        {taxLine && (
+                          <button
+                            type="button"
+                            onClick={() => handleToggleTax(ti.id, ti.taxOverride, taxLine.taxable)}
+                            className={`px-1.5 py-0.5 rounded text-[10px] font-bold leading-tight cursor-pointer border ${
+                              isTaxable
+                                ? hasOverride
+                                  ? "bg-red-100 dark:bg-red-900/40 text-red-700 dark:text-red-300 border-red-300 dark:border-red-700 ring-1 ring-red-400 dark:ring-red-600"
+                                  : "bg-red-100 dark:bg-red-900/40 text-red-700 dark:text-red-300 border-red-300 dark:border-red-700"
+                                : hasOverride
+                                  ? "bg-gray-100 dark:bg-gray-700 text-gray-400 dark:text-gray-500 border-gray-300 dark:border-gray-600 ring-1 ring-gray-400 dark:ring-gray-500"
+                                  : "bg-gray-100 dark:bg-gray-700 text-gray-400 dark:text-gray-500 border-gray-200 dark:border-gray-600"
+                            }`}
+                            title={
+                              isTaxable
+                                ? hasOverride ? "Taxable (manual) — tap to reset" : "Taxable — tap to mark exempt"
+                                : hasOverride ? "Exempt (manual) — tap to reset" : "Exempt — tap to mark taxable"
+                            }
+                          >
+                            {isTaxable ? "TAX" : "EX"}
+                          </button>
+                        )}
+                        <p className="text-sm font-medium text-gray-900 dark:text-gray-100">
+                          {formatCurrency(ti.lineTotal)}
+                        </p>
+                      </div>
                     </div>
                   </li>
                 );

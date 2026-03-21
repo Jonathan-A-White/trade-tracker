@@ -54,6 +54,7 @@ export default function EndTripPage() {
         name: item?.name ?? "Unknown Item",
         lineTotal: ti.lineTotal,
         category: item?.category,
+        taxOverride: ti.taxOverride,
       };
     });
 

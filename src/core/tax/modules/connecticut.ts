@@ -185,14 +185,17 @@ function getRate(category: string | undefined): number {
 }
 
 function calculate(
-  items: Array<{ name: string; lineTotal: number; category?: string }>
+  items: Array<{ name: string; lineTotal: number; category?: string; taxOverride?: boolean }>
 ): TaxEstimate {
   let taxableAmount = 0;
   let exemptAmount = 0;
   let totalTax = 0;
 
   const lines: TaxLineItem[] = items.map((item) => {
-    const exempt = isItemExempt(item.category, item.name);
+    const exempt =
+      item.taxOverride !== undefined
+        ? !item.taxOverride
+        : isItemExempt(item.category, item.name);
     const rate = exempt ? 0 : CT_RATE;
     const taxAmount = Math.round(item.lineTotal * rate * 100) / 100;
 

@@ -29,6 +29,9 @@ export class TradeTrackerDB extends Dexie {
 
     // Version 3: Add optional city and state fields to stores (no index needed)
     this.version(3).stores({});
+
+    // Version 4: Add optional taxOverride field to tripItems (no index needed)
+    this.version(4).stores({});
   }
 }
 
