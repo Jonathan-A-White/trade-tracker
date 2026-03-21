@@ -1,18 +1,35 @@
 import { useState, useRef } from "react";
 import { useLiveQuery } from "dexie-react-hooks";
+import { useNavigate } from "react-router";
 import { db } from "@/db/database";
 import { PageHeader } from "@/components/layout/page-header";
 import { exportAllData, downloadAsFile } from "@/services/export-service";
 import { importAllData, validateImportData } from "@/services/import-service";
 import { exportItemsAsCsv, exportTripsAsCsv } from "@/services/csv-export-service";
+import {
+  validateTripImportData,
+  importTripFromAI,
+} from "@/services/trip-exchange-service";
 
 export default function ExportPage() {
+  const navigate = useNavigate();
   const [importing, setImporting] = useState(false);
   const [showConfirm, setShowConfirm] = useState(false);
   const [pendingImportData, setPendingImportData] = useState<string | null>(null);
   const [importError, setImportError] = useState<string | null>(null);
   const [importSuccess, setImportSuccess] = useState(false);
   const fileInputRef = useRef<HTMLInputElement>(null);
+
+  const [tripImporting, setTripImporting] = useState(false);
+  const [tripImportError, setTripImportError] = useState<string | null>(null);
+  const [tripImportResult, setTripImportResult] = useState<{
+    tripId: string;
+    storeCreated: boolean;
+    itemsCreated: number;
+    itemsMatched: number;
+    itemsMissingBarcode: number;
+  } | null>(null);
+  const tripFileInputRef = useRef<HTMLInputElement>(null);
 
   const storeCount = useLiveQuery(() => db.stores.count());
   const itemCount = useLiveQuery(() => db.items.count());
@@ -83,6 +100,41 @@ export default function ExportPage() {
     if (fileInputRef.current) {
       fileInputRef.current.value = "";
     }
+  }
+
+  function handleTripFileSelect(e: React.ChangeEvent<HTMLInputElement>) {
+    setTripImportError(null);
+    setTripImportResult(null);
+    const file = e.target.files?.[0];
+    if (!file) return;
+
+    const reader = new FileReader();
+    reader.onload = async (event) => {
+      const text = event.target?.result as string;
+      try {
+        const parsed = JSON.parse(text);
+        const validation = validateTripImportData(parsed);
+        if (!validation.valid) {
+          setTripImportError(`Invalid file: ${validation.errors.join(", ")}`);
+          return;
+        }
+        setTripImporting(true);
+        try {
+          const result = await importTripFromAI(text);
+          setTripImportResult(result);
+        } catch (err) {
+          setTripImportError(err instanceof Error ? err.message : "Trip import failed");
+        } finally {
+          setTripImporting(false);
+          if (tripFileInputRef.current) {
+            tripFileInputRef.current.value = "";
+          }
+        }
+      } catch {
+        setTripImportError("Could not parse file. Make sure it is valid JSON.");
+      }
+    };
+    reader.readAsText(file);
   }
 
   return (
@@ -165,9 +217,84 @@ export default function ExportPage() {
           </button>
         </div>
 
+        {/* Trip Import from AI */}
+        <div className="bg-white dark:bg-gray-800 rounded-lg border dark:border-gray-700 p-4 space-y-3">
+          <h2 className="text-sm font-medium text-gray-700 dark:text-gray-300">
+            Import Trip from AI
+          </h2>
+          <p className="text-xs text-gray-500 dark:text-gray-400">
+            Export a trip from the trip detail page, give it and a receipt photo
+            to Claude, then import the generated JSON here. Items without
+            barcodes will be flagged for scanning later.
+          </p>
+          <label className="block w-full rounded-lg border-2 border-dashed border-purple-300 dark:border-purple-600 p-6 text-center cursor-pointer hover:border-purple-400 dark:hover:border-purple-500 transition-colors">
+            <svg
+              xmlns="http://www.w3.org/2000/svg"
+              width="24"
+              height="24"
+              viewBox="0 0 24 24"
+              fill="none"
+              stroke="currentColor"
+              strokeWidth="2"
+              strokeLinecap="round"
+              strokeLinejoin="round"
+              className="mx-auto mb-2 text-purple-400 dark:text-purple-500"
+            >
+              <path d="M21 15v4a2 2 0 0 1-2 2H5a2 2 0 0 1-2-2v-4" />
+              <polyline points="17 8 12 3 7 8" />
+              <line x1="12" y1="3" x2="12" y2="15" />
+            </svg>
+            <span className="text-sm text-gray-600 dark:text-gray-400">
+              {tripImporting
+                ? "Importing trip..."
+                : "Select an AI-generated trip JSON file"}
+            </span>
+            <input
+              ref={tripFileInputRef}
+              type="file"
+              accept=".json"
+              onChange={handleTripFileSelect}
+              disabled={tripImporting}
+              className="hidden"
+            />
+          </label>
+
+          {tripImportError && (
+            <p className="text-sm text-red-600 dark:text-red-400 bg-red-50 dark:bg-red-900/30 rounded-lg p-3">
+              {tripImportError}
+            </p>
+          )}
+          {tripImportResult && (
+            <div className="text-sm text-green-600 dark:text-green-400 bg-green-50 dark:bg-green-900/30 rounded-lg p-3 space-y-2">
+              <p className="font-medium">Trip imported successfully!</p>
+              <ul className="text-xs space-y-1">
+                {tripImportResult.storeCreated && <li>New store created</li>}
+                <li>{tripImportResult.itemsCreated} items created</li>
+                {tripImportResult.itemsMatched > 0 && (
+                  <li>{tripImportResult.itemsMatched} items matched to existing</li>
+                )}
+                {tripImportResult.itemsMissingBarcode > 0 && (
+                  <li className="text-purple-600 dark:text-purple-400">
+                    {tripImportResult.itemsMissingBarcode} items need barcodes
+                  </li>
+                )}
+              </ul>
+              <button
+                type="button"
+                onClick={() => navigate(`/trips/${tripImportResult.tripId}`)}
+                className="mt-2 w-full rounded-lg bg-green-600 px-4 py-2 text-sm font-medium text-white hover:bg-green-700 cursor-pointer"
+              >
+                View Imported Trip
+              </button>
+            </div>
+          )}
+        </div>
+
         {/* Import section */}
         <div className="bg-white dark:bg-gray-800 rounded-lg border dark:border-gray-700 p-4 space-y-3">
-          <h2 className="text-sm font-medium text-gray-700 dark:text-gray-300">Import</h2>
+          <h2 className="text-sm font-medium text-gray-700 dark:text-gray-300">
+            Restore Backup
+          </h2>
           <p className="text-xs text-amber-600 bg-amber-50 dark:bg-amber-900/30 border border-amber-200 dark:border-amber-700 rounded-lg p-3">
             Warning: Importing a backup will overwrite all existing data. Make
             sure to export a backup first.
