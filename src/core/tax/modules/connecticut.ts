@@ -99,7 +99,7 @@ const SNACK_EXEMPT_PATTERNS = [
 
 /**
  * Patterns that indicate a chocolate-covered/coated product (always candy),
- * checked first to override snack-exempt patterns like "corn nuts".
+ * checked after flour exemption to override snack-exempt patterns like "corn nuts".
  */
 const CHOCOLATE_COATED_PATTERNS = [
   /\bchocolate.{0,10}cover/,
@@ -110,13 +110,37 @@ const CHOCOLATE_COATED_PATTERNS = [
 ];
 
 /**
+ * Patterns for flour-containing baked goods. Under CT law, products that
+ * contain flour are classified as food (not candy) and are tax-exempt,
+ * even if they also match candy keywords like "coated" or "drizzled".
+ */
+const FLOUR_PRODUCT_PATTERNS = [
+  /\bgranola bar/,
+  /\bcookie/,
+  /\bbrownie/,
+  /\bwafer/,
+  /\bcake\b/,
+  /\bmuffin/,
+  /\bcracker/,
+  /\bpretzel/,
+  /\bbiscuit/,
+  /\bbiscotti/,
+];
+
+/**
  * For items in mixed categories (e.g. "Snacks & Candy"), determine taxability
  * based on item name heuristics.
  */
 function isCandyOrConfection(name: string): boolean {
   const lower = name.toLowerCase();
 
-  // Chocolate-covered/coated items are always candy, even if the base
+  // Flour-containing products are always food (not candy) under CT law,
+  // even if coated, drizzled, or chocolate-covered
+  for (const pattern of FLOUR_PRODUCT_PATTERNS) {
+    if (pattern.test(lower)) return false;
+  }
+
+  // Chocolate-covered/coated items are candy, even if the base
   // product (e.g. "corn nuts") would otherwise be an exempt snack
   for (const pattern of CHOCOLATE_COATED_PATTERNS) {
     if (pattern.test(lower)) return true;

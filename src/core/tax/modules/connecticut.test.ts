@@ -77,6 +77,22 @@ describe("Connecticut tax module", () => {
         expect(result.totalTax).toBe(0);
       });
     });
+
+    describe("flour-containing items are exempt even with candy keywords", () => {
+      it.each([
+        ["Peanut butter chewy coated and drizzled granola bars", 2.99],
+        ["Chocolate covered cookie bites", 3.49],
+        ["Caramel drizzled brownie bars", 4.29],
+        ["White chocolate dipped wafer sticks", 3.99],
+        ["Fudge coated graham crackers", 2.79],
+        ["Chocolate pretzel bites", 3.49],
+        ["Caramel biscuit thins", 2.99],
+      ])("exempts %s (contains flour)", (name, price) => {
+        const result = calc(name, price);
+        expect(result.exemptAmount).toBeCloseTo(price, 2);
+        expect(result.totalTax).toBe(0);
+      });
+    });
   });
 
   describe("full trip calculation (TJ receipt scenario)", () => {
