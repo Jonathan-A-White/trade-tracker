@@ -1,4 +1,4 @@
-import { useState } from "react";
+import { useState, useMemo } from "react";
 import { useLiveQuery } from "dexie-react-hooks";
 import { useParams, Link, useNavigate } from "react-router";
 import { db } from "@/db/database";
@@ -8,6 +8,8 @@ import { TripItemRepository } from "@/db/repositories/trip-item-repository";
 import { ItemRepository } from "@/db/repositories/item-repository";
 import { PageHeader } from "@/components/layout/page-header";
 import { formatCurrency } from "@/core/pricing";
+import { getTaxModule } from "@/core/tax";
+import type { TaxEstimate } from "@/core/tax";
 import { exportTripForAI, isManualBarcode } from "@/services/trip-exchange-service";
 import { downloadAsFile } from "@/services/export-service";
 import { FixUnknownItemModal } from "@/components/forms/fix-unknown-item-modal";
@@ -36,11 +38,12 @@ export default function TripDetailPage() {
     [id],
   );
 
-  const storeName = useLiveQuery(async () => {
-    if (!trip) return "";
-    const store = await db.stores.get(trip.storeId);
-    return store?.name ?? "Unknown Store";
+  const store = useLiveQuery(async () => {
+    if (!trip) return undefined;
+    return db.stores.get(trip.storeId);
   }, [trip?.storeId]);
+
+  const storeName = store?.name ?? "Unknown Store";
 
   const itemsMap = useLiveQuery(async () => {
     if (!tripItems || tripItems.length === 0) return {};
@@ -52,6 +55,24 @@ export default function TripDetailPage() {
     }
     return map;
   }, [tripItems]);
+
+  const storeState = store?.state;
+  const taxEstimate = useMemo((): TaxEstimate | null => {
+    if (!storeState || !tripItems || !itemsMap) return null;
+    const taxModule = getTaxModule(storeState);
+    if (!taxModule) return null;
+
+    const lineItems = tripItems.map((ti) => {
+      const item = itemsMap[ti.itemId];
+      return {
+        name: item?.name ?? "Unknown Item",
+        lineTotal: ti.lineTotal,
+        category: item?.category,
+      };
+    });
+
+    return taxModule.calculate(lineItems);
+  }, [storeState, tripItems, itemsMap]);
 
   if (!trip) {
     return (
@@ -70,8 +91,11 @@ export default function TripDetailPage() {
   const map = itemsMap ?? {};
   const scannedSubtotal = trip.scannedSubtotal;
   const actualTotal = trip.actualTotal;
+  const estimatedTotal = taxEstimate
+    ? scannedSubtotal + taxEstimate.totalTax
+    : scannedSubtotal;
   const difference =
-    actualTotal !== undefined ? actualTotal - scannedSubtotal : undefined;
+    actualTotal !== undefined ? actualTotal - estimatedTotal : undefined;
 
   const tripDate = new Date(trip.startedAt).toLocaleDateString("en-US", {
     weekday: "long",
@@ -85,7 +109,7 @@ export default function TripDetailPage() {
   return (
     <div className="flex flex-col min-h-screen bg-gray-50 dark:bg-gray-900">
       <PageHeader
-        title={storeName ?? "Loading..."}
+        title={store ? storeName : "Loading..."}
         backTo="/trips/history"
         rightAction={
           <Link
@@ -116,6 +140,29 @@ export default function TripDetailPage() {
               </p>
             </div>
           </div>
+
+          {taxEstimate && (
+            <div className="space-y-2 text-sm border-t dark:border-gray-700 pt-3">
+              <div className="flex justify-between">
+                <span className="text-gray-500 dark:text-gray-400">Tax-exempt items</span>
+                <span className="text-gray-900 dark:text-gray-100">{formatCurrency(taxEstimate.exemptAmount)}</span>
+              </div>
+              <div className="flex justify-between">
+                <span className="text-gray-500 dark:text-gray-400">Taxable items</span>
+                <span className="text-gray-900 dark:text-gray-100">{formatCurrency(taxEstimate.taxableAmount)}</span>
+              </div>
+              <div className="flex justify-between">
+                <span className="text-gray-500 dark:text-gray-400">
+                  Est. tax ({(taxEstimate.lines.find((l) => l.taxable)?.taxRate ?? 0) * 100}%)
+                </span>
+                <span className="font-medium text-gray-900 dark:text-gray-100">{formatCurrency(taxEstimate.totalTax)}</span>
+              </div>
+              <div className="flex justify-between font-medium">
+                <span className="text-gray-700 dark:text-gray-300">Estimated Total</span>
+                <span className="text-gray-900 dark:text-gray-100">{formatCurrency(estimatedTotal)}</span>
+              </div>
+            </div>
+          )}
 
           {difference !== undefined && (
             <div
