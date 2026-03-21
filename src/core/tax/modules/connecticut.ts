@@ -8,6 +8,9 @@ import type { TaxModule, TaxEstimate, TaxLineItem } from "../types";
  * Taxable categories include health & beauty, household & cleaning,
  * paper & plastic goods, and pet supplies.
  *
+ * Within "Snacks & Candy", CT taxes candy/confections (sugar-based, no flour)
+ * but exempts regular snack foods (chips, pretzels, granola bars, etc.).
+ *
  * Reference: CT DRS Policy Statement 2002(2) — Sales and Use Tax on Food
  */
 
@@ -33,18 +36,124 @@ const EXEMPT_CATEGORIES = new Set([
   "produce",
   "sauces",
   "snacks",
-  "snacks & candy",
   "soup",
   "spices",
   "spices & seasonings",
   "vegetables",
 ]);
 
+/** Categories where taxability depends on the specific item. */
+const MIXED_CATEGORIES = new Set(["snacks & candy"]);
+
+/**
+ * Name patterns that indicate candy/confections (taxable in CT).
+ * CT defines "candy" as products with sugar/sweetener as a primary ingredient
+ * that do NOT contain flour.
+ */
+const CANDY_PATTERNS = [
+  /\bgumm(?:y|ies)\b/,
+  /\blicorice\b/,
+  /\bcandy\b/,
+  /\bcandies\b/,
+  /\bpeanut butter cup/,
+  /\bconfection/,
+  /\btaffy\b/,
+  /\bcaramel(?:s)?\b/,
+  /\btruffle/,
+  /\blollipop/,
+  /\bjelly bean/,
+  /\bsour patch\b/,
+  /\bswedish fish\b/,
+  /\bfudge\b/,
+  /\bmarshmallow/,
+  /\bhard candy\b/,
+  /\bcandy corn\b/,
+  /\bskittles\b/,
+  /\bstarbursts?\b/,
+  /\bjolly rancher/,
+  /\bsour worm/,
+  /\bpeach ring/,
+  /\bsweet tart/,
+];
+
+/**
+ * Name patterns that indicate regular snack food (exempt in CT),
+ * checked before candy patterns to avoid false positives.
+ */
+const SNACK_EXEMPT_PATTERNS = [
+  /\bchip(?:s)?\b/,
+  /\bpretzel/,
+  /\bcracker/,
+  /\bgranola\b/,
+  /\b(?:protein|granola|cereal|snack) bar/,
+  /\bpopcorn\b/,
+  /\btrail mix\b/,
+  /\brice cake/,
+  /\bnut(?:s)?\b/,
+  /\bjerky\b/,
+  /\bseaweed\b/,
+  /\bcheese puff/,
+  /\bcorn nuts\b/,
+  /\bchocolate chip/,
+];
+
+/**
+ * Patterns that indicate a chocolate-covered/coated product (always candy),
+ * checked first to override snack-exempt patterns like "corn nuts".
+ */
+const CHOCOLATE_COATED_PATTERNS = [
+  /\bchocolate.{0,10}cover/,
+  /\bchocolate.{0,10}coat/,
+  /\bdark chocolate (?!chip)/,
+  /\bmilk chocolate (?!chip)/,
+  /\bwhite chocolate (?!chip)/,
+];
+
+/**
+ * For items in mixed categories (e.g. "Snacks & Candy"), determine taxability
+ * based on item name heuristics.
+ */
+function isCandyOrConfection(name: string): boolean {
+  const lower = name.toLowerCase();
+
+  // Chocolate-covered/coated items are always candy, even if the base
+  // product (e.g. "corn nuts") would otherwise be an exempt snack
+  for (const pattern of CHOCOLATE_COATED_PATTERNS) {
+    if (pattern.test(lower)) return true;
+  }
+
+  // Check exempt snack patterns to avoid false positives on regular snacks
+  for (const pattern of SNACK_EXEMPT_PATTERNS) {
+    if (pattern.test(lower)) return false;
+  }
+
+  // Check candy/confection patterns
+  for (const pattern of CANDY_PATTERNS) {
+    if (pattern.test(lower)) return true;
+  }
+
+  return false;
+}
+
 const CT_RATE = 0.0635;
+
+function isItemExempt(
+  category: string | undefined,
+  name: string
+): boolean {
+  if (!category) return false;
+  const cat = category.toLowerCase();
+
+  if (EXEMPT_CATEGORIES.has(cat)) return true;
+  if (MIXED_CATEGORIES.has(cat)) return !isCandyOrConfection(name);
+
+  return false;
+}
 
 function isExempt(category: string | undefined): boolean {
   if (!category) return false;
-  return EXEMPT_CATEGORIES.has(category.toLowerCase());
+  const cat = category.toLowerCase();
+  return EXEMPT_CATEGORIES.has(cat) || MIXED_CATEGORIES.has(cat);
 }
 
 function getRate(category: string | undefined): number {
@@ -59,7 +168,7 @@ function calculate(
   let totalTax = 0;
 
   const lines: TaxLineItem[] = items.map((item) => {
-    const exempt = isExempt(item.category);
+    const exempt = isItemExempt(item.category, item.name);
     const rate = exempt ? 0 : CT_RATE;
     const taxAmount = Math.round(item.lineTotal * rate * 100) / 100;
 
