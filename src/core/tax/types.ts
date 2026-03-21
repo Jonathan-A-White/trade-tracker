@@ -46,8 +46,9 @@ export interface TaxModule {
 
   /**
    * Calculates the full tax estimate for a list of items.
+   * taxOverride: true = force taxable, false = force exempt, undefined = use heuristic.
    */
   calculate(
-    items: Array<{ name: string; lineTotal: number; category?: string }>
+    items: Array<{ name: string; lineTotal: number; category?: string; taxOverride?: boolean }>
   ): TaxEstimate;
 }

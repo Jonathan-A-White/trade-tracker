@@ -144,4 +144,37 @@ describe("Connecticut tax module", () => {
       ]);
     });
   });
+
+  describe("taxOverride", () => {
+    it("forces an exempt item to be taxable when taxOverride is true", () => {
+      const result = connecticutTaxModule.calculate([
+        { name: "Organic Bananas", lineTotal: 1.29, category: "Produce", taxOverride: true },
+      ]);
+      expect(result.taxableAmount).toBeCloseTo(1.29, 2);
+      expect(result.totalTax).toBeCloseTo(1.29 * 0.0635, 2);
+    });
+
+    it("forces a taxable item to be exempt when taxOverride is false", () => {
+      const result = connecticutTaxModule.calculate([
+        { name: "Ultra Moisturizing Hand Cream", lineTotal: 4.99, category: "Health & Beauty", taxOverride: false },
+      ]);
+      expect(result.exemptAmount).toBeCloseTo(4.99, 2);
+      expect(result.totalTax).toBe(0);
+    });
+
+    it("uses heuristic when taxOverride is undefined", () => {
+      const result = connecticutTaxModule.calculate([
+        { name: "Spring Gummies", lineTotal: 3.99, category: "Snacks & Candy", taxOverride: undefined },
+      ]);
+      expect(result.taxableAmount).toBeCloseTo(3.99, 2);
+    });
+
+    it("overrides candy heuristic for snacks & candy items", () => {
+      const result = connecticutTaxModule.calculate([
+        { name: "Spring Gummies", lineTotal: 3.99, category: "Snacks & Candy", taxOverride: false },
+      ]);
+      expect(result.exemptAmount).toBeCloseTo(3.99, 2);
+      expect(result.totalTax).toBe(0);
+    });
+  });
 });

@@ -45,6 +45,8 @@ export interface TripItem {
   weightLbs?: number;
   lineTotal: number;
   onSale: boolean;
+  /** Tax override: true = force taxable, false = force exempt, undefined = use heuristic */
+  taxOverride?: boolean;
   addedAt: number;
 }
 
