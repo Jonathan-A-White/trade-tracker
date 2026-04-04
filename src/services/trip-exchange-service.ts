@@ -287,6 +287,150 @@ function parseTimestamp(value: unknown): number {
   return Date.now();
 }
 
+export async function reimportTripFromAI(
+  existingTripId: string,
+  jsonString: string,
+): Promise<TripImportResult> {
+  const parsed: unknown = JSON.parse(jsonString);
+  const validation = validateTripImportData(parsed);
+
+  if (!validation.valid) {
+    throw new Error(`Invalid trip import data: ${validation.errors.join("; ")}`);
+  }
+
+  const data = parsed as TripImportData;
+  const now = Date.now();
+
+  const existingTrip = await db.trips.get(existingTripId);
+  if (!existingTrip) throw new Error("Trip not found");
+
+  let itemsCreated = 0;
+  let itemsMatched = 0;
+  let itemsMissingBarcode = 0;
+
+  const itemIdMap: string[] = [];
+
+  await db.transaction(
+    "rw",
+    [db.items, db.trips, db.tripItems, db.priceHistory],
+    async () => {
+      // Delete existing trip items and their price history
+      const existingTripItems = await db.tripItems
+        .where("tripId")
+        .equals(existingTripId)
+        .toArray();
+      const existingTripItemIds = existingTripItems.map((ti) => ti.id);
+
+      await db.tripItems.where("tripId").equals(existingTripId).delete();
+      if (existingTripItemIds.length > 0) {
+        await db.priceHistory
+          .where("tripItemId")
+          .anyOf(existingTripItemIds)
+          .delete();
+      }
+
+      // Create or match items
+      for (const importItem of data.items) {
+        let itemId: string | undefined;
+
+        if (importItem.barcode && importItem.barcode.trim() !== "") {
+          const existingByBarcode = await db.items
+            .where("barcode")
+            .equals(importItem.barcode)
+            .first();
+          if (existingByBarcode) {
+            itemId = existingByBarcode.id;
+            itemsMatched++;
+          }
+        }
+
+        if (!itemId) {
+          itemId = crypto.randomUUID();
+          const barcode =
+            importItem.barcode && importItem.barcode.trim() !== ""
+              ? importItem.barcode
+              : `${MANUAL_BARCODE_PREFIX}${crypto.randomUUID()}`;
+
+          if (isManualBarcode(barcode)) {
+            itemsMissingBarcode++;
+          }
+
+          const item: Item = {
+            id: itemId,
+            barcode,
+            name: importItem.name,
+            currentPrice: importItem.currentPrice,
+            unitType: importItem.unitType,
+            category: importItem.category,
+            createdAt: now,
+            updatedAt: now,
+          };
+          await db.items.put(item);
+          itemsCreated++;
+        }
+
+        itemIdMap.push(itemId);
+      }
+
+      // Build new trip items
+      let scannedSubtotal = 0;
+      const tripItemRecords: TripItem[] = [];
+      const priceHistoryRecords: PriceHistoryEntry[] = [];
+
+      for (const importTripItem of data.tripItems) {
+        const itemId = itemIdMap[importTripItem.itemIndex];
+        const lineTotal = calculateLineTotal(
+          importTripItem.price,
+          importTripItem.quantity,
+          importTripItem.weightLbs,
+        );
+        scannedSubtotal += lineTotal;
+
+        const tripItemId = crypto.randomUUID();
+        tripItemRecords.push({
+          id: tripItemId,
+          tripId: existingTripId,
+          itemId,
+          price: importTripItem.price,
+          quantity: importTripItem.quantity,
+          weightLbs: importTripItem.weightLbs,
+          lineTotal,
+          onSale: importTripItem.onSale ?? false,
+          addedAt: now,
+        });
+
+        priceHistoryRecords.push({
+          id: crypto.randomUUID(),
+          itemId,
+          storeId: existingTrip.storeId,
+          tripItemId,
+          price: importTripItem.price,
+          recordedAt: existingTrip.startedAt,
+        });
+      }
+
+      // Update trip
+      await db.trips.update(existingTripId, {
+        scannedSubtotal,
+        actualTotal: data.trip.actualTotal ?? existingTrip.actualTotal,
+        note: data.trip.note ?? existingTrip.note,
+        updatedAt: now,
+      });
+
+      await db.tripItems.bulkPut(tripItemRecords);
+      await db.priceHistory.bulkPut(priceHistoryRecords);
+    },
+  );
+
+  return {
+    tripId: existingTripId,
+    storeCreated: false,
+    itemsCreated,
+    itemsMatched,
+    itemsMissingBarcode,
+  };
+}
+
 export async function importTripFromAI(jsonString: string): Promise<TripImportResult> {
   const parsed: unknown = JSON.parse(jsonString);
   const validation = validateTripImportData(parsed);

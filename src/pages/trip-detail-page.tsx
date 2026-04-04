@@ -1,4 +1,4 @@
-import { useState, useMemo } from "react";
+import { useState, useMemo, useRef } from "react";
 import { useLiveQuery } from "dexie-react-hooks";
 import { useParams, Link, useNavigate } from "react-router";
 import { db } from "@/db/database";
@@ -10,7 +10,12 @@ import { PageHeader } from "@/components/layout/page-header";
 import { formatCurrency } from "@/core/pricing";
 import { getTaxModule } from "@/core/tax";
 import type { TaxEstimate } from "@/core/tax";
-import { exportTripForAI, isManualBarcode } from "@/services/trip-exchange-service";
+import {
+  exportTripForAI,
+  isManualBarcode,
+  reimportTripFromAI,
+  validateTripImportData,
+} from "@/services/trip-exchange-service";
 import { downloadAsFile } from "@/services/export-service";
 import { FixUnknownItemModal } from "@/components/forms/fix-unknown-item-modal";
 
@@ -27,6 +32,10 @@ export default function TripDetailPage() {
     price: number;
     item?: Item;
   } | null>(null);
+  const [reimporting, setReimporting] = useState(false);
+  const [reimportError, setReimportError] = useState<string | null>(null);
+  const [reimportSuccess, setReimportSuccess] = useState<string | null>(null);
+  const reimportFileRef = useRef<HTMLInputElement>(null);
 
   const trip = useLiveQuery(
     () => (id ? tripRepo.getById(id) : undefined),
@@ -95,6 +104,45 @@ export default function TripDetailPage() {
       await tripItemRepo.update(tripItemId, { taxOverride: !currentlyTaxable });
     }
   };
+
+  function handleReimportFileSelect(e: React.ChangeEvent<HTMLInputElement>) {
+    setReimportError(null);
+    setReimportSuccess(null);
+    const file = e.target.files?.[0];
+    if (!file || !id) return;
+
+    const reader = new FileReader();
+    reader.onload = async (event) => {
+      const text = event.target?.result as string;
+      try {
+        const parsed = JSON.parse(text);
+        const validation = validateTripImportData(parsed);
+        if (!validation.valid) {
+          setReimportError(`Invalid file: ${validation.errors.join(", ")}`);
+          return;
+        }
+        setReimporting(true);
+        try {
+          const result = await reimportTripFromAI(id, text);
+          const parts: string[] = [];
+          if (result.itemsMatched > 0) parts.push(`${result.itemsMatched} matched`);
+          if (result.itemsCreated > 0) parts.push(`${result.itemsCreated} created`);
+          if (result.itemsMissingBarcode > 0) parts.push(`${result.itemsMissingBarcode} need barcodes`);
+          setReimportSuccess(`Trip reimported! ${parts.join(", ")}`);
+        } catch (err) {
+          setReimportError(err instanceof Error ? err.message : "Reimport failed");
+        } finally {
+          setReimporting(false);
+          if (reimportFileRef.current) {
+            reimportFileRef.current.value = "";
+          }
+        }
+      } catch {
+        setReimportError("Could not parse file. Make sure it is valid JSON.");
+      }
+    };
+    reader.readAsText(file);
+  }
 
   if (!trip) {
     return (
@@ -358,6 +406,47 @@ export default function TripDetailPage() {
           </svg>
           Export for AI
         </button>
+
+        {/* Import from AI */}
+        <label
+          className={`w-full flex items-center justify-center gap-2 rounded-lg border border-purple-300 dark:border-purple-600 text-purple-700 dark:text-purple-300 px-4 py-3 text-sm font-medium hover:bg-purple-50 dark:hover:bg-purple-900/20 active:bg-purple-100 transition-colors cursor-pointer ${reimporting ? "opacity-50 pointer-events-none" : ""}`}
+        >
+          <svg
+            xmlns="http://www.w3.org/2000/svg"
+            width="18"
+            height="18"
+            viewBox="0 0 24 24"
+            fill="none"
+            stroke="currentColor"
+            strokeWidth="2"
+            strokeLinecap="round"
+            strokeLinejoin="round"
+          >
+            <path d="M21 15v4a2 2 0 0 1-2 2H5a2 2 0 0 1-2-2v-4" />
+            <polyline points="17 8 12 3 7 8" />
+            <line x1="12" y1="3" x2="12" y2="15" />
+          </svg>
+          {reimporting ? "Importing..." : "Import from AI"}
+          <input
+            ref={reimportFileRef}
+            type="file"
+            accept=".json"
+            onChange={handleReimportFileSelect}
+            disabled={reimporting}
+            className="hidden"
+          />
+        </label>
+
+        {reimportError && (
+          <p className="text-sm text-red-600 dark:text-red-400 bg-red-50 dark:bg-red-900/30 rounded-lg p-3">
+            {reimportError}
+          </p>
+        )}
+        {reimportSuccess && (
+          <p className="text-sm text-green-600 dark:text-green-400 bg-green-50 dark:bg-green-900/30 rounded-lg p-3">
+            {reimportSuccess}
+          </p>
+        )}
 
         {/* Delete Trip */}
         <div className="pt-2">
