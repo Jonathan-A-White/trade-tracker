@@ -1,4 +1,4 @@
-import { useState, useMemo, useCallback } from "react";
+import { useState, useMemo, useCallback, useRef } from "react";
 import { useLiveQuery } from "dexie-react-hooks";
 import { useNavigate } from "react-router";
 import { db } from "@/db/database";
@@ -7,6 +7,10 @@ import { TripRepository } from "@/db/repositories/trip-repository";
 import { PageHeader } from "@/components/layout/page-header";
 import { TripCard } from "@/components/data-display/trip-card";
 import { DateRangePicker } from "@/components/forms/date-range-picker";
+import {
+  validateTripImportData,
+  importTripFromAI,
+} from "@/services/trip-exchange-service";
 
 const tripRepo = new TripRepository();
 
@@ -28,6 +32,15 @@ export default function TripHistoryPage() {
   const [selectedStoreId, setSelectedStoreId] = useState("");
   const [startDate, setStartDate] = useState<Date>(getDefaultStartDate);
   const [endDate, setEndDate] = useState<Date>(getDefaultEndDate);
+  const [tripImporting, setTripImporting] = useState(false);
+  const [tripImportError, setTripImportError] = useState<string | null>(null);
+  const [tripImportResult, setTripImportResult] = useState<{
+    tripId: string;
+    itemsCreated: number;
+    itemsMatched: number;
+    itemsMissingBarcode: number;
+  } | null>(null);
+  const tripFileInputRef = useRef<HTMLInputElement>(null);
 
   const stores = useLiveQuery(() => db.stores.orderBy("name").toArray(), []);
 
@@ -62,6 +75,48 @@ export default function TripHistoryPage() {
     setStartDate(start);
     setEndDate(end);
   }, []);
+
+  const handleTripFileSelect = useCallback(
+    (e: React.ChangeEvent<HTMLInputElement>) => {
+      setTripImportError(null);
+      setTripImportResult(null);
+      const file = e.target.files?.[0];
+      if (!file) return;
+
+      const reader = new FileReader();
+      reader.onload = async (event) => {
+        const text = event.target?.result as string;
+        try {
+          const parsed = JSON.parse(text);
+          const validation = validateTripImportData(parsed);
+          if (!validation.valid) {
+            setTripImportError(`Invalid file: ${validation.errors.join(", ")}`);
+            return;
+          }
+          setTripImporting(true);
+          try {
+            const result = await importTripFromAI(text);
+            setTripImportResult(result);
+          } catch (err) {
+            setTripImportError(
+              err instanceof Error ? err.message : "Trip import failed",
+            );
+          } finally {
+            setTripImporting(false);
+            if (tripFileInputRef.current) {
+              tripFileInputRef.current.value = "";
+            }
+          }
+        } catch {
+          setTripImportError(
+            "Could not parse file. Make sure it is valid JSON.",
+          );
+        }
+      };
+      reader.readAsText(file);
+    },
+    [],
+  );
 
   const presets = useMemo(() => {
     const now = new Date();
@@ -121,6 +176,67 @@ export default function TripHistoryPage() {
             presets={presets}
           />
         </div>
+        </div>
+
+        {/* Import from AI */}
+        <div className="px-4 pt-4 space-y-2">
+          <label
+            className={`w-full flex items-center justify-center gap-2 rounded-lg border border-dashed border-purple-300 dark:border-purple-600 text-purple-700 dark:text-purple-300 px-4 py-3 text-sm font-medium hover:bg-purple-50 dark:hover:bg-purple-900/20 active:bg-purple-100 transition-colors cursor-pointer ${tripImporting ? "opacity-50 pointer-events-none" : ""}`}
+          >
+            <svg
+              xmlns="http://www.w3.org/2000/svg"
+              width="18"
+              height="18"
+              viewBox="0 0 24 24"
+              fill="none"
+              stroke="currentColor"
+              strokeWidth="2"
+              strokeLinecap="round"
+              strokeLinejoin="round"
+            >
+              <path d="M21 15v4a2 2 0 0 1-2 2H5a2 2 0 0 1-2-2v-4" />
+              <polyline points="17 8 12 3 7 8" />
+              <line x1="12" y1="3" x2="12" y2="15" />
+            </svg>
+            {tripImporting ? "Importing..." : "Import Trip from AI"}
+            <input
+              ref={tripFileInputRef}
+              type="file"
+              accept=".json"
+              onChange={handleTripFileSelect}
+              disabled={tripImporting}
+              className="hidden"
+            />
+          </label>
+
+          {tripImportError && (
+            <p className="text-sm text-red-600 dark:text-red-400 bg-red-50 dark:bg-red-900/30 rounded-lg p-3">
+              {tripImportError}
+            </p>
+          )}
+          {tripImportResult && (
+            <div className="text-sm text-green-600 dark:text-green-400 bg-green-50 dark:bg-green-900/30 rounded-lg p-3 space-y-2">
+              <p className="font-medium">Trip imported successfully!</p>
+              <ul className="text-xs space-y-1">
+                <li>{tripImportResult.itemsCreated} items created</li>
+                {tripImportResult.itemsMatched > 0 && (
+                  <li>{tripImportResult.itemsMatched} items matched to existing</li>
+                )}
+                {tripImportResult.itemsMissingBarcode > 0 && (
+                  <li className="text-purple-600 dark:text-purple-400">
+                    {tripImportResult.itemsMissingBarcode} items need barcodes
+                  </li>
+                )}
+              </ul>
+              <button
+                type="button"
+                onClick={() => navigate(`/trips/${tripImportResult.tripId}`)}
+                className="mt-2 w-full rounded-lg bg-green-600 px-4 py-2 text-sm font-medium text-white hover:bg-green-700 cursor-pointer"
+              >
+                View Imported Trip
+              </button>
+            </div>
+          )}
         </div>
 
         {/* Trip list */}
