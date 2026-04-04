@@ -340,6 +340,11 @@ export async function reimportTripFromAI(
             .first();
           if (existingByBarcode) {
             itemId = existingByBarcode.id;
+            // Update master item price to match import
+            await db.items.update(itemId, {
+              currentPrice: importItem.currentPrice,
+              updatedAt: now,
+            });
             itemsMatched++;
           }
         }
@@ -497,6 +502,11 @@ export async function importTripFromAI(jsonString: string): Promise<TripImportRe
             .first();
           if (existingByBarcode) {
             itemId = existingByBarcode.id;
+            // Update master item price to match import
+            await db.items.update(itemId, {
+              currentPrice: importItem.currentPrice,
+              updatedAt: now,
+            });
             itemsMatched++;
           }
         }
