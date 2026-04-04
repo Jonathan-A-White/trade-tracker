@@ -11,6 +11,7 @@ import {
 } from "recharts";
 import { db } from "@/db/database";
 import { formatCurrency } from "@/core/pricing";
+import { getTaxModule } from "@/core/tax";
 import { PageHeader } from "@/components/layout/page-header";
 import { StatCard } from "@/components/data-display/stat-card";
 
@@ -30,10 +31,51 @@ export default function TripComparisonPage() {
     [trips],
   );
 
+  // Load trip items and item details for tax calculation
+  const tripTaxData = useLiveQuery(async () => {
+    if (tripsWithActual.length === 0) return new Map<string, number>();
+    const taxByTrip = new Map<string, number>();
+
+    for (const trip of tripsWithActual) {
+      const store = storeMap.get(trip.storeId);
+      if (!store?.state) {
+        taxByTrip.set(trip.id, 0);
+        continue;
+      }
+      const taxModule = getTaxModule(store.state);
+      if (!taxModule) {
+        taxByTrip.set(trip.id, 0);
+        continue;
+      }
+
+      const tripItems = await db.tripItems.where("tripId").equals(trip.id).toArray();
+      const itemIds = tripItems.map((ti) => ti.itemId);
+      const items = await db.items.where("id").anyOf(itemIds).toArray();
+      const itemMap = new Map(items.map((item) => [item.id, item]));
+
+      const lineItems = tripItems.map((ti) => {
+        const item = itemMap.get(ti.itemId);
+        return {
+          name: item?.name ?? "Unknown Item",
+          lineTotal: ti.lineTotal,
+          category: item?.category,
+          taxOverride: ti.taxOverride,
+        };
+      });
+
+      const estimate = taxModule.calculate(lineItems);
+      taxByTrip.set(trip.id, estimate.totalTax);
+    }
+
+    return taxByTrip;
+  }, [tripsWithActual, storeMap]);
+
   const rows = useMemo(
     () =>
       tripsWithActual.map((t) => {
-        const diff = (t.actualTotal ?? 0) - t.scannedSubtotal;
+        const estimatedTax = tripTaxData?.get(t.id) ?? 0;
+        const estimatedTotal = t.scannedSubtotal + estimatedTax;
+        const diff = (t.actualTotal ?? 0) - estimatedTotal;
         return {
           id: t.id,
           date: new Date(t.startedAt).toLocaleDateString("en-US", {
@@ -41,13 +83,13 @@ export default function TripComparisonPage() {
             day: "numeric",
           }),
           storeName: storeMap.get(t.storeId)?.name ?? "Unknown",
-          scanned: t.scannedSubtotal,
+          scanned: estimatedTotal,
           actual: t.actualTotal ?? 0,
           diff,
           absDiff: Math.abs(diff),
         };
       }),
-    [tripsWithActual, storeMap],
+    [tripsWithActual, storeMap, tripTaxData],
   );
 
   const avgDifference = useMemo(() => {
@@ -168,7 +210,7 @@ export default function TripComparisonPage() {
                         </span>
                       </div>
                       <div className="flex items-center gap-3 mt-1 text-xs text-gray-500 dark:text-gray-400">
-                        <span>Scanned: {formatCurrency(row.scanned)}</span>
+                        <span>Estimated: {formatCurrency(row.scanned)}</span>
                         <span>Actual: {formatCurrency(row.actual)}</span>
                       </div>
                     </div>
