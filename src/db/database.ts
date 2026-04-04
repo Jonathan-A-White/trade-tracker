@@ -32,6 +32,11 @@ export class TradeTrackerDB extends Dexie {
 
     // Version 4: Add optional taxOverride field to tripItems (no index needed)
     this.version(4).stores({});
+
+    // Version 5: Add tripItemId index to priceHistory for reimport cleanup
+    this.version(5).stores({
+      priceHistory: "id, itemId, storeId, [itemId+storeId], recordedAt, tripItemId",
+    });
   }
 }
 
