@@ -4,6 +4,9 @@ import { BarcodeInput } from "./barcode-input";
 import { CategoryAutocomplete } from "./category-autocomplete";
 import { ScannerViewfinder } from "../scanner/scanner-viewfinder";
 import { isManualBarcode } from "@/services/trip-exchange-service";
+import { ItemRepository } from "@/db/repositories/item-repository";
+
+const itemRepo = new ItemRepository();
 
 interface FixUnknownItemModalProps {
   itemId: string;
@@ -15,7 +18,7 @@ interface FixUnknownItemModalProps {
     currentPrice: number;
     unitType: string;
     category: string;
-  }) => void;
+  }) => void | Promise<void>;
   onCancel: () => void;
   existingName?: string;
   existingBarcode?: string;
@@ -43,23 +46,61 @@ export function FixUnknownItemModal({
   const [unitType, setUnitType] = useState(existingUnitType ?? "each");
   const [category, setCategory] = useState(existingCategory ?? "");
   const [scannerOpen, setScannerOpen] = useState(false);
+  const [submitting, setSubmitting] = useState(false);
+  const [error, setError] = useState<string | null>(null);
 
   const handleBarcodeDetected = useCallback((detectedBarcode: string) => {
     setBarcode(detectedBarcode);
     setScannerOpen(false);
   }, []);
 
-  function handleSubmit(e: FormEvent) {
+  async function handleSubmit(e: FormEvent) {
     e.preventDefault();
-    const finalBarcode = barcode || `manual-${crypto.randomUUID()}`;
-    onSave({
-      itemId,
-      name,
-      barcode: finalBarcode,
-      currentPrice,
-      unitType,
-      category,
-    });
+    if (submitting) return;
+    setError(null);
+
+    const trimmedBarcode = barcode.trim();
+    const finalBarcode =
+      trimmedBarcode || `manual-${crypto.randomUUID()}`;
+
+    setSubmitting(true);
+    try {
+      // Pre-check: when a real (non-manual) barcode is supplied and it
+      // differs from what's already on this item, make sure it isn't
+      // already owned by a different item. The items table has a
+      // unique `&barcode` index, so otherwise the update would throw
+      // a ConstraintError and the modal would appear to hang.
+      if (
+        trimmedBarcode &&
+        trimmedBarcode !== existingBarcode &&
+        !isManualBarcode(trimmedBarcode)
+      ) {
+        const conflict = await itemRepo.findByBarcode(trimmedBarcode);
+        if (conflict && conflict.id !== itemId) {
+          setError(
+            `Barcode already used by "${conflict.name}". Remove it from that item first or enter a different barcode.`,
+          );
+          setSubmitting(false);
+          return;
+        }
+      }
+
+      await onSave({
+        itemId,
+        name,
+        barcode: finalBarcode,
+        currentPrice,
+        unitType,
+        category,
+      });
+    } catch (err) {
+      setError(
+        err instanceof Error
+          ? err.message
+          : "Something went wrong saving this item. Please try again.",
+      );
+      setSubmitting(false);
+    }
   }
 
   const inputClass =
@@ -153,19 +194,30 @@ export function FixUnknownItemModal({
             />
           </div>
 
+          {error && (
+            <div
+              role="alert"
+              className="rounded-lg border border-red-300 dark:border-red-700 bg-red-50 dark:bg-red-900/30 px-3 py-2 text-sm text-red-700 dark:text-red-300"
+            >
+              {error}
+            </div>
+          )}
+
           <div className="flex gap-3 pt-2">
             <button
               type="button"
               onClick={onCancel}
-              className="flex-1 rounded-lg border border-gray-300 dark:border-gray-600 px-4 py-2 text-sm font-medium text-gray-700 dark:text-gray-300 hover:bg-gray-50 dark:hover:bg-gray-700 transition-colors cursor-pointer"
+              disabled={submitting}
+              className="flex-1 rounded-lg border border-gray-300 dark:border-gray-600 px-4 py-2 text-sm font-medium text-gray-700 dark:text-gray-300 hover:bg-gray-50 dark:hover:bg-gray-700 transition-colors cursor-pointer disabled:opacity-50 disabled:cursor-not-allowed"
             >
               Cancel
             </button>
             <button
               type="submit"
-              className="flex-1 rounded-lg bg-blue-600 px-4 py-2 text-sm font-medium text-white hover:bg-blue-700 transition-colors cursor-pointer"
+              disabled={submitting}
+              className="flex-1 rounded-lg bg-blue-600 px-4 py-2 text-sm font-medium text-white hover:bg-blue-700 transition-colors cursor-pointer disabled:opacity-50 disabled:cursor-not-allowed"
             >
-              Save
+              {submitting ? "Saving…" : "Save"}
             </button>
           </div>
         </form>
