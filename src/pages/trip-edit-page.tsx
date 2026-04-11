@@ -162,7 +162,7 @@ export default function TripEditPage() {
         <div className="p-4">
           <button
             type="button"
-            onClick={() => navigate(`/trips/active/add`)}
+            onClick={() => navigate(`/trips/${id}/edit/add`)}
             className="w-full rounded-lg border-2 border-dashed border-gray-300 dark:border-gray-600 px-4 py-3 text-sm font-medium text-blue-600 dark:text-blue-400 hover:border-blue-400 hover:bg-blue-50 transition-colors cursor-pointer"
           >
             + Add Item

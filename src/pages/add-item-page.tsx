@@ -1,5 +1,5 @@
 import { useState, useCallback, useRef } from "react";
-import { useNavigate, useSearchParams } from "react-router";
+import { useNavigate, useParams, useSearchParams } from "react-router";
 import { useLiveQuery } from "dexie-react-hooks";
 
 import type { Item, UnitType } from "@/contracts/types";
@@ -15,8 +15,21 @@ const itemRepo = new ItemRepository();
 
 export default function AddItemPage() {
   const navigate = useNavigate();
+  const { id: tripIdParam } = useParams<{ id: string }>();
   const [searchParams] = useSearchParams();
   const barcodeFromScanner = searchParams.get("barcode") ?? "";
+  const returnPath = tripIdParam ? `/trips/${tripIdParam}/edit` : "/trips/active";
+
+  const resolveTargetTrip = useCallback(async () => {
+    if (tripIdParam) {
+      const trip = await db.trips.get(tripIdParam);
+      if (!trip) throw new Error("Trip not found");
+      return trip;
+    }
+    const active = await db.trips.where("status").equals("active").first();
+    if (!active) throw new Error("No active trip");
+    return active;
+  }, [tripIdParam]);
 
   const [searchQuery, setSearchQuery] = useState("");
   const [showCreateForm, setShowCreateForm] = useState(!!barcodeFromScanner);
@@ -44,8 +57,7 @@ export default function AddItemPage() {
     savingRef.current = true;
     setAddingItemId(item.id);
     try {
-      const trip = await db.trips.where("status").equals("active").first();
-      if (!trip) throw new Error("No active trip");
+      const trip = await resolveTargetTrip();
 
       await tripItemRepo.addToTrip({
         tripId: trip.id,
@@ -60,7 +72,7 @@ export default function AddItemPage() {
       });
 
       setQuantityPrompt(null);
-      navigate("/trips/active");
+      navigate(returnPath);
     } catch (err) {
       console.error("Failed to add item to trip:", err);
       alert("Failed to add item. Please try again.");
@@ -68,7 +80,7 @@ export default function AddItemPage() {
       savingRef.current = false;
       setAddingItemId(null);
     }
-  }, [quantityPrompt, navigate]);
+  }, [quantityPrompt, navigate, resolveTargetTrip, returnPath]);
 
   const handleCreateNewItem = useCallback(
     async (values: {
@@ -86,20 +98,22 @@ export default function AddItemPage() {
         category: values.category || undefined,
       });
 
-      // Immediately add to active trip
-      const trip = await db.trips.where("status").equals("active").first();
-      if (trip) {
+      // Immediately prompt for quantity so it can be added to the target trip
+      try {
+        await resolveTargetTrip();
         handleSelectItem(item);
+      } catch {
+        // No target trip — just close the create form silently
       }
 
       setShowCreateForm(false);
     },
-    [handleSelectItem],
+    [handleSelectItem, resolveTargetTrip],
   );
 
   return (
     <div className="fixed inset-0 z-50 flex flex-col bg-gray-50 dark:bg-gray-900">
-      <PageHeader title="Add Item" backTo="/trips/active" />
+      <PageHeader title="Add Item" backTo={returnPath} />
 
       <main className="flex-1 overflow-y-auto p-4 space-y-6">
         {/* Quantity/weight prompt */}

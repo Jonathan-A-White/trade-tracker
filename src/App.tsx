@@ -50,6 +50,7 @@ const router = createBrowserRouter(
         { path: "trips/history", element: <TripHistoryPage /> },
         { path: "trips/:id", element: <TripDetailPage /> },
         { path: "trips/:id/edit", element: <TripEditPage /> },
+        { path: "trips/:id/edit/add", element: <AddItemPage /> },
         { path: "items", element: <ItemLibraryPage /> },
         { path: "items/new", element: <NewItemPage /> },
         { path: "items/:id", element: <ItemDetailPage /> },
