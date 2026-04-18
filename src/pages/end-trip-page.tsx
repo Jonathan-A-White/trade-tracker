@@ -63,9 +63,13 @@ export default function EndTripPage() {
 
   const receiptValue = parseFloat(receiptTotal) || 0;
   const scannedSubtotal = trip?.scannedSubtotal ?? 0;
-  const estimatedTotal = taxEstimate
-    ? scannedSubtotal + taxEstimate.totalTax
-    : scannedSubtotal;
+  const bottleDeposits = (tripItems ?? []).reduce(
+    (sum, ti) => sum + (ti.bottleDeposit ?? 0),
+    0,
+  );
+  const estimatedTotal =
+    (taxEstimate ? scannedSubtotal + taxEstimate.totalTax : scannedSubtotal) +
+    bottleDeposits;
   const difference = receiptValue - estimatedTotal;
   const absDifference = Math.abs(difference);
 
@@ -172,6 +176,12 @@ export default function EndTripPage() {
                 </span>
                 <span className="font-medium text-gray-900 dark:text-gray-100">{formatCurrency(taxEstimate.totalTax)}</span>
               </div>
+              {bottleDeposits > 0 && (
+                <div className="flex justify-between">
+                  <span className="text-gray-500 dark:text-gray-400">Bottle deposits</span>
+                  <span className="font-medium text-gray-900 dark:text-gray-100">{formatCurrency(bottleDeposits)}</span>
+                </div>
+              )}
               <div className="border-t dark:border-gray-700 pt-2 flex justify-between font-medium">
                 <span className="text-gray-700 dark:text-gray-300">Estimated Total</span>
                 <span className="text-gray-900 dark:text-gray-100">{formatCurrency(estimatedTotal)}</span>

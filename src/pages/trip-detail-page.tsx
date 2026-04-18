@@ -161,9 +161,10 @@ export default function TripDetailPage() {
   const map = itemsMap ?? {};
   const scannedSubtotal = trip.scannedSubtotal;
   const actualTotal = trip.actualTotal;
-  const estimatedTotal = taxEstimate
-    ? scannedSubtotal + taxEstimate.totalTax
-    : scannedSubtotal;
+  const bottleDeposits = items.reduce((sum, ti) => sum + (ti.bottleDeposit ?? 0), 0);
+  const estimatedTotal =
+    (taxEstimate ? scannedSubtotal + taxEstimate.totalTax : scannedSubtotal) +
+    bottleDeposits;
   const difference =
     actualTotal !== undefined ? actualTotal - estimatedTotal : undefined;
 
@@ -211,22 +212,32 @@ export default function TripDetailPage() {
             </div>
           </div>
 
-          {taxEstimate && (
+          {(taxEstimate || bottleDeposits > 0) && (
             <div className="space-y-2 text-sm border-t dark:border-gray-700 pt-3">
-              <div className="flex justify-between">
-                <span className="text-gray-500 dark:text-gray-400">Tax-exempt items</span>
-                <span className="text-gray-900 dark:text-gray-100">{formatCurrency(taxEstimate.exemptAmount)}</span>
-              </div>
-              <div className="flex justify-between">
-                <span className="text-gray-500 dark:text-gray-400">Taxable items</span>
-                <span className="text-gray-900 dark:text-gray-100">{formatCurrency(taxEstimate.taxableAmount)}</span>
-              </div>
-              <div className="flex justify-between">
-                <span className="text-gray-500 dark:text-gray-400">
-                  Est. tax ({(taxEstimate.lines.find((l) => l.taxable)?.taxRate ?? 0) * 100}%)
-                </span>
-                <span className="font-medium text-gray-900 dark:text-gray-100">{formatCurrency(taxEstimate.totalTax)}</span>
-              </div>
+              {taxEstimate && (
+                <>
+                  <div className="flex justify-between">
+                    <span className="text-gray-500 dark:text-gray-400">Tax-exempt items</span>
+                    <span className="text-gray-900 dark:text-gray-100">{formatCurrency(taxEstimate.exemptAmount)}</span>
+                  </div>
+                  <div className="flex justify-between">
+                    <span className="text-gray-500 dark:text-gray-400">Taxable items</span>
+                    <span className="text-gray-900 dark:text-gray-100">{formatCurrency(taxEstimate.taxableAmount)}</span>
+                  </div>
+                  <div className="flex justify-between">
+                    <span className="text-gray-500 dark:text-gray-400">
+                      Est. tax ({(taxEstimate.lines.find((l) => l.taxable)?.taxRate ?? 0) * 100}%)
+                    </span>
+                    <span className="font-medium text-gray-900 dark:text-gray-100">{formatCurrency(taxEstimate.totalTax)}</span>
+                  </div>
+                </>
+              )}
+              {bottleDeposits > 0 && (
+                <div className="flex justify-between">
+                  <span className="text-gray-500 dark:text-gray-400">Bottle deposits</span>
+                  <span className="font-medium text-gray-900 dark:text-gray-100">{formatCurrency(bottleDeposits)}</span>
+                </div>
+              )}
               <div className="flex justify-between font-medium">
                 <span className="text-gray-700 dark:text-gray-300">Estimated Total</span>
                 <span className="text-gray-900 dark:text-gray-100">{formatCurrency(estimatedTotal)}</span>
@@ -322,6 +333,11 @@ export default function TripDetailPage() {
                           {formatCurrency(ti.price)} /{" "}
                           {item?.unitType === "per_lb" ? "lb" : "each"}{" "}
                           {quantityDisplay}
+                          {ti.bottleDeposit !== undefined && ti.bottleDeposit > 0 && (
+                            <span className="ml-1 text-teal-600 dark:text-teal-400 font-medium">
+                              +DEP {formatCurrency(ti.bottleDeposit)}
+                            </span>
+                          )}
                           {ti.onSale && (
                             <span className="ml-1 text-orange-600 dark:text-orange-400 font-medium">
                               SALE

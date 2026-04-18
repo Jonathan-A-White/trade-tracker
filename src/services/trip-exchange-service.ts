@@ -38,6 +38,8 @@ interface TripExportData {
       quantity: number;
       weightLbs?: number;
       onSale: boolean;
+      taxable?: boolean;
+      bottleDeposit?: number;
     }>;
   };
 }
@@ -64,6 +66,10 @@ interface TripImportTripItem {
   quantity: number;
   weightLbs?: number;
   onSale: boolean;
+  /** Explicit taxable flag from the receipt. If omitted, the app's heuristic is used. */
+  taxable?: boolean;
+  /** Bottle/container deposit total for this line (e.g., CT $0.05/can × 12 = 0.60). */
+  bottleDeposit?: number;
 }
 
 interface TripImportData {
@@ -124,7 +130,9 @@ IMPORT FORMAT:
       "itemIndex": 0,
       "price": 3.49,
       "quantity": 1,
-      "onSale": false
+      "onSale": false,
+      "taxable": false,
+      "bottleDeposit": 0.60
     }
   ]
 }
@@ -140,7 +148,9 @@ RULES:
 8. If the receipt shows a total, set trip.actualTotal to that value.
 9. If an item appears to be on sale or discounted, set onSale to true.
 10. "startedAt" can be an ISO date string or epoch milliseconds. Use the receipt date if visible.
-11. Assign reasonable categories when possible based on the product name.`;
+11. Assign reasonable categories when possible based on the product name.
+12. TAX: If the receipt marks individual lines as taxable (e.g., with a "T" flag, or a "Taxable" column), set tripItem.taxable accordingly (true = taxed, false = exempt). Omit taxable if the receipt doesn't distinguish — the app will fall back to its own classification heuristic. Do NOT include a separate tax line as a tripItem.
+13. BOTTLE DEPOSITS: If the receipt shows a per-container deposit (e.g., CT $0.05/can, "CT DEP"), attribute it to the beverage line it belongs to by setting tripItem.bottleDeposit to the total deposit for that line (e.g., 12 cans × $0.05 = 0.60). Do NOT create a separate tripItem for deposit lines, and do NOT include the deposit in tripItem.price or items.currentPrice.`;
 
 export function isManualBarcode(barcode: string): boolean {
   return barcode.startsWith(MANUAL_BARCODE_PREFIX);
@@ -182,6 +192,8 @@ export async function exportTripForAI(tripId: string): Promise<string> {
     quantity: ti.quantity,
     weightLbs: ti.weightLbs,
     onSale: ti.onSale,
+    taxable: ti.taxOverride,
+    bottleDeposit: ti.bottleDeposit,
   }));
 
   const data: TripExportData = {
@@ -271,6 +283,15 @@ export function validateTripImportData(data: unknown): {
       }
       if (typeof ti.quantity !== "number" || ti.quantity < 1) {
         errors.push(`tripItems[${i}]: quantity must be at least 1`);
+      }
+      if (ti.taxable !== undefined && typeof ti.taxable !== "boolean") {
+        errors.push(`tripItems[${i}]: taxable must be a boolean when provided`);
+      }
+      if (
+        ti.bottleDeposit !== undefined &&
+        (typeof ti.bottleDeposit !== "number" || ti.bottleDeposit < 0)
+      ) {
+        errors.push(`tripItems[${i}]: bottleDeposit must be a non-negative number`);
       }
     }
   }
@@ -392,7 +413,7 @@ export async function reimportTripFromAI(
         scannedSubtotal += lineTotal;
 
         const tripItemId = crypto.randomUUID();
-        tripItemRecords.push({
+        const record: TripItem = {
           id: tripItemId,
           tripId: existingTripId,
           itemId,
@@ -402,7 +423,14 @@ export async function reimportTripFromAI(
           lineTotal,
           onSale: importTripItem.onSale ?? false,
           addedAt: now,
-        });
+        };
+        if (importTripItem.taxable !== undefined) {
+          record.taxOverride = importTripItem.taxable;
+        }
+        if (importTripItem.bottleDeposit !== undefined && importTripItem.bottleDeposit > 0) {
+          record.bottleDeposit = importTripItem.bottleDeposit;
+        }
+        tripItemRecords.push(record);
 
         priceHistoryRecords.push({
           id: crypto.randomUUID(),
@@ -554,7 +582,7 @@ export async function importTripFromAI(jsonString: string): Promise<TripImportRe
         scannedSubtotal += lineTotal;
 
         const tripItemId = crypto.randomUUID();
-        tripItemRecords.push({
+        const record: TripItem = {
           id: tripItemId,
           tripId,
           itemId,
@@ -564,7 +592,14 @@ export async function importTripFromAI(jsonString: string): Promise<TripImportRe
           lineTotal,
           onSale: importTripItem.onSale ?? false,
           addedAt: now,
-        });
+        };
+        if (importTripItem.taxable !== undefined) {
+          record.taxOverride = importTripItem.taxable;
+        }
+        if (importTripItem.bottleDeposit !== undefined && importTripItem.bottleDeposit > 0) {
+          record.bottleDeposit = importTripItem.bottleDeposit;
+        }
+        tripItemRecords.push(record);
 
         priceHistoryRecords.push({
           id: crypto.randomUUID(),

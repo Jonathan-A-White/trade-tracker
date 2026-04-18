@@ -47,6 +47,8 @@ export interface TripItem {
   onSale: boolean;
   /** Tax override: true = force taxable, false = force exempt, undefined = use heuristic */
   taxOverride?: boolean;
+  /** Bottle/container deposit total for this line (e.g., CT $0.05/can × 12 = 0.60). Added on top of lineTotal. */
+  bottleDeposit?: number;
   addedAt: number;
 }
 
