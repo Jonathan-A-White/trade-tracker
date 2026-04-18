@@ -37,6 +37,9 @@ export class TradeTrackerDB extends Dexie {
     this.version(5).stores({
       priceHistory: "id, itemId, storeId, [itemId+storeId], recordedAt, tripItemId",
     });
+
+    // Version 6: Add optional bottleDeposit field to tripItems (no index needed)
+    this.version(6).stores({});
   }
 }
 

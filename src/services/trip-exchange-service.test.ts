@@ -117,6 +117,35 @@ describe("exportTripForAI", () => {
 
     expect(data.example.items[0].barcode).toBeNull();
   });
+
+  it("includes per-item bottleDeposit and taxable flag", async () => {
+    const store = makeStore({ name: "Stop & Shop", state: "CT" });
+    const soda = makeItem({ name: "Seltzer 12-pack" });
+    const candy = makeItem({ name: "Swedish Fish" });
+    const trip = makeTrip(store.id);
+    const tiSoda = makeTripItem(trip.id, soda.id, {
+      taxOverride: false,
+      bottleDeposit: 0.6,
+    });
+    const tiCandy = makeTripItem(trip.id, candy.id, { taxOverride: true });
+
+    await db.stores.put(store);
+    await db.items.bulkPut([soda, candy]);
+    await db.trips.put(trip);
+    await db.tripItems.bulkPut([tiSoda, tiCandy]);
+
+    const data = JSON.parse(await exportTripForAI(trip.id));
+
+    const tripItems = data.example.tripItems as Array<{
+      taxable?: boolean;
+      bottleDeposit?: number;
+    }>;
+    const flags = tripItems.map((t) => t.taxable);
+    expect(flags).toContain(false);
+    expect(flags).toContain(true);
+    const deposits = tripItems.map((t) => t.bottleDeposit);
+    expect(deposits).toContain(0.6);
+  });
 });
 
 describe("validateTripImportData", () => {
@@ -273,6 +302,60 @@ describe("importTripFromAI", () => {
     expect(tripItems[0].weightLbs).toBe(1.5);
     // lineTotal = 3.99 * 1.5 = 5.985
     expect(tripItems[0].lineTotal).toBeCloseTo(5.985, 2);
+  });
+
+  it("persists per-item taxable and bottleDeposit", async () => {
+    const importData = {
+      type: "trip-import",
+      version: 1,
+      store: { name: "Stop & Shop", state: "CT" },
+      trip: { actualTotal: 10.6 },
+      items: [
+        { name: "Seltzer 12-pack", barcode: null, currentPrice: 5.99, unitType: "each", category: "beverages" },
+        { name: "Paper Towels", barcode: null, currentPrice: 4.0, unitType: "each", category: "household" },
+      ],
+      tripItems: [
+        { itemIndex: 0, price: 5.99, quantity: 1, onSale: false, taxable: false, bottleDeposit: 0.6 },
+        { itemIndex: 1, price: 4.0, quantity: 1, onSale: false, taxable: true },
+      ],
+    };
+
+    const result = await importTripFromAI(JSON.stringify(importData));
+    const tripItems = await db.tripItems.where("tripId").equals(result.tripId).toArray();
+    const byPrice = new Map(tripItems.map((t) => [t.price, t]));
+
+    expect(byPrice.get(5.99)!.bottleDeposit).toBe(0.6);
+    expect(byPrice.get(5.99)!.taxOverride).toBe(false);
+    expect(byPrice.get(4.0)!.taxOverride).toBe(true);
+    expect(byPrice.get(4.0)!.bottleDeposit).toBeUndefined();
+  });
+
+  it("rejects negative bottleDeposit", () => {
+    const bad = {
+      type: "trip-import",
+      version: 1,
+      store: { name: "Stop & Shop" },
+      trip: {},
+      items: [{ name: "Seltzer", currentPrice: 5.99, unitType: "each" }],
+      tripItems: [{ itemIndex: 0, price: 5.99, quantity: 1, onSale: false, bottleDeposit: -1 }],
+    };
+    const result = validateTripImportData(bad);
+    expect(result.valid).toBe(false);
+    expect(result.errors.some((e) => e.includes("bottleDeposit"))).toBe(true);
+  });
+
+  it("rejects non-boolean taxable", () => {
+    const bad = {
+      type: "trip-import",
+      version: 1,
+      store: { name: "Store" },
+      trip: {},
+      items: [{ name: "Item", currentPrice: 1, unitType: "each" }],
+      tripItems: [{ itemIndex: 0, price: 1, quantity: 1, onSale: false, taxable: "yes" }],
+    };
+    const result = validateTripImportData(bad);
+    expect(result.valid).toBe(false);
+    expect(result.errors.some((e) => e.includes("taxable"))).toBe(true);
   });
 
   it("parses ISO date string for startedAt", async () => {
