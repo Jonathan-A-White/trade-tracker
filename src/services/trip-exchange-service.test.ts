@@ -4,6 +4,7 @@ import {
   exportTripForAI,
   validateTripImportData,
   importTripFromAI,
+  reimportTripFromAI,
   isManualBarcode,
 } from "./trip-exchange-service";
 
@@ -363,5 +364,94 @@ describe("importTripFromAI", () => {
     const trip = await db.trips.get(result.tripId);
     const expected = new Date("2025-01-15T10:30:00Z").getTime();
     expect(trip!.startedAt).toBe(expected);
+  });
+});
+
+describe("reimportTripFromAI", () => {
+  async function seedTrip(item: Item) {
+    const store = makeStore();
+    const trip = makeTrip(store.id, { status: "completed" });
+    const tripItem = makeTripItem(trip.id, item.id, { price: item.currentPrice });
+    await db.stores.put(store);
+    await db.items.put(item);
+    await db.trips.put(trip);
+    await db.tripItems.put(tripItem);
+    return { store, trip };
+  }
+
+  function reimportData(overrides: {
+    barcode: string | null;
+    name: string;
+    price: number;
+  }) {
+    return {
+      type: "trip-import",
+      version: 1,
+      store: { name: "Test Store" },
+      trip: { actualTotal: overrides.price },
+      items: [
+        {
+          name: overrides.name,
+          barcode: overrides.barcode,
+          currentPrice: overrides.price,
+          unitType: "each",
+        },
+      ],
+      tripItems: [{ itemIndex: 0, price: overrides.price, quantity: 1, onSale: false }],
+    };
+  }
+
+  it("updates the master item price when re-import matches by barcode", async () => {
+    const item = makeItem({ barcode: "0123456789", name: "Cheddar", currentPrice: 4.99 });
+    const { trip } = await seedTrip(item);
+
+    const result = await reimportTripFromAI(
+      trip.id,
+      JSON.stringify(reimportData({ barcode: "0123456789", name: "Cheddar", price: 5.49 })),
+    );
+
+    expect(result.itemsMatched).toBe(1);
+    expect(result.itemsCreated).toBe(0);
+    const updated = await db.items.get(item.id);
+    expect(updated!.currentPrice).toBe(5.49);
+  });
+
+  it("syncs the new price onto the original scannable item when the AI nulled the barcode", async () => {
+    const item = makeItem({ barcode: "0123456789", name: "Cheddar", currentPrice: 4.99 });
+    const { trip } = await seedTrip(item);
+
+    // AI dropped the barcode (per the export instructions) but kept the name.
+    const result = await reimportTripFromAI(
+      trip.id,
+      JSON.stringify(reimportData({ barcode: null, name: "cheddar", price: 5.49 })),
+    );
+
+    // Matched by name to the original item — no duplicate created.
+    expect(result.itemsMatched).toBe(1);
+    expect(result.itemsCreated).toBe(0);
+
+    const updated = await db.items.get(item.id);
+    expect(updated!.currentPrice).toBe(5.49);
+    // Original barcode is preserved so future scans still resolve to this item.
+    expect(updated!.barcode).toBe("0123456789");
+
+    const allItems = await db.items.toArray();
+    expect(allItems).toHaveLength(1);
+  });
+
+  it("creates a new item when the name does not match anything in the trip", async () => {
+    const item = makeItem({ barcode: "0123456789", name: "Cheddar", currentPrice: 4.99 });
+    const { trip } = await seedTrip(item);
+
+    const result = await reimportTripFromAI(
+      trip.id,
+      JSON.stringify(reimportData({ barcode: null, name: "Brand New Item", price: 2.0 })),
+    );
+
+    expect(result.itemsMatched).toBe(0);
+    expect(result.itemsCreated).toBe(1);
+    // Original item is untouched.
+    const original = await db.items.get(item.id);
+    expect(original!.currentPrice).toBe(4.99);
   });
 });

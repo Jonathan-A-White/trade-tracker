@@ -156,6 +156,11 @@ export function isManualBarcode(barcode: string): boolean {
   return barcode.startsWith(MANUAL_BARCODE_PREFIX);
 }
 
+/** Normalize an item name for fuzzy matching (case/whitespace-insensitive). */
+function normalizeItemName(name: string): string {
+  return name.trim().toLowerCase().replace(/\s+/g, " ");
+}
+
 export async function exportTripForAI(tripId: string): Promise<string> {
   const trip = await db.trips.get(tripId);
   if (!trip) throw new Error("Trip not found");
@@ -342,6 +347,22 @@ export async function reimportTripFromAI(
         .toArray();
       const existingTripItemIds = existingTripItems.map((ti) => ti.id);
 
+      // Capture the master items that were already part of this trip so we can
+      // re-link imported items to them even if the AI dropped the barcode
+      // (the AI instructions tell it to null out barcodes). This keeps prices
+      // syncing onto the original, scannable item rather than a fresh duplicate.
+      const originalItemIds = [
+        ...new Set(existingTripItems.map((ti) => ti.itemId)),
+      ];
+      const originalItems = await db.items
+        .where("id")
+        .anyOf(originalItemIds)
+        .toArray();
+      const originalItemsByName = new Map<string, Item>();
+      for (const item of originalItems) {
+        originalItemsByName.set(normalizeItemName(item.name), item);
+      }
+
       await db.tripItems.where("tripId").equals(existingTripId).delete();
       if (existingTripItemIds.length > 0) {
         await db.priceHistory
@@ -362,6 +383,23 @@ export async function reimportTripFromAI(
           if (existingByBarcode) {
             itemId = existingByBarcode.id;
             // Update master item price to match import
+            await db.items.update(itemId, {
+              currentPrice: importItem.currentPrice,
+              updatedAt: now,
+            });
+            itemsMatched++;
+          }
+        }
+
+        // Fallback: if the import has no usable barcode (e.g. the AI nulled it
+        // out), re-link to an item that was already in this trip by name so the
+        // new price lands on the existing, scannable item.
+        if (!itemId) {
+          const originalMatch = originalItemsByName.get(
+            normalizeItemName(importItem.name),
+          );
+          if (originalMatch) {
+            itemId = originalMatch.id;
             await db.items.update(itemId, {
               currentPrice: importItem.currentPrice,
               updatedAt: now,
