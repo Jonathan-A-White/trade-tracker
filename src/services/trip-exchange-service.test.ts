@@ -5,6 +5,8 @@ import {
   validateTripImportData,
   importTripFromAI,
   isManualBarcode,
+  nameSimilarity,
+  findItemByDescriptionAndPrice,
 } from "./trip-exchange-service";
 
 beforeEach(async () => {
@@ -363,5 +365,154 @@ describe("importTripFromAI", () => {
     const trip = await db.trips.get(result.tripId);
     const expected = new Date("2025-01-15T10:30:00Z").getTime();
     expect(trip!.startedAt).toBe(expected);
+  });
+
+  it("reuses an existing item by description + price when the import has no barcode", async () => {
+    // Existing item with a real (scanned) barcode.
+    const existing = makeItem({
+      barcode: "0123456789012",
+      name: "Almond Milk",
+      currentPrice: 3.49,
+    });
+    await db.items.put(existing);
+
+    const importData = {
+      ...validImport,
+      items: [
+        { name: "Organic Bananas", barcode: null, currentPrice: 0.29, unitType: "each" },
+        // Same product/price as the existing item, no barcode on the receipt.
+        { name: "Almond milk", barcode: null, currentPrice: 3.49, unitType: "each" },
+      ],
+    };
+
+    const result = await importTripFromAI(JSON.stringify(importData));
+
+    // Bananas created; Almond Milk matched to the existing item, not duplicated.
+    expect(result.itemsMatched).toBe(1);
+    expect(result.itemsCreated).toBe(1);
+    expect(result.itemsMissingBarcode).toBe(1);
+
+    // No duplicate "Almond Milk" item was created.
+    const almondMilks = await db.items
+      .filter((i) => i.name.toLowerCase().includes("almond milk"))
+      .toArray();
+    expect(almondMilks).toHaveLength(1);
+
+    // The imported line links to the existing item, so it carries the real barcode.
+    const tripItems = await db.tripItems.where("tripId").equals(result.tripId).toArray();
+    const linkedItemIds = tripItems.map((t) => t.itemId);
+    expect(linkedItemIds).toContain(existing.id);
+  });
+
+  it("matches fuzzily when the receipt name has extra words but the price matches", async () => {
+    const existing = makeItem({
+      barcode: "9990001112223",
+      name: "Almond Milk",
+      currentPrice: 3.49,
+    });
+    await db.items.put(existing);
+
+    const importData = {
+      ...validImport,
+      items: [
+        { name: "Almond Milk Unsweetened 64oz", barcode: null, currentPrice: 3.49, unitType: "each" },
+      ],
+      tripItems: [{ itemIndex: 0, price: 3.49, quantity: 1, onSale: false }],
+    };
+
+    const result = await importTripFromAI(JSON.stringify(importData));
+    expect(result.itemsMatched).toBe(1);
+    expect(result.itemsCreated).toBe(0);
+  });
+
+  it("does not reuse an existing item when the price differs", async () => {
+    const existing = makeItem({
+      barcode: "0123456789012",
+      name: "Almond Milk",
+      currentPrice: 3.49,
+    });
+    await db.items.put(existing);
+
+    const importData = {
+      ...validImport,
+      items: [
+        { name: "Almond Milk", barcode: null, currentPrice: 2.0, unitType: "each" },
+      ],
+      tripItems: [{ itemIndex: 0, price: 2.0, quantity: 1, onSale: false }],
+    };
+
+    const result = await importTripFromAI(JSON.stringify(importData));
+    expect(result.itemsMatched).toBe(0);
+    expect(result.itemsCreated).toBe(1);
+    expect(result.itemsMissingBarcode).toBe(1);
+  });
+
+  it("adopts a real barcode onto a placeholder item matched by description + price", async () => {
+    const placeholder = makeItem({
+      barcode: "manual-old-uuid",
+      name: "Shaved Beef Steak",
+      currentPrice: 11.65,
+    });
+    await db.items.put(placeholder);
+
+    const importData = {
+      ...validImport,
+      items: [
+        { name: "Shaved Beef Steak", barcode: "0044700000000", currentPrice: 11.65, unitType: "each" },
+      ],
+      tripItems: [{ itemIndex: 0, price: 11.65, quantity: 1, onSale: false }],
+    };
+
+    const result = await importTripFromAI(JSON.stringify(importData));
+    expect(result.itemsMatched).toBe(1);
+    expect(result.itemsCreated).toBe(0);
+
+    const updated = await db.items.get(placeholder.id);
+    expect(updated!.barcode).toBe("0044700000000");
+    expect(isManualBarcode(updated!.barcode)).toBe(false);
+  });
+});
+
+describe("nameSimilarity", () => {
+  it("scores identical normalized names as 1", () => {
+    expect(nameSimilarity("Almond Milk", "almond milk")).toBe(1);
+    expect(nameSimilarity("Shaved  Beef Steak", "shaved beef steak")).toBe(1);
+  });
+
+  it("tolerates extra words via token containment", () => {
+    expect(nameSimilarity("Almond Milk", "Almond Milk 64oz")).toBe(1);
+  });
+
+  it("scores clearly different products low", () => {
+    expect(nameSimilarity("Almond Milk", "Almond Butter")).toBeLessThan(0.6);
+  });
+
+  it("returns 0 for empty names", () => {
+    expect(nameSimilarity("", "Milk")).toBe(0);
+  });
+});
+
+describe("findItemByDescriptionAndPrice", () => {
+  it("returns undefined when nothing matches", async () => {
+    await db.items.put(makeItem({ name: "Bananas", currentPrice: 0.29 }));
+    const match = await findItemByDescriptionAndPrice("Almond Milk", 3.49);
+    expect(match).toBeUndefined();
+  });
+
+  it("prefers a real barcode over a placeholder on equal name match", async () => {
+    const placeholder = makeItem({
+      barcode: "manual-xyz",
+      name: "Almond Milk",
+      currentPrice: 3.49,
+    });
+    const real = makeItem({
+      barcode: "0123456789012",
+      name: "Almond Milk",
+      currentPrice: 3.49,
+    });
+    await db.items.bulkPut([placeholder, real]);
+
+    const match = await findItemByDescriptionAndPrice("Almond Milk", 3.49);
+    expect(match!.id).toBe(real.id);
   });
 });

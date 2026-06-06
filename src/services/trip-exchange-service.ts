@@ -308,6 +308,181 @@ function parseTimestamp(value: unknown): number {
   return Date.now();
 }
 
+/** Prices that round to the same cent are treated as equal. */
+const PRICE_MATCH_EPSILON = 0.005;
+
+/**
+ * Minimum token-overlap score (shared tokens / smaller token set) for two
+ * product names to be considered the same product. Combined with an exact
+ * price match, this tolerates extra words (e.g. sizes) while rejecting
+ * genuinely different products.
+ */
+const NAME_MATCH_THRESHOLD = 0.6;
+
+function normalizeName(name: string): string {
+  return name
+    .toLowerCase()
+    .replace(/[^a-z0-9]+/g, " ")
+    .trim()
+    .replace(/\s+/g, " ");
+}
+
+function tokenizeName(name: string): Set<string> {
+  const normalized = normalizeName(name);
+  return new Set(normalized.length === 0 ? [] : normalized.split(" "));
+}
+
+/**
+ * Fuzzy similarity between two product names in [0, 1]. Identical normalized
+ * names score 1; otherwise the score is the fraction of the smaller name's
+ * tokens that also appear in the larger name (containment), so "Almond Milk"
+ * matches "Almond Milk 64oz" but not "Almond Butter".
+ */
+export function nameSimilarity(a: string, b: string): number {
+  const normA = normalizeName(a);
+  const normB = normalizeName(b);
+  if (normA.length === 0 || normB.length === 0) return 0;
+  if (normA === normB) return 1;
+
+  const tokensA = tokenizeName(a);
+  const tokensB = tokenizeName(b);
+  let shared = 0;
+  for (const token of tokensA) {
+    if (tokensB.has(token)) shared++;
+  }
+  return shared / Math.min(tokensA.size, tokensB.size);
+}
+
+/**
+ * Finds an existing item whose price matches (within a cent) and whose name is
+ * fuzzily similar to the given description. Used to reuse an existing item —
+ * and its barcode — for an imported line that has no barcode of its own,
+ * instead of minting a duplicate placeholder item. When several items qualify,
+ * the closest name wins, with a real (non-placeholder) barcode breaking ties.
+ */
+export async function findItemByDescriptionAndPrice(
+  name: string,
+  price: number,
+): Promise<Item | undefined> {
+  const candidates = await db.items
+    .filter((item) => Math.abs(item.currentPrice - price) < PRICE_MATCH_EPSILON)
+    .toArray();
+
+  let best: Item | undefined;
+  let bestScore = 0;
+  for (const item of candidates) {
+    const score = nameSimilarity(name, item.name);
+    if (score < NAME_MATCH_THRESHOLD) continue;
+
+    const beatsBest = best === undefined || score > bestScore;
+    const tieButRealBarcode =
+      best !== undefined &&
+      score === bestScore &&
+      isManualBarcode(best.barcode) &&
+      !isManualBarcode(item.barcode);
+    if (beatsBest || tieButRealBarcode) {
+      best = item;
+      bestScore = score;
+    }
+  }
+  return best;
+}
+
+interface ResolvedImportItem {
+  itemId: string;
+  matched: boolean;
+  created: boolean;
+  missingBarcode: boolean;
+}
+
+/**
+ * Resolves an imported line to an item id, matching an existing item where
+ * possible and creating one otherwise. Resolution order:
+ *   1. Exact barcode match (when the import carries a real barcode).
+ *   2. Fuzzy description + price match — reuses the existing item and, when the
+ *      import supplies a real barcode the match is missing, adopts that barcode.
+ *   3. Otherwise create a new item, generating a placeholder barcode if none
+ *      was supplied.
+ * Must be called inside a read/write transaction covering db.items.
+ */
+async function resolveImportItem(
+  importItem: TripImportItem,
+  now: number,
+): Promise<ResolvedImportItem> {
+  const importBarcode =
+    importItem.barcode && importItem.barcode.trim() !== ""
+      ? importItem.barcode.trim()
+      : undefined;
+
+  // 1. Match by exact barcode.
+  if (importBarcode) {
+    const existingByBarcode = await db.items
+      .where("barcode")
+      .equals(importBarcode)
+      .first();
+    if (existingByBarcode) {
+      await db.items.update(existingByBarcode.id, {
+        currentPrice: importItem.currentPrice,
+        updatedAt: now,
+      });
+      return {
+        itemId: existingByBarcode.id,
+        matched: true,
+        created: false,
+        missingBarcode: false,
+      };
+    }
+  }
+
+  // 2. Match by description + price, reusing the existing item (and barcode).
+  const descMatch = await findItemByDescriptionAndPrice(
+    importItem.name,
+    importItem.currentPrice,
+  );
+  if (descMatch) {
+    const changes: Partial<Item> = {
+      currentPrice: importItem.currentPrice,
+      updatedAt: now,
+    };
+    // Adopt a real barcode from the import when the match only has a placeholder.
+    if (importBarcode && isManualBarcode(descMatch.barcode)) {
+      changes.barcode = importBarcode;
+    }
+    // Backfill a category when the existing item is missing one.
+    if (importItem.category && !descMatch.category) {
+      changes.category = importItem.category;
+    }
+    await db.items.update(descMatch.id, changes);
+    return {
+      itemId: descMatch.id,
+      matched: true,
+      created: false,
+      missingBarcode: false,
+    };
+  }
+
+  // 3. No match — create a new item, generating a placeholder barcode if needed.
+  const itemId = crypto.randomUUID();
+  const barcode = importBarcode ?? `${MANUAL_BARCODE_PREFIX}${crypto.randomUUID()}`;
+  const item: Item = {
+    id: itemId,
+    barcode,
+    name: importItem.name,
+    currentPrice: importItem.currentPrice,
+    unitType: importItem.unitType,
+    category: importItem.category,
+    createdAt: now,
+    updatedAt: now,
+  };
+  await db.items.put(item);
+  return {
+    itemId,
+    matched: false,
+    created: true,
+    missingBarcode: isManualBarcode(barcode),
+  };
+}
+
 export async function reimportTripFromAI(
   existingTripId: string,
   jsonString: string,
@@ -352,50 +527,11 @@ export async function reimportTripFromAI(
 
       // Create or match items
       for (const importItem of data.items) {
-        let itemId: string | undefined;
-
-        if (importItem.barcode && importItem.barcode.trim() !== "") {
-          const existingByBarcode = await db.items
-            .where("barcode")
-            .equals(importItem.barcode)
-            .first();
-          if (existingByBarcode) {
-            itemId = existingByBarcode.id;
-            // Update master item price to match import
-            await db.items.update(itemId, {
-              currentPrice: importItem.currentPrice,
-              updatedAt: now,
-            });
-            itemsMatched++;
-          }
-        }
-
-        if (!itemId) {
-          itemId = crypto.randomUUID();
-          const barcode =
-            importItem.barcode && importItem.barcode.trim() !== ""
-              ? importItem.barcode
-              : `${MANUAL_BARCODE_PREFIX}${crypto.randomUUID()}`;
-
-          if (isManualBarcode(barcode)) {
-            itemsMissingBarcode++;
-          }
-
-          const item: Item = {
-            id: itemId,
-            barcode,
-            name: importItem.name,
-            currentPrice: importItem.currentPrice,
-            unitType: importItem.unitType,
-            category: importItem.category,
-            createdAt: now,
-            updatedAt: now,
-          };
-          await db.items.put(item);
-          itemsCreated++;
-        }
-
-        itemIdMap.push(itemId);
+        const resolved = await resolveImportItem(importItem, now);
+        if (resolved.matched) itemsMatched++;
+        if (resolved.created) itemsCreated++;
+        if (resolved.missingBarcode) itemsMissingBarcode++;
+        itemIdMap.push(resolved.itemId);
       }
 
       // Build new trip items
@@ -520,51 +656,11 @@ export async function importTripFromAI(jsonString: string): Promise<TripImportRe
 
       // Create or match items
       for (const importItem of data.items) {
-        let itemId: string | undefined;
-
-        // Try to match by barcode if provided
-        if (importItem.barcode && importItem.barcode.trim() !== "") {
-          const existingByBarcode = await db.items
-            .where("barcode")
-            .equals(importItem.barcode)
-            .first();
-          if (existingByBarcode) {
-            itemId = existingByBarcode.id;
-            // Update master item price to match import
-            await db.items.update(itemId, {
-              currentPrice: importItem.currentPrice,
-              updatedAt: now,
-            });
-            itemsMatched++;
-          }
-        }
-
-        // If no match, create a new item
-        if (!itemId) {
-          itemId = crypto.randomUUID();
-          const barcode = importItem.barcode && importItem.barcode.trim() !== ""
-            ? importItem.barcode
-            : `${MANUAL_BARCODE_PREFIX}${crypto.randomUUID()}`;
-
-          if (isManualBarcode(barcode)) {
-            itemsMissingBarcode++;
-          }
-
-          const item: Item = {
-            id: itemId,
-            barcode,
-            name: importItem.name,
-            currentPrice: importItem.currentPrice,
-            unitType: importItem.unitType,
-            category: importItem.category,
-            createdAt: now,
-            updatedAt: now,
-          };
-          await db.items.put(item);
-          itemsCreated++;
-        }
-
-        itemIdMap.push(itemId);
+        const resolved = await resolveImportItem(importItem, now);
+        if (resolved.matched) itemsMatched++;
+        if (resolved.created) itemsCreated++;
+        if (resolved.missingBarcode) itemsMissingBarcode++;
+        itemIdMap.push(resolved.itemId);
       }
 
       // Calculate subtotal from trip items
