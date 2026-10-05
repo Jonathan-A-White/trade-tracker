@@ -2,6 +2,14 @@
 
 ## Unreleased
 
+### The licence is read from the Postern door
+
+With the key unlocked, Settings > Factory now asks the Postern door whether the key is
+licensed for TradeTracker, so an issued licence shows **Held** and photo lookups are sent
+(it used to say **Could not check**, because the chain check only reads the holder's own
+address history). If the door cannot be reached the chain check's answer stands; locked,
+nothing is asked of the door. Offline use is unchanged.
+
 ### Photo lookups through the factory
 
 An unknown barcode no longer ends at a blank form. The scanner opens a photo screen:
