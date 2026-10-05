@@ -1,7 +1,7 @@
 // src/services/passkey.ts — wraps the WebAuthn PRF extension (adapted from Postern's
 // webauthnPrf.ts): a platform passkey (fingerprint/face unlock) that, given a fixed
 // salt, deterministically returns the same secret on every unlock. That secret wraps
-// a second copy of the factory key (bsv-kit's vault, { prfSecret }).
+// a copy of the factory key (bsv-kit's vault, { prfSecret }).
 //
 // The PRF extension isn't reliably evaluable during registration on every
 // authenticator (the spec notes some can't compute outputs until they've been
@@ -103,7 +103,7 @@ export function describeUnlockError(err: unknown): string {
     return "Fingerprint cancelled. Tap the button to try again.";
   }
   if (err instanceof DOMException && err.name === "NotSupportedError") {
-    return "This browser cannot use a fingerprint here; use your passphrase instead.";
+    return "This browser cannot use a fingerprint here; use your 12 words instead.";
   }
   const message = err instanceof Error ? err.message : String(err);
   return message.replace(/\s*See:\s*https?:\/\/\S+/gi, "").replace(/https?:\/\/\S+/g, "").trim();

@@ -21,12 +21,14 @@ price (flagged **Check price**) and adds a price-history entry. An unreadable ta
 Pending lines show as pending on the trip detail, edit and end-trip pages, and stay out
 of the CSV and JSON exports and the AI trip export.
 
-Settings > **Factory** holds the app's key: **Make key** (with a passphrase) shows a
-12-word recovery phrase once and the public key to **Copy**; the key's **Licence**
-(read from the chain, collection `trade-tracker`) must be *held* before anything is
-sent. **Use fingerprint** adds a passkey-wrapped second copy so **Unlock with
-fingerprint** opens the key for the day; the passphrase stays as the fallback and
-**Remove fingerprint** deletes only the fingerprint copy.
+Settings > **Factory** holds the app's key, with no passphrase: **Make key** shows a
+12-word recovery phrase once and the public key to **Copy**, and where the device can do
+WebAuthn it asks for your fingerprint at once and keeps a fingerprint-wrapped copy; the
+key's **Licence** (read from the chain, collection `trade-tracker`) must be *held* before
+anything is sent. **Unlock with fingerprint** opens the key for the day; the **12 words**
+field is the fallback, and the only unlock on a device with no WebAuthn. **Use fingerprint**
+adds the fingerprint later and **Remove fingerprint** deletes only that copy, so the 12
+words still open the key. A key made earlier with a passphrase still opens with it.
 
 Offline-first is unchanged: without a key or licence, scans, trips and items work as
 before, and waiting lookups simply wait.

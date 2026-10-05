@@ -24,26 +24,43 @@ export function FactorySettings() {
     backendUrl,
     setBackendUrl,
     makeKey,
-    unlockKey,
+    unlockWithWords,
+    hasPassphraseCopy,
     fingerprintAvailable,
     hasFingerprint,
     enableFingerprint,
     unlockWithFingerprint,
     removeFingerprint,
   } = useFactory();
-  const [passphrase, setPassphrase] = useState("");
+  const [words, setWords] = useState("");
   const [busy, setBusy] = useState(false);
   const [error, setError] = useState<string | null>(null);
   const [phrase, setPhrase] = useState<string | null>(null);
   const [copied, setCopied] = useState(false);
   const [backendDraft, setBackendDraft] = useState(backendUrl);
 
-  async function run(action: (passphrase: string) => Promise<void>) {
+  async function handleMakeKey() {
     setBusy(true);
     setError(null);
     try {
-      await action(passphrase);
-      setPassphrase("");
+      const made = await makeKey();
+      setPhrase(made.phrase);
+      if (made.fingerprintNote) {
+        setError(`The key is made, but the fingerprint is not set up. ${made.fingerprintNote}`);
+      }
+    } catch (err) {
+      setError(err instanceof Error ? err.message : "That did not work.");
+    } finally {
+      setBusy(false);
+    }
+  }
+
+  async function handleUnlockWithWords() {
+    setBusy(true);
+    setError(null);
+    try {
+      await unlockWithWords(words);
+      setWords("");
     } catch (err) {
       setError(err instanceof Error ? err.message : "That did not work.");
     } finally {
@@ -81,15 +98,18 @@ export function FactorySettings() {
 
       {door === "no-key" && (
         <p className="text-xs text-gray-500 dark:text-gray-400">
-          Make a key for this app. It is wrapped by your passphrase and kept on this device only.
+          Make a key for this app. It is kept on this device only.{" "}
+          {fingerprintAvailable
+            ? "You will be asked for your fingerprint to keep it, and shown 12 words once as the fallback."
+            : "This device cannot use a fingerprint, so the 12 words shown once are the only way to unlock it. Write them down."}
         </p>
       )}
       {door === "locked" && (
         <p className="text-xs text-gray-500 dark:text-gray-400">
           A key is kept on this device.{" "}
           {fingerprintAvailable && hasFingerprint
-            ? "Unlock it with your fingerprint, or with your passphrase."
-            : "Unlock it with your passphrase."}
+            ? "Unlock it with your fingerprint, or with your 12 words."
+            : "Unlock it with your 12 words."}
         </p>
       )}
       {(door === "unlocked" || door === "licensed") && (
@@ -107,25 +127,34 @@ export function FactorySettings() {
         </button>
       )}
 
-      {(door === "no-key" || door === "locked") && (
+      {door === "no-key" && (
+        <button type="button" disabled={busy} onClick={handleMakeKey} className={buttonClass}>
+          Make key
+        </button>
+      )}
+
+      {door === "locked" && (
         <div className="space-y-2">
           <label className="block text-xs text-gray-500 dark:text-gray-400">
-            Passphrase
-            <input
-              type="password"
-              autoComplete={door === "no-key" ? "new-password" : "current-password"}
-              value={passphrase}
-              onChange={(e) => setPassphrase(e.target.value)}
+            12 words
+            <textarea
+              rows={2}
+              autoComplete="off"
+              autoCapitalize="none"
+              autoCorrect="off"
+              spellCheck={false}
+              value={words}
+              onChange={(e) => setWords(e.target.value)}
               className={`${inputClass} mt-1`}
             />
           </label>
-          <button
-            type="button"
-            disabled={busy}
-            onClick={() => run(door === "no-key" ? async (p) => setPhrase(await makeKey(p)) : unlockKey)}
-            className={buttonClass}
-          >
-            {door === "no-key" ? "Make key" : "Unlock"}
+          {hasPassphraseCopy && (
+            <p className="text-xs text-gray-500 dark:text-gray-400">
+              The passphrase you made it with also works here.
+            </p>
+          )}
+          <button type="button" disabled={busy} onClick={handleUnlockWithWords} className={buttonClass}>
+            Unlock
           </button>
         </div>
       )}
@@ -154,7 +183,9 @@ export function FactorySettings() {
       {phrase && (
         <div className="rounded-lg bg-green-50 dark:bg-green-900/30 border border-green-200 dark:border-green-700 p-3 text-sm text-green-700 dark:text-green-300 space-y-1">
           <p>Key made and kept on this device. Write down this recovery phrase; it is shown only now.</p>
-          <p className="font-mono break-words">{phrase}</p>
+          <p data-testid="recovery-phrase" className="font-mono break-words">
+            {phrase}
+          </p>
         </div>
       )}
 

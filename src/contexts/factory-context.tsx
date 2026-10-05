@@ -7,11 +7,12 @@ import {
   addFingerprint,
   browserStorage,
   hasFingerprintCopy,
+  hasPassphraseCopy,
   makeKey as makeStoredKey,
   readBackendUrl,
   removeFingerprint as removeStoredFingerprint,
   storedPublicKeyHex,
-  unlockKey as unlockStoredKey,
+  unlockWithWords as unlockStoredWithWords,
   unlockWithFingerprint as unlockStoredWithFingerprint,
   writeBackendUrl,
 } from "@/services/factory-service";
@@ -34,20 +35,35 @@ interface FactoryContextValue {
   licence: FactoryLicence | null;
   backendUrl: string;
   setBackendUrl: (url: string) => void;
-  /** Makes and stores a key wrapped by the passphrase and unlocks it; resolves with the recovery phrase. */
-  makeKey: (passphrase: string) => Promise<string>;
-  /** Rejects with a plain message when the passphrase does not open the stored key. */
-  unlockKey: (passphrase: string) => Promise<void>;
+  /**
+   * Makes a key, unlocks it and, when WebAuthn is available, asks for the fingerprint at once and
+   * keeps the fingerprint copy. Resolves with the 12 words (shown once, never stored) and, when the
+   * fingerprint could not be set up, a plain sentence saying so; the key is made either way.
+   */
+  makeKey: () => Promise<MadeKeyResult>;
+  /**
+   * Opens the stored key with its 12 words (or, for a key made with a passphrase, that passphrase)
+   * and starts the day-long session. Rejects with a plain message.
+   */
+  unlockWithWords: (input: string) => Promise<void>;
+  /** Whether a key made with a passphrase is stored here, so the passphrase still opens it. */
+  hasPassphraseCopy: boolean;
   /** Whether this device can do WebAuthn (so a fingerprint can be offered). */
   fingerprintAvailable: boolean;
   /** Whether a fingerprint copy of the key is stored on this device. */
   hasFingerprint: boolean;
-  /** With a key unlocked: registers a passkey and stores a second wrapped copy. Rejects with a plain message. */
+  /** With a key unlocked: registers a passkey and stores a fingerprint copy. Rejects with a plain message. */
   enableFingerprint: () => Promise<void>;
   /** Opens the fingerprint copy and starts the same day-long session. Rejects with a plain message. */
   unlockWithFingerprint: () => Promise<void>;
   /** Deletes the fingerprint copy only. */
   removeFingerprint: () => Promise<void>;
+}
+
+export interface MadeKeyResult {
+  phrase: string;
+  /** Why the fingerprint was not set up, in plain words; null when it was, or was not asked for. */
+  fingerprintNote: string | null;
 }
 
 const FactoryContext = createContext<FactoryContextValue | null>(null);
@@ -101,19 +117,25 @@ export function FactoryProvider({
     };
   }, [publicKeyHex, checkLicence]);
 
-  const makeKey = useCallback(
-    async (passphrase: string) => {
-      const made = await makeStoredKey(storage, passphrase);
-      await session.setKey(made.key);
-      setPublicKeyHex(made.publicKeyHex);
-      return made.phrase;
-    },
-    [storage, session],
-  );
+  const makeKey = useCallback(async (): Promise<MadeKeyResult> => {
+    const made = await makeStoredKey(storage);
+    await session.setKey(made.key);
+    setPublicKeyHex(made.publicKeyHex);
+    let fingerprintNote: string | null = null;
+    if (passkeyPort.isAvailable()) {
+      try {
+        await addFingerprint(storage, passkeyPort, made.key);
+        setHasFingerprint(true);
+      } catch (err) {
+        fingerprintNote = describeUnlockError(err);
+      }
+    }
+    return { phrase: made.phrase, fingerprintNote };
+  }, [storage, session, passkeyPort]);
 
-  const unlockKey = useCallback(
-    async (passphrase: string) => {
-      const opened = await unlockStoredKey(storage, passphrase);
+  const unlockWithWords = useCallback(
+    async (input: string) => {
+      const opened = await unlockStoredWithWords(storage, input);
       await session.setKey(opened.key);
       setPublicKeyHex(opened.publicKeyHex);
     },
@@ -199,7 +221,8 @@ export function FactoryProvider({
         backendUrl,
         setBackendUrl,
         makeKey,
-        unlockKey,
+        unlockWithWords,
+        hasPassphraseCopy: hasPassphraseCopy(storage),
         fingerprintAvailable: passkeyPort.isAvailable(),
         hasFingerprint,
         enableFingerprint,
