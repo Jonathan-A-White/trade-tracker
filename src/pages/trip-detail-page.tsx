@@ -17,6 +17,8 @@ import {
   validateTripImportData,
 } from "@/services/trip-exchange-service";
 import { downloadAsFile } from "@/services/export-service";
+import { PendingLineRow } from "@/components/data-display/pending-line-row";
+import { usePendingLookupsByItemId } from "@/hooks/use-pending-lookups";
 import { FixUnknownItemModal } from "@/components/forms/fix-unknown-item-modal";
 
 const tripRepo = new TripRepository();
@@ -53,6 +55,8 @@ export default function TripDetailPage() {
   }, [trip?.storeId]);
 
   const storeName = store?.name ?? "Unknown Store";
+
+  const lookups = usePendingLookupsByItemId(id);
 
   const itemsMap = useLiveQuery(async () => {
     if (!tripItems || tripItems.length === 0) return {};
@@ -289,6 +293,13 @@ export default function TripDetailPage() {
           ) : (
             <ul className="divide-y dark:divide-gray-700">
               {items.map((ti, idx) => {
+                if (ti.pending && lookups[ti.itemId]) {
+                  return (
+                    <li key={ti.id}>
+                      <PendingLineRow lookup={lookups[ti.itemId]} />
+                    </li>
+                  );
+                }
                 const item = map[ti.itemId];
                 const quantityDisplay =
                   item?.unitType === "per_lb" && ti.weightLbs !== undefined

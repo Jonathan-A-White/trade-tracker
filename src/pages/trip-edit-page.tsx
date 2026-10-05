@@ -5,12 +5,16 @@ import { db } from "@/db/database";
 import type { Item } from "@/contracts/types";
 import { TripRepository } from "@/db/repositories/trip-repository";
 import { TripItemRepository } from "@/db/repositories/trip-item-repository";
+import { PendingLookupRepository } from "@/db/repositories/pending-lookup-repository";
+import { usePendingLookupsByItemId } from "@/hooks/use-pending-lookups";
 import { PageHeader } from "@/components/layout/page-header";
+import { PendingLineRow } from "@/components/data-display/pending-line-row";
 import { TripItemRow } from "@/components/data-display/trip-item-row";
 import { InlineEditor } from "@/components/forms/inline-editor";
 
 const tripRepo = new TripRepository();
 const tripItemRepo = new TripItemRepository();
+const pendingLookupRepo = new PendingLookupRepository();
 
 export default function TripEditPage() {
   const { id } = useParams<{ id: string }>();
@@ -31,6 +35,8 @@ export default function TripEditPage() {
     [id],
   );
 
+  const lookups = usePendingLookupsByItemId(id);
+
   const itemsMap = useLiveQuery(async () => {
     if (!tripItems || tripItems.length === 0) return {};
     const itemIds = [...new Set(tripItems.map((ti) => ti.itemId))];
@@ -41,6 +47,14 @@ export default function TripEditPage() {
     }
     return map;
   }, [tripItems]);
+
+  const handleRetryPending = useCallback(async (lookupId: string) => {
+    await pendingLookupRepo.retry(lookupId);
+  }, []);
+
+  const handleDiscardPending = useCallback(async (lookupId: string) => {
+    await pendingLookupRepo.discard(lookupId);
+  }, []);
 
   const handleEditPrice = useCallback((itemId: string) => {
     setEditingId(itemId);
@@ -125,6 +139,16 @@ export default function TripEditPage() {
         ) : (
           <div>
             {items.map((ti) => {
+              if (ti.pending && lookups[ti.itemId]) {
+                return (
+                  <PendingLineRow
+                    key={ti.id}
+                    lookup={lookups[ti.itemId]}
+                    onDiscard={handleDiscardPending}
+                    onRetry={handleRetryPending}
+                  />
+                );
+              }
               const item = map[ti.itemId];
               if (editingId === ti.id && editField) {
                 return (

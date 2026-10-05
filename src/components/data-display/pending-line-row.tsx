@@ -3,9 +3,10 @@ import type { PendingLookup } from "@/contracts/types";
 
 interface PendingLineRowProps {
   lookup: PendingLookup;
-  onFillByHand: (lookupId: string) => void;
-  onDiscard: (lookupId: string) => void;
-  onRetry: (lookupId: string) => void;
+  /** Each action shows only on the pages that can do it. */
+  onFillByHand?: (lookupId: string) => void;
+  onDiscard?: (lookupId: string) => void;
+  onRetry?: (lookupId: string) => void;
 }
 
 /** What the line says of each state of its lookup. */
@@ -72,31 +73,37 @@ export function PendingLineRow({
           )}
         </div>
       </div>
-      <div className="mt-2 flex gap-3">
-        {lookup.status === "failed" && (
-          <button
-            type="button"
-            onClick={() => onRetry(lookup.id)}
-            className="flex-1 rounded-lg bg-blue-600 px-3 py-1.5 text-sm font-medium text-white hover:bg-blue-700 transition-colors cursor-pointer"
-          >
-            Retry
-          </button>
-        )}
-        <button
-          type="button"
-          onClick={() => onFillByHand(lookup.id)}
-          className="flex-1 rounded-lg border border-gray-300 dark:border-gray-600 px-3 py-1.5 text-sm font-medium text-gray-700 dark:text-gray-300 hover:bg-gray-50 dark:hover:bg-gray-700 transition-colors cursor-pointer"
-        >
-          Fill by hand
-        </button>
-        <button
-          type="button"
-          onClick={() => onDiscard(lookup.id)}
-          className="flex-1 rounded-lg border border-red-300 dark:border-red-700 px-3 py-1.5 text-sm font-medium text-red-600 dark:text-red-400 hover:bg-red-50 dark:hover:bg-red-900/30 transition-colors cursor-pointer"
-        >
-          Discard
-        </button>
-      </div>
+      {(onRetry || onFillByHand || onDiscard) && (
+        <div className="mt-2 flex gap-3">
+          {onRetry && lookup.status === "failed" && (
+            <button
+              type="button"
+              onClick={() => onRetry(lookup.id)}
+              className="flex-1 rounded-lg bg-blue-600 px-3 py-1.5 text-sm font-medium text-white hover:bg-blue-700 transition-colors cursor-pointer"
+            >
+              Retry
+            </button>
+          )}
+          {onFillByHand && (
+            <button
+              type="button"
+              onClick={() => onFillByHand(lookup.id)}
+              className="flex-1 rounded-lg border border-gray-300 dark:border-gray-600 px-3 py-1.5 text-sm font-medium text-gray-700 dark:text-gray-300 hover:bg-gray-50 dark:hover:bg-gray-700 transition-colors cursor-pointer"
+            >
+              Fill by hand
+            </button>
+          )}
+          {onDiscard && (
+            <button
+              type="button"
+              onClick={() => onDiscard(lookup.id)}
+              className="flex-1 rounded-lg border border-red-300 dark:border-red-700 px-3 py-1.5 text-sm font-medium text-red-600 dark:text-red-400 hover:bg-red-50 dark:hover:bg-red-900/30 transition-colors cursor-pointer"
+            >
+              Discard
+            </button>
+          )}
+        </div>
+      )}
     </div>
   );
 }

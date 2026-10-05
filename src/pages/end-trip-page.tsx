@@ -5,7 +5,9 @@ import { db } from "@/db/database";
 import { TripRepository } from "@/db/repositories/trip-repository";
 import { TripItemRepository } from "@/db/repositories/trip-item-repository";
 import { PageHeader } from "@/components/layout/page-header";
-import { formatCurrency } from "@/core/pricing";
+import { PendingLineRow } from "@/components/data-display/pending-line-row";
+import { usePendingLookupsByItemId } from "@/hooks/use-pending-lookups";
+import { countsTowardTotal, formatCurrency } from "@/core/pricing";
 import { getTaxModule } from "@/core/tax";
 import type { TaxEstimate } from "@/core/tax";
 
@@ -32,6 +34,8 @@ export default function EndTripPage() {
   }, [trip?.storeId]);
 
   const storeName = store?.name ?? "Unknown Store";
+
+  const lookups = usePendingLookupsByItemId(trip?.id);
 
   // Load items to get categories for tax calculation
   const itemsById = useLiveQuery(async () => {
@@ -117,7 +121,10 @@ export default function EndTripPage() {
     );
   }
 
-  const itemCount = tripItems?.length ?? 0;
+  const itemCount = (tripItems ?? []).filter(countsTowardTotal).length;
+  const pendingLines = (tripItems ?? []).filter(
+    (ti) => ti.pending && lookups[ti.itemId],
+  );
   const tripDate = new Date(trip.startedAt).toLocaleDateString("en-US", {
     weekday: "short",
     month: "short",
@@ -154,6 +161,18 @@ export default function EndTripPage() {
             </div>
           </div>
         </div>
+
+        {/* Lines still waiting on a lookup: not in the totals until they have a price */}
+        {pendingLines.length > 0 && (
+          <div className="bg-white dark:bg-gray-800 rounded-lg border dark:border-gray-700 overflow-hidden">
+            <h2 className="px-4 pt-4 pb-2 text-sm font-semibold text-gray-900 dark:text-gray-100">
+              Not priced yet
+            </h2>
+            {pendingLines.map((ti) => (
+              <PendingLineRow key={ti.id} lookup={lookups[ti.itemId]} />
+            ))}
+          </div>
+        )}
 
         {/* Tax estimate */}
         {taxEstimate && (
