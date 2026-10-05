@@ -7,7 +7,7 @@ import type {
   PriceHistoryEntry,
   UnitType,
 } from "@/contracts/types";
-import { calculateLineTotal } from "@/core/pricing";
+import { calculateLineTotal, countsTowardTotal } from "@/core/pricing";
 
 // --- Export types ---
 
@@ -166,6 +166,7 @@ export async function exportTripForAI(tripId: string): Promise<string> {
   const tripItems = await db.tripItems
     .where("tripId")
     .equals(tripId)
+    .filter(countsTowardTotal)
     .toArray();
 
   const itemIds = [...new Set(tripItems.map((ti) => ti.itemId))];

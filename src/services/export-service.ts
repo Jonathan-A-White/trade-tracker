@@ -1,11 +1,12 @@
 import { db } from "@/db/database";
+import { countsTowardTotal } from "@/core/pricing";
 
 export async function exportAllData(): Promise<string> {
   const [stores, items, trips, tripItems, priceHistory] = await Promise.all([
     db.stores.toArray(),
     db.items.toArray(),
     db.trips.toArray(),
-    db.tripItems.toArray(),
+    db.tripItems.filter(countsTowardTotal).toArray(),
     db.priceHistory.toArray(),
   ]);
 
@@ -25,7 +26,7 @@ export async function exportTripsData(): Promise<string> {
   const [stores, trips, tripItems, priceHistory] = await Promise.all([
     db.stores.toArray(),
     db.trips.toArray(),
-    db.tripItems.toArray(),
+    db.tripItems.filter(countsTowardTotal).toArray(),
     db.priceHistory.toArray(),
   ]);
 
