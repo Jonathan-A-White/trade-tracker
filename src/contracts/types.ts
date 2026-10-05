@@ -51,6 +51,11 @@ export interface TripItem {
   bottleDeposit?: number;
   /** True while the line is only a pending factory lookup (no price yet); such a line is left out of totals. */
   pending?: true;
+  /**
+   * Set when a factory answer filled the line: "check" when the tag gave a price
+   * the shopper should look at, "add" when it gave none. Cleared by a tap or an edit.
+   */
+  priceFlag?: "check" | "add";
   addedAt: number;
 }
 
@@ -74,6 +79,17 @@ export interface PendingLookup {
   answer?: string;
   error?: string;
   createdAt: number;
+}
+
+/** The item-from-photos answer 1.0 (schemas/item-from-photos-answer-1.0.schema.json). */
+export interface ItemFromPhotosAnswer {
+  name: string;
+  category: string;
+  unitType: UnitType;
+  price: number | null;
+  size?: string;
+  confidence: "high" | "medium" | "low";
+  notes?: string;
 }
 
 export interface PriceHistoryEntry {

@@ -114,10 +114,25 @@ export class TripItemRepository {
       updated.weightLbs
     );
 
+    // An edit settles a price flag: a 'check' flag at once, an 'add' flag once there is a price.
+    const clearsFlag =
+      !("priceFlag" in changes) &&
+      (existing.priceFlag === "check" ||
+        (existing.priceFlag === "add" && updated.price > 0));
+
     await db.transaction("rw", [db.tripItems, db.trips], async () => {
-      await db.tripItems.update(id, { ...changes, lineTotal });
+      await db.tripItems.update(id, {
+        ...changes,
+        ...(clearsFlag ? { priceFlag: undefined } : {}),
+        lineTotal,
+      });
       await this.recalcTripSubtotal(existing.tripId);
     });
+  }
+
+  /** Settles a 'check' flag the shopper has looked at (an 'add' flag clears when a price is entered). */
+  async clearPriceFlag(id: string): Promise<void> {
+    await db.tripItems.update(id, { priceFlag: undefined });
   }
 
   async getByTrip(tripId: string): Promise<TripItem[]> {

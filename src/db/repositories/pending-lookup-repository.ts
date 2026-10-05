@@ -1,6 +1,7 @@
 import { db } from "../database";
 import type {
   Item,
+  ItemFromPhotosAnswer,
   PendingLookup,
   CreatePendingLookupInput,
   TripItem,
@@ -8,6 +9,12 @@ import type {
 import { TripItemRepository } from "./trip-item-repository";
 
 const tripItemRepo = new TripItemRepository();
+
+/** Lookups the runner has to act on: those waiting to be sent or at the factory. */
+export const RUNNABLE_STATUSES: readonly PendingLookup["status"][] = [
+  "waiting-to-send",
+  "at-the-factory",
+];
 
 export class PendingLookupRepository {
   /**
@@ -97,5 +104,97 @@ export class PendingLookupRepository {
       if (pendingLine) await tripItemRepo.remove(pendingLine.id);
       await db.pendingLookups.delete(id);
     });
+  }
+
+  /** Lists every lookup the runner may have work for, oldest first. */
+  async listRunnable(): Promise<PendingLookup[]> {
+    const all = await db.pendingLookups
+      .where("status")
+      .anyOf([...RUNNABLE_STATUSES])
+      .toArray();
+    return all.sort((a, b) => a.createdAt - b.createdAt);
+  }
+
+  /** The grist went out: the lookup is at the factory under its txid. */
+  async markSent(id: string, gristTxid: string): Promise<void> {
+    await db.pendingLookups.update(id, { status: "at-the-factory", gristTxid, error: undefined });
+  }
+
+  /** The lookup will not be answered as it stands; the reason is shown with Retry. */
+  async markFailed(id: string, error: string): Promise<void> {
+    await db.pendingLookups.update(id, { status: "failed", error });
+  }
+
+  /** Puts a failed lookup back in the queue to be sent afresh. */
+  async retry(id: string): Promise<void> {
+    const lookup = await db.pendingLookups.get(id);
+    if (!lookup || lookup.status !== "failed") return;
+    await db.pendingLookups.update(id, {
+      status: "waiting-to-send",
+      gristTxid: undefined,
+      answer: undefined,
+      error: undefined,
+    });
+  }
+
+  /**
+   * Fills a lookup from a checked answer, in one transaction: a new item (or the
+   * one already holding the barcode), its pending line turned into an ordinary
+   * one, and, only when the tag gave a price, that price and one priceHistory
+   * entry. The line carries a 'check' flag with a price and an 'add' flag
+   * without; photos are dropped.
+   */
+  async applyAnswer(id: string, answer: ItemFromPhotosAnswer): Promise<void> {
+    const lookup = await db.pendingLookups.get(id);
+    if (!lookup || lookup.status === "applied") return;
+
+    await db.transaction(
+      "rw",
+      [db.pendingLookups, db.items, db.tripItems, db.priceHistory, db.trips],
+      async () => {
+        const price = answer.price;
+        const now = Date.now();
+        let item = await db.items.where("barcode").equals(lookup.barcode).first();
+        if (!item) {
+          item = {
+            id: crypto.randomUUID(),
+            barcode: lookup.barcode,
+            name: answer.name,
+            currentPrice: price ?? 0,
+            unitType: answer.unitType,
+            category: answer.category === "other" ? undefined : answer.category,
+            createdAt: now,
+            updatedAt: now,
+          };
+          await db.items.put(item);
+        }
+
+        const line = await db.tripItems
+          .where("[tripId+itemId]")
+          .equals([lookup.tripId, lookup.itemId])
+          .first();
+        if (line) {
+          const linePrice = price ?? item.currentPrice;
+          await tripItemRepo.update(line.id, {
+            itemId: item.id,
+            price: linePrice,
+            pending: undefined,
+            priceFlag: price === null ? "add" : "check",
+          });
+          const trip = await db.trips.get(lookup.tripId);
+          if (price !== null && trip) {
+            await db.priceHistory.put({
+              id: crypto.randomUUID(),
+              itemId: item.id,
+              storeId: trip.storeId,
+              tripItemId: line.id,
+              price,
+              recordedAt: now,
+            });
+          }
+        }
+        await db.pendingLookups.update(id, { status: "applied", photos: [], error: undefined });
+      },
+    );
   }
 }
