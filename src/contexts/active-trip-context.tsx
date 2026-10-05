@@ -3,6 +3,7 @@ import type { ReactNode } from "react";
 import type { Trip, TripItem } from "@/contracts/types";
 import { db } from "@/db/database";
 import { useLiveQuery } from "dexie-react-hooks";
+import { countsTowardTotal } from "@/core/pricing";
 import {
   TripRepository,
   TripItemRepository,
@@ -54,12 +55,16 @@ export function ActiveTripProvider({ children }: { children: ReactNode }) {
 
   const subtotal = useMemo(() => {
     if (!activeTripItems || activeTripItems.length === 0) return 0;
-    return activeTripItems.reduce((sum, item) => sum + item.lineTotal, 0);
+    return activeTripItems
+      .filter(countsTowardTotal)
+      .reduce((sum, item) => sum + item.lineTotal, 0);
   }, [activeTripItems]);
 
   const itemCount = useMemo(() => {
     if (!activeTripItems || activeTripItems.length === 0) return 0;
-    return activeTripItems.reduce((sum, item) => sum + item.quantity, 0);
+    return activeTripItems
+      .filter(countsTowardTotal)
+      .reduce((sum, item) => sum + item.quantity, 0);
   }, [activeTripItems]);
 
   const startTrip = useCallback(

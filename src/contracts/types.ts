@@ -49,7 +49,31 @@ export interface TripItem {
   taxOverride?: boolean;
   /** Bottle/container deposit total for this line (e.g., CT $0.05/can × 12 = 0.60). Added on top of lineTotal. */
   bottleDeposit?: number;
+  /** True while the line is only a pending factory lookup (no price yet); such a line is left out of totals. */
+  pending?: true;
   addedAt: number;
+}
+
+export type PendingLookupStatus =
+  | "waiting-to-send"
+  | "at-the-factory"
+  | "ready"
+  | "applied"
+  | "failed";
+
+/** A photographed product waiting for the factory to name and price it. */
+export interface PendingLookup {
+  id: string;
+  barcode: string;
+  tripId: string;
+  /** The itemId its pending TripItem carries: a placeholder until the line is filled, then the real item. */
+  itemId: string;
+  photos: Blob[];
+  status: PendingLookupStatus;
+  gristTxid?: string;
+  answer?: string;
+  error?: string;
+  createdAt: number;
 }
 
 export interface PriceHistoryEntry {
@@ -74,6 +98,10 @@ export type CreateTripInput = Omit<
   | "updatedAt"
 >;
 export type CreateTripItemInput = Omit<TripItem, "id" | "lineTotal" | "addedAt">;
+export type CreatePendingLookupInput = Pick<
+  PendingLookup,
+  "barcode" | "tripId" | "photos"
+>;
 export type CreatePriceHistoryInput = Omit<PriceHistoryEntry, "id">;
 
 /** Where the app's factory key stands: none made, wrapped but locked, unlocked, or unlocked and licensed. */

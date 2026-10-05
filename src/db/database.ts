@@ -5,6 +5,7 @@ import type {
   Trip,
   TripItem,
   PriceHistoryEntry,
+  PendingLookup,
 } from "../contracts/types";
 
 export class TradeTrackerDB extends Dexie {
@@ -13,6 +14,7 @@ export class TradeTrackerDB extends Dexie {
   trips!: EntityTable<Trip, "id">;
   tripItems!: EntityTable<TripItem, "id">;
   priceHistory!: EntityTable<PriceHistoryEntry, "id">;
+  pendingLookups!: EntityTable<PendingLookup, "id">;
 
   constructor() {
     super("TradeTrackerDB");
@@ -40,6 +42,12 @@ export class TradeTrackerDB extends Dexie {
 
     // Version 6: Add optional bottleDeposit field to tripItems (no index needed)
     this.version(6).stores({});
+
+    // Version 7: Add pendingLookups table (photographed products waiting on the
+    // factory); tripItems gain an optional pending flag (no index needed)
+    this.version(7).stores({
+      pendingLookups: "id, tripId, barcode, status, createdAt",
+    });
   }
 }
 

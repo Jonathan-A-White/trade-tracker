@@ -6,3 +6,4 @@ export {
   PriceHistoryRepository,
   type PriceHistoryFilters,
 } from "./price-history-repository";
+export { PendingLookupRepository } from "./pending-lookup-repository";

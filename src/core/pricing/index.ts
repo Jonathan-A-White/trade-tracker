@@ -39,3 +39,14 @@ export function formatCurrency(amount: number): string {
     currency: "USD",
   }).format(amount);
 }
+
+/**
+ * Whether a trip line adds to the trip's totals and item count. A pending
+ * lookup line only counts once it has a price.
+ */
+export function countsTowardTotal(tripItem: {
+  pending?: true;
+  price: number;
+}): boolean {
+  return !tripItem.pending || tripItem.price > 0;
+}
