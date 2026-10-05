@@ -16,6 +16,8 @@ import {
   unlockWithFingerprint as unlockStoredWithFingerprint,
   writeBackendUrl,
 } from "@/services/factory-service";
+import { askDoorLicence } from "@/services/door-licence";
+import type { DoorLicenceAnswer, DoorLicenceAsker } from "@/services/door-licence";
 import { makeLookupClient } from "@/services/lookup-client";
 import { LookupRunner } from "@/services/lookup-runner";
 import { browserPasskeyPort, describeUnlockError } from "@/services/passkey";
@@ -76,12 +78,25 @@ interface FactoryProviderProps {
   checkLicence?: FactoryLicenceChecker;
   /** The WebAuthn calls; the browser's by default, a fake in tests. */
   passkeyPort?: PasskeyPort;
+  /** Asks the Postern door whether the unlocked key is licensed; the real door by default, a fake in tests. */
+  askDoor?: DoorLicenceAsker;
+}
+
+/**
+ * The licence to show: the door's word wins while the key is unlocked ("held" opens the door; "none"
+ * only stays "revoked" when the chain said so); with no door answer the chain's stands.
+ */
+function mergeLicence(chain: FactoryLicence | null, doorAnswer: DoorLicenceAnswer | null): FactoryLicence {
+  if (doorAnswer === "held") return "held";
+  if (doorAnswer === "none") return chain === "revoked" ? "revoked" : "none";
+  return chain ?? "checking";
 }
 
 export function FactoryProvider({
   children,
   checkLicence = chainCheck,
   passkeyPort = browserPasskeyPort,
+  askDoor = askDoorLicence,
 }: FactoryProviderProps) {
   const storage = useMemo(() => browserStorage(), []);
   const [hasFingerprint, setHasFingerprint] = useState(() => hasFingerprintCopy());
@@ -93,6 +108,11 @@ export function FactoryProvider({
   const [checked, setChecked] = useState<{
     publicKeyHex: string;
     licence: FactoryLicence;
+  } | null>(null);
+  const [doorChecked, setDoorChecked] = useState<{
+    publicKeyHex: string;
+    backendUrl: string;
+    answer: DoorLicenceAnswer;
   } | null>(null);
 
   useEffect(
@@ -116,6 +136,23 @@ export function FactoryProvider({
       cancelled = true;
     };
   }, [publicKeyHex, checkLicence]);
+
+  // Unlocked, the door is asked (at unlock and when the backend URL changes; no polling). It never
+  // blocks anything: offline or failing, the chain's answer stands.
+  useEffect(() => {
+    const key = session.getKey();
+    if (!unlocked || !publicKeyHex || !key) return;
+    let cancelled = false;
+    askDoor(backendUrl, key).then(
+      (answer) => {
+        if (!cancelled) setDoorChecked({ publicKeyHex, backendUrl, answer });
+      },
+      () => {},
+    );
+    return () => {
+      cancelled = true;
+    };
+  }, [unlocked, publicKeyHex, backendUrl, session, askDoor]);
 
   const makeKey = useCallback(async (): Promise<MadeKeyResult> => {
     const made = await makeStoredKey(storage);
@@ -174,11 +211,14 @@ export function FactoryProvider({
     setBackendUrlState(readBackendUrl());
   }, []);
 
+  const chainLicence = checked?.publicKeyHex === publicKeyHex ? checked.licence : null;
+  const doorAnswer =
+    unlocked && doorChecked?.publicKeyHex === publicKeyHex && doorChecked.backendUrl === backendUrl
+      ? doorChecked.answer
+      : null;
   const licenceState: FactoryLicence | null = !publicKeyHex
     ? null
-    : checked?.publicKeyHex === publicKeyHex
-      ? checked.licence
-      : "checking";
+    : mergeLicence(chainLicence, doorAnswer);
 
   let door: FactoryDoorState = "no-key";
   if (publicKeyHex) {

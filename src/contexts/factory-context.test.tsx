@@ -6,6 +6,7 @@ import type { licence } from "bsv-kit/bsv";
 import { FactoryProvider, useFactory } from "@/contexts/factory-context";
 import type { FactoryLicenceChecker } from "@/contexts/factory-context";
 import { ThemeProvider } from "@/contexts/theme-context";
+import type { DoorLicenceAsker } from "@/services/door-licence";
 import type { PasskeyPort } from "@/services/passkey";
 import SettingsPage from "@/pages/settings-page";
 
@@ -37,14 +38,18 @@ const noWebAuthn: PasskeyPort = {
   getPrfSecret: async () => null,
 };
 
+// The door is never reached from a test unless the test says what it answers.
+const doorUnreachable: DoorLicenceAsker = async () => "unreachable";
+
 function renderSettings(
   checkLicence: FactoryLicenceChecker = async () => none,
   port: PasskeyPort = noWebAuthn,
+  askDoor: DoorLicenceAsker = doorUnreachable,
 ) {
   return render(
     <MemoryRouter>
       <ThemeProvider>
-        <FactoryProvider checkLicence={checkLicence} passkeyPort={port}>
+        <FactoryProvider checkLicence={checkLicence} passkeyPort={port} askDoor={askDoor}>
           <DoorProbe />
           <SettingsPage />
         </FactoryProvider>
@@ -266,5 +271,116 @@ describe("Settings > Factory", () => {
     await user.clear(backend);
     await user.type(backend, "https://example.test");
     expect(localStorage.getItem(BACKEND_KEY)).toBe("https://example.test");
+  });
+
+  describe("the licence read from the Postern door", () => {
+    const chainNotFound = async (): Promise<licence.LicenceStatus> => {
+      throw new Error("WhatsOnChain answered 404 Not Found");
+    };
+    const revoked: licence.LicenceStatus = {
+      state: "revoked",
+      outpoint: { txid: "ab".repeat(32), vout: 0 },
+      collection: "trade-tracker",
+      checkedAt,
+    };
+
+    it("shows Held and opens the lookup door when the door lists trade-tracker and the chain check failed", async () => {
+      const user = userEvent.setup();
+      const askDoor = vi.fn<DoorLicenceAsker>(async () => "held");
+      renderSettings(chainNotFound, noWebAuthn, askDoor);
+      await makeKey(user);
+
+      expect(await screen.findByText("Held")).toBeInTheDocument();
+      expect(screen.queryByText("Could not check")).not.toBeInTheDocument();
+      await waitFor(() => expect(screen.getByTestId("door")).toHaveTextContent("licensed"));
+      expect(askDoor).toHaveBeenCalledWith("https://postern.allmymind.org", expect.any(Uint8Array));
+    });
+
+    it("shows None when the door says no licence, even if the chain check failed", async () => {
+      const user = userEvent.setup();
+      renderSettings(chainNotFound, noWebAuthn, async () => "none");
+      await makeKey(user);
+
+      expect(await screen.findByText("None")).toBeInTheDocument();
+      expect(screen.getByTestId("door")).toHaveTextContent("unlocked");
+    });
+
+    it("keeps Revoked when the chain says revoked and the door says no licence", async () => {
+      const user = userEvent.setup();
+      renderSettings(async () => revoked, noWebAuthn, async () => "none");
+      await makeKey(user);
+
+      expect(await screen.findByText("Revoked")).toBeInTheDocument();
+      expect(screen.getByTestId("door")).toHaveTextContent("unlocked");
+    });
+
+    it("lets the door's Held win over a chain answer of none", async () => {
+      const user = userEvent.setup();
+      renderSettings(async () => none, noWebAuthn, async () => "held");
+      await makeKey(user);
+
+      expect(await screen.findByText("Held")).toBeInTheDocument();
+      await waitFor(() => expect(screen.getByTestId("door")).toHaveTextContent("licensed"));
+    });
+
+    it("when the door is unreachable the chain's answer stands: Could not check", async () => {
+      const user = userEvent.setup();
+      renderSettings(chainNotFound, noWebAuthn, async () => "unreachable");
+      await makeKey(user);
+
+      expect(await screen.findByText("Could not check")).toBeInTheDocument();
+      expect(screen.getByTestId("door")).toHaveTextContent("unlocked");
+    });
+
+    it("when the door is unreachable the chain's answer stands: Held", async () => {
+      const user = userEvent.setup();
+      renderSettings(async () => held, noWebAuthn, async () => "unreachable");
+      await makeKey(user);
+
+      expect(await screen.findByText("Held")).toBeInTheDocument();
+      await waitFor(() => expect(screen.getByTestId("door")).toHaveTextContent("licensed"));
+    });
+
+    it("a door that never answers does not hold back the chain's answer", async () => {
+      const user = userEvent.setup();
+      renderSettings(async () => held, noWebAuthn, () => new Promise<never>(() => {}));
+      await makeKey(user);
+
+      expect(await screen.findByText("Held")).toBeInTheDocument();
+    });
+
+    it("makes no door call while the key is locked, and asks once it is unlocked", async () => {
+      const user = userEvent.setup();
+      const first = renderSettings();
+      const words = await makeKey(user);
+      first.unmount();
+
+      const askDoor = vi.fn<DoorLicenceAsker>(async () => "held");
+      renderSettings(chainNotFound, noWebAuthn, askDoor);
+      expect(await screen.findByText("Could not check")).toBeInTheDocument();
+      expect(screen.getByTestId("door")).toHaveTextContent("locked");
+      expect(askDoor).not.toHaveBeenCalled();
+
+      await user.type(screen.getByLabelText("12 words"), words);
+      await user.click(screen.getByRole("button", { name: "Unlock" }));
+      expect(await screen.findByText("Held")).toBeInTheDocument();
+      expect(askDoor).toHaveBeenCalledTimes(1);
+      await waitFor(() => expect(screen.getByTestId("door")).toHaveTextContent("licensed"));
+    });
+
+    it("asks the door again when the backend URL changes", async () => {
+      const user = userEvent.setup();
+      const askDoor = vi.fn<DoorLicenceAsker>(async () => "none");
+      renderSettings(async () => none, noWebAuthn, askDoor);
+      await makeKey(user);
+      await waitFor(() => expect(askDoor).toHaveBeenCalledTimes(1));
+
+      const backend = screen.getByLabelText("Backend");
+      await user.clear(backend);
+      await user.type(backend, "https://example.test");
+      await waitFor(() =>
+        expect(askDoor).toHaveBeenLastCalledWith("https://example.test", expect.any(Uint8Array)),
+      );
+    });
   });
 });

@@ -76,7 +76,10 @@ function fakeClient() {
 function renderApp() {
   return render(
     <MemoryRouter initialEntries={["/trips/active"]}>
-      <FactoryProvider checkLicence={async () => ({ state: "none", checkedAt: "x" })}>
+      <FactoryProvider
+        checkLicence={async () => ({ state: "none", checkedAt: "x" })}
+        askDoor={async () => "unreachable"}
+      >
         <Routes>
           <Route path="/trips/active" element={<ActiveTripPage />}>
             <Route path="scan" element={<ScannerPage />} />

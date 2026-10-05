@@ -22,7 +22,10 @@ function Where() {
 function renderScreen(search = `barcode=${BARCODE}`) {
   return render(
     <MemoryRouter initialEntries={[`/trips/active/photo?${search}`]}>
-      <FactoryProvider checkLicence={async () => ({ state: "none", checkedAt: "x" })}>
+      <FactoryProvider
+        checkLicence={async () => ({ state: "none", checkedAt: "x" })}
+        askDoor={async () => "unreachable"}
+      >
         <Routes>
           <Route path="/trips/active/photo" element={<PhotoCapturePage />} />
           <Route path="*" element={<Where />} />
