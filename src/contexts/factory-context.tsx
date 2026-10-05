@@ -4,15 +4,21 @@ import { licence, vault } from "bsv-kit/bsv";
 import type { FactoryDoorState, FactoryLicence } from "@/contracts/types";
 import {
   FACTORY_COLLECTION,
+  addFingerprint,
   browserStorage,
+  hasFingerprintCopy,
   makeKey as makeStoredKey,
   readBackendUrl,
+  removeFingerprint as removeStoredFingerprint,
   storedPublicKeyHex,
   unlockKey as unlockStoredKey,
+  unlockWithFingerprint as unlockStoredWithFingerprint,
   writeBackendUrl,
 } from "@/services/factory-service";
 import { makeLookupClient } from "@/services/lookup-client";
 import { LookupRunner } from "@/services/lookup-runner";
+import { browserPasskeyPort, describeUnlockError } from "@/services/passkey";
+import type { PasskeyPort } from "@/services/passkey";
 
 /** Reads a key's licence in a collection; the chain by default, a fake in tests. */
 export type FactoryLicenceChecker = (
@@ -32,6 +38,16 @@ interface FactoryContextValue {
   makeKey: (passphrase: string) => Promise<string>;
   /** Rejects with a plain message when the passphrase does not open the stored key. */
   unlockKey: (passphrase: string) => Promise<void>;
+  /** Whether this device can do WebAuthn (so a fingerprint can be offered). */
+  fingerprintAvailable: boolean;
+  /** Whether a fingerprint copy of the key is stored on this device. */
+  hasFingerprint: boolean;
+  /** With a key unlocked: registers a passkey and stores a second wrapped copy. Rejects with a plain message. */
+  enableFingerprint: () => Promise<void>;
+  /** Opens the fingerprint copy and starts the same day-long session. Rejects with a plain message. */
+  unlockWithFingerprint: () => Promise<void>;
+  /** Deletes the fingerprint copy only. */
+  removeFingerprint: () => Promise<void>;
 }
 
 const FactoryContext = createContext<FactoryContextValue | null>(null);
@@ -42,10 +58,17 @@ const chainCheck: FactoryLicenceChecker = (publicKeyHex, collection) =>
 interface FactoryProviderProps {
   children: ReactNode;
   checkLicence?: FactoryLicenceChecker;
+  /** The WebAuthn calls; the browser's by default, a fake in tests. */
+  passkeyPort?: PasskeyPort;
 }
 
-export function FactoryProvider({ children, checkLicence = chainCheck }: FactoryProviderProps) {
+export function FactoryProvider({
+  children,
+  checkLicence = chainCheck,
+  passkeyPort = browserPasskeyPort,
+}: FactoryProviderProps) {
   const storage = useMemo(() => browserStorage(), []);
+  const [hasFingerprint, setHasFingerprint] = useState(() => hasFingerprintCopy());
   // The unlocked key lives in memory only, for a day.
   const [session] = useState(() => vault.createKeySession());
   const [unlocked, setUnlocked] = useState(false);
@@ -96,6 +119,33 @@ export function FactoryProvider({ children, checkLicence = chainCheck }: Factory
     },
     [storage, session],
   );
+
+  const enableFingerprint = useCallback(async () => {
+    const key = session.getKey();
+    if (!key) throw new Error("Unlock the key first.");
+    try {
+      await addFingerprint(storage, passkeyPort, key);
+    } catch (err) {
+      throw new Error(describeUnlockError(err));
+    }
+    setHasFingerprint(true);
+  }, [storage, session, passkeyPort]);
+
+  const unlockWithFingerprint = useCallback(async () => {
+    let opened;
+    try {
+      opened = await unlockStoredWithFingerprint(storage, passkeyPort);
+    } catch (err) {
+      throw new Error(describeUnlockError(err));
+    }
+    await session.setKey(opened.key);
+    setPublicKeyHex(opened.publicKeyHex);
+  }, [storage, session, passkeyPort]);
+
+  const removeFingerprint = useCallback(async () => {
+    await removeStoredFingerprint(storage);
+    setHasFingerprint(false);
+  }, [storage]);
 
   const setBackendUrl = useCallback((url: string) => {
     writeBackendUrl(url);
@@ -150,6 +200,11 @@ export function FactoryProvider({ children, checkLicence = chainCheck }: Factory
         setBackendUrl,
         makeKey,
         unlockKey,
+        fingerprintAvailable: passkeyPort.isAvailable(),
+        hasFingerprint,
+        enableFingerprint,
+        unlockWithFingerprint,
+        removeFingerprint,
       }}
     >
       {children}

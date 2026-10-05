@@ -17,8 +17,20 @@ const inputClass =
   "w-full rounded-lg border border-gray-300 dark:border-gray-600 bg-white dark:bg-gray-900 px-3 py-2 text-sm text-gray-900 dark:text-gray-100";
 
 export function FactorySettings() {
-  const { door, publicKeyHex, licence, backendUrl, setBackendUrl, makeKey, unlockKey } =
-    useFactory();
+  const {
+    door,
+    publicKeyHex,
+    licence,
+    backendUrl,
+    setBackendUrl,
+    makeKey,
+    unlockKey,
+    fingerprintAvailable,
+    hasFingerprint,
+    enableFingerprint,
+    unlockWithFingerprint,
+    removeFingerprint,
+  } = useFactory();
   const [passphrase, setPassphrase] = useState("");
   const [busy, setBusy] = useState(false);
   const [error, setError] = useState<string | null>(null);
@@ -38,6 +50,20 @@ export function FactorySettings() {
       setBusy(false);
     }
   }
+
+  async function runFingerprint(action: () => Promise<void>) {
+    setBusy(true);
+    setError(null);
+    try {
+      await action();
+    } catch (err) {
+      setError(err instanceof Error ? err.message : "That did not work.");
+    } finally {
+      setBusy(false);
+    }
+  }
+
+  const unlocked = door === "unlocked" || door === "licensed";
 
   async function handleCopy() {
     if (!publicKeyHex) return;
@@ -60,11 +86,25 @@ export function FactorySettings() {
       )}
       {door === "locked" && (
         <p className="text-xs text-gray-500 dark:text-gray-400">
-          A key is kept on this device. Unlock it with your passphrase.
+          A key is kept on this device.{" "}
+          {fingerprintAvailable && hasFingerprint
+            ? "Unlock it with your fingerprint, or with your passphrase."
+            : "Unlock it with your passphrase."}
         </p>
       )}
       {(door === "unlocked" || door === "licensed") && (
         <p className="text-xs text-gray-500 dark:text-gray-400">Key unlocked for today.</p>
+      )}
+
+      {door === "locked" && fingerprintAvailable && hasFingerprint && (
+        <button
+          type="button"
+          disabled={busy}
+          onClick={() => runFingerprint(unlockWithFingerprint)}
+          className={buttonClass}
+        >
+          Unlock with fingerprint
+        </button>
       )}
 
       {(door === "no-key" || door === "locked") && (
@@ -88,6 +128,27 @@ export function FactorySettings() {
             {door === "no-key" ? "Make key" : "Unlock"}
           </button>
         </div>
+      )}
+
+      {unlocked && fingerprintAvailable && !hasFingerprint && (
+        <button
+          type="button"
+          disabled={busy}
+          onClick={() => runFingerprint(enableFingerprint)}
+          className={buttonClass}
+        >
+          Use fingerprint
+        </button>
+      )}
+      {unlocked && hasFingerprint && (
+        <button
+          type="button"
+          disabled={busy}
+          onClick={() => runFingerprint(removeFingerprint)}
+          className={buttonClass}
+        >
+          Remove fingerprint
+        </button>
       )}
 
       {phrase && (
