@@ -8,6 +8,7 @@ import { TripItemRepository } from "@/db/repositories/trip-item-repository";
 import { PendingLookupRepository } from "@/db/repositories/pending-lookup-repository";
 import { ItemRepository } from "@/db/repositories/item-repository";
 import { countsTowardTotal } from "@/core/pricing";
+import { photoPricePath, priceLookupNote } from "@/core/photo-price";
 import { PageHeader } from "@/components/layout/page-header";
 import { TripItemRow } from "@/components/data-display/trip-item-row";
 import { SubtotalBar } from "@/components/data-display/subtotal-bar";
@@ -80,7 +81,19 @@ export default function ActiveTripPage() {
     const lookups = await pendingLookupRepo.listByTrip(trip.id);
     const map: Record<string, PendingLookup> = {};
     for (const lookup of lookups) {
-      if (lookup.status !== "applied") map[lookup.itemId] = lookup;
+      if (lookup.mode !== "price-only" && lookup.status !== "applied") {
+        map[lookup.itemId] = lookup;
+      }
+    }
+    return map;
+  }, [trip?.id]);
+
+  // The latest price-only lookup of each known item on this trip, keyed by the item's id.
+  const priceLookupsByItemId = useLiveQuery(async () => {
+    if (!trip) return {};
+    const map: Record<string, PendingLookup> = {};
+    for (const lookup of await pendingLookupRepo.listPriceOnlyByTrip(trip.id)) {
+      map[lookup.itemId] = lookup;
     }
     return map;
   }, [trip?.id]);
@@ -123,6 +136,10 @@ export default function ActiveTripPage() {
 
   const handleRetryPending = useCallback(async (lookupId: string) => {
     await pendingLookupRepo.retry(lookupId);
+  }, []);
+
+  const handleDismissPriceLookup = useCallback(async (lookupId: string) => {
+    await pendingLookupRepo.discard(lookupId);
   }, []);
 
   const handleClearPriceFlag = useCallback(async (id: string) => {
@@ -207,6 +224,7 @@ export default function ActiveTripPage() {
   const items = tripItems ?? [];
   const map = itemsMap ?? {};
   const lookups = lookupsByItemId ?? {};
+  const priceLookups = priceLookupsByItemId ?? {};
   const fillingLookup = Object.values(lookups).find(
     (l) => l.id === fillingLookupId,
   );
@@ -346,6 +364,14 @@ export default function ActiveTripPage() {
                   onEditQuantity={handleEditQuantity}
                   onRemove={handleRemove}
                   onClearPriceFlag={handleClearPriceFlag}
+                  priceLookupNote={priceLookupNote(priceLookups[ti.itemId])}
+                  onPhotoPrice={
+                    item ? () => navigate(photoPricePath(item)) : undefined
+                  }
+                  onRetryPriceLookup={() => handleRetryPending(priceLookups[ti.itemId].id)}
+                  onDismissPriceLookup={() =>
+                    handleDismissPriceLookup(priceLookups[ti.itemId].id)
+                  }
                 />
               );
             })}

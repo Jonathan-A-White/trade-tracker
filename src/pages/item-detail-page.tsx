@@ -7,7 +7,11 @@ import { PageHeader } from "@/components/layout/page-header";
 import { PriceChart } from "@/components/data-display/price-chart";
 import { ItemForm } from "@/components/forms/item-form";
 import { ItemRepository } from "@/db/repositories/item-repository";
+import { PendingLookupRepository } from "@/db/repositories/pending-lookup-repository";
+import { photoPricePath, priceLookupNote } from "@/core/photo-price";
 import type { UnitType } from "@/contracts/types";
+
+const pendingLookupRepo = new PendingLookupRepository();
 
 export function ItemDetailPage() {
   const { id } = useParams<{ id: string }>();
@@ -30,6 +34,18 @@ export function ItemDetailPage() {
   }, [id]);
 
   const stores = useLiveQuery(() => db.stores.toArray());
+
+  // 'Photo price' needs a trip in progress: the tag is read at that trip's store.
+  const activeTripId = useLiveQuery(
+    async () => (await db.trips.where("status").equals("active").first())?.id ?? null,
+    [],
+  );
+  const priceLookup = useLiveQuery(async () => {
+    if (!id || !activeTripId) return undefined;
+    const lookups = await pendingLookupRepo.listPriceOnlyByTrip(activeTripId);
+    return lookups.filter((l) => l.itemId === id).at(-1);
+  }, [id, activeTripId]);
+  const note = priceLookupNote(priceLookup);
 
   const storeMap = new Map(stores?.map((s) => [s.id, s.name]) ?? []);
 
@@ -136,6 +152,49 @@ export function ItemDetailPage() {
                   </span>
                 )}
               </div>
+
+              {activeTripId && (
+                <div className="flex flex-wrap items-center gap-3 text-sm">
+                  {note && (
+                    <span
+                      className={
+                        note.kind === "failed"
+                          ? "text-red-600 dark:text-red-400"
+                          : "text-amber-600 dark:text-amber-400"
+                      }
+                    >
+                      {note.text}
+                    </span>
+                  )}
+                  {note?.kind === "failed" && priceLookup && (
+                    <button
+                      type="button"
+                      onClick={() => pendingLookupRepo.retry(priceLookup.id)}
+                      className="font-medium text-blue-600 dark:text-blue-400 cursor-pointer"
+                    >
+                      Retry
+                    </button>
+                  )}
+                  {(note?.kind === "failed" || note?.kind === "no-price") && priceLookup && (
+                    <button
+                      type="button"
+                      onClick={() => pendingLookupRepo.discard(priceLookup.id)}
+                      className="font-medium text-blue-600 dark:text-blue-400 cursor-pointer"
+                    >
+                      Dismiss
+                    </button>
+                  )}
+                  {note?.kind !== "waiting" && (
+                    <button
+                      type="button"
+                      onClick={() => navigate(photoPricePath(item, `/items/${item.id}`))}
+                      className="font-medium text-blue-600 dark:text-blue-400 hover:text-blue-700 dark:hover:text-blue-300 cursor-pointer"
+                    >
+                      Photo price
+                    </button>
+                  )}
+                </div>
+              )}
 
               <div className="grid grid-cols-2 gap-3 text-sm">
                 <div>

@@ -1,7 +1,7 @@
 import { Blob } from "node:buffer";
 import { render, screen, waitFor, within } from "@testing-library/react";
 import userEvent from "@testing-library/user-event";
-import { MemoryRouter } from "react-router";
+import { MemoryRouter, Route, Routes, useLocation } from "react-router";
 import ActiveTripPage from "./active-trip-page";
 import { db } from "@/db/database";
 import { PendingLookupRepository } from "@/db/repositories/pending-lookup-repository";
@@ -209,3 +209,118 @@ describe("ActiveTripPage factory answers", () => {
   });
 });
 
+
+function Where() {
+  const loc = useLocation();
+  return <p data-testid="where">{loc.pathname + loc.search}</p>;
+}
+
+describe("ActiveTripPage Photo price", () => {
+  beforeEach(async () => {
+    await Promise.all(db.tables.map((table) => table.clear()));
+    URL.createObjectURL = vi.fn(() => "blob:thumb");
+    URL.revokeObjectURL = vi.fn();
+  });
+
+  async function seedKnown() {
+    const now = Date.now();
+    await db.stores.put({ id: "s1", name: "Corner Shop", createdAt: now, updatedAt: now });
+    const trip = await tripRepo.create({ storeId: "s1", startedAt: now });
+    const milk = await itemRepo.create({ barcode: "111", name: "Milk", currentPrice: 3, unitType: "each" });
+    await tripItemRepo.addToTrip({ tripId: trip.id, itemId: milk.id, price: 3, quantity: 1, onSale: false });
+    return { trip, milk };
+  }
+
+  function priceLookup(tripId: string, milkId: string) {
+    return lookups.create({
+      barcode: "111",
+      tripId,
+      photos: [new Blob(["tag"], { type: "image/jpeg" }) as unknown as globalThis.Blob],
+      mode: "price-only",
+      itemId: milkId,
+    });
+  }
+
+  it("Photo price on a known item opens the tag-only capture screen for it", async () => {
+    const { milk } = await seedKnown();
+    const user = userEvent.setup();
+    render(
+      <MemoryRouter initialEntries={["/trips/active"]}>
+        <Routes>
+          <Route path="/trips/active" element={<ActiveTripPage />} />
+          <Route path="*" element={<Where />} />
+        </Routes>
+      </MemoryRouter>,
+    );
+
+    await user.click(await screen.findByRole("button", { name: "Photo price" }));
+
+    await waitFor(() =>
+      expect(screen.getByTestId("where")).toHaveTextContent(
+        `/trips/active/photo?barcode=111&mode=price-only&itemId=${milk.id}`,
+      ),
+    );
+  });
+
+  it("shows 'Waiting on the factory' beside the old price and hides Photo price until the answer lands", async () => {
+    const { trip, milk } = await seedKnown();
+    await priceLookup(trip.id, milk.id);
+    renderPage();
+
+    expect(await screen.findByText("Waiting on the factory")).toBeInTheDocument();
+    expect(screen.getByText(/\$3\.00 \/ each/)).toBeInTheDocument();
+    expect(screen.queryByRole("button", { name: "Photo price" })).not.toBeInTheDocument();
+    // it is still one ordinary row, not a pending line
+    expect(screen.queryByRole("button", { name: /fill by hand/i })).not.toBeInTheDocument();
+  });
+
+  it("marks the row 'Check price' with the new price once the answer lands", async () => {
+    const { trip, milk } = await seedKnown();
+    const lookup = await priceLookup(trip.id, milk.id);
+    renderPage();
+    await screen.findByText("Waiting on the factory");
+
+    await lookups.applyAnswer(lookup.id, {
+      name: "Whatever",
+      category: "other",
+      unitType: "each",
+      price: 3.49,
+      confidence: "high",
+    });
+
+    expect(await screen.findByRole("button", { name: "Check price" })).toBeInTheDocument();
+    expect(screen.queryByText("Waiting on the factory")).not.toBeInTheDocument();
+    expect(await screen.findByText(/\$3\.49 \/ each/)).toBeInTheDocument();
+    expect(screen.getByText("Milk")).toBeInTheDocument();
+  });
+
+  it("says 'No price read' when the tag gave none, and keeps the old price", async () => {
+    const { trip, milk } = await seedKnown();
+    const lookup = await priceLookup(trip.id, milk.id);
+    await lookups.applyAnswer(lookup.id, {
+      name: "Whatever",
+      category: "other",
+      unitType: "each",
+      price: null,
+      confidence: "low",
+    });
+    renderPage();
+
+    expect(await screen.findByText("No price read")).toBeInTheDocument();
+    expect(screen.getByText(/\$3\.00 \/ each/)).toBeInTheDocument();
+    expect(await screen.findByRole("button", { name: "Photo price" })).toBeInTheDocument();
+  });
+
+  it("shows why a price lookup failed with Retry", async () => {
+    const { trip, milk } = await seedKnown();
+    const lookup = await priceLookup(trip.id, milk.id);
+    await lookups.markFailed(lookup.id, "The tag is blurry.");
+    const user = userEvent.setup();
+    renderPage();
+
+    expect(await screen.findByText("The tag is blurry.")).toBeInTheDocument();
+    await user.click(screen.getByRole("button", { name: "Retry" }));
+    expect(await screen.findByText("Waiting on the factory")).toBeInTheDocument();
+    expect((await lookups.getById(lookup.id))?.status).toBe("waiting-to-send");
+  });
+});

@@ -1,5 +1,6 @@
 import { useRef, useState, useCallback, useEffect } from "react";
 import { createPortal } from "react-dom";
+import type { PriceLookupNote } from "@/core/photo-price";
 
 interface TripItem {
   id: string;
@@ -20,6 +21,13 @@ interface TripItemRowProps {
   onRemove?: (id: string) => void;
   /** A tap on the 'Check price' badge: the shopper has looked. */
   onClearPriceFlag?: (id: string) => void;
+  /** What the item's price lookup has to say (waiting, failed, no price read); none when it has nothing. */
+  priceLookupNote?: PriceLookupNote | null;
+  /** 'Photo price': photograph the shelf tag. Offered unless a lookup is waiting. */
+  onPhotoPrice?: () => void;
+  onRetryPriceLookup?: () => void;
+  /** Dismisses a failed or 'No price read' note. */
+  onDismissPriceLookup?: () => void;
   editable?: boolean;
 }
 
@@ -34,8 +42,15 @@ export function TripItemRow({
   onEditQuantity,
   onRemove,
   onClearPriceFlag,
+  priceLookupNote,
+  onPhotoPrice,
+  onRetryPriceLookup,
+  onDismissPriceLookup,
   editable = false,
 }: TripItemRowProps) {
+  const waiting = priceLookupNote?.kind === "waiting";
+  const linkButton =
+    "text-xs font-medium text-blue-600 dark:text-blue-400 hover:text-blue-700 dark:hover:text-blue-300 cursor-pointer";
   const quantityDisplay =
     unitType === "per_lb" && tripItem.weightLbs !== undefined
       ? `${tripItem.weightLbs.toFixed(2)} lbs`
@@ -246,7 +261,39 @@ export function TripItemRow({
             </div>
             <p className="text-sm text-gray-500 dark:text-gray-400 mt-0.5">
               ${tripItem.price.toFixed(2)} / {unitType} {quantityDisplay}
+              {priceLookupNote && (
+                <span
+                  className={`ml-2 ${
+                    priceLookupNote.kind === "failed"
+                      ? "text-red-600 dark:text-red-400"
+                      : "text-amber-600 dark:text-amber-400"
+                  }`}
+                >
+                  {priceLookupNote.text}
+                </span>
+              )}
             </p>
+            {(onPhotoPrice || priceLookupNote) && (
+              <div className="mt-1 flex gap-3">
+                {priceLookupNote?.kind === "failed" && onRetryPriceLookup && (
+                  <button type="button" onClick={onRetryPriceLookup} className={linkButton}>
+                    Retry
+                  </button>
+                )}
+                {(priceLookupNote?.kind === "failed" ||
+                  priceLookupNote?.kind === "no-price") &&
+                  onDismissPriceLookup && (
+                    <button type="button" onClick={onDismissPriceLookup} className={linkButton}>
+                      Dismiss
+                    </button>
+                  )}
+                {onPhotoPrice && !waiting && (
+                  <button type="button" onClick={onPhotoPrice} className={linkButton}>
+                    Photo price
+                  </button>
+                )}
+              </div>
+            )}
           </div>
           <div className="text-right ml-3">
             <p className="font-medium text-gray-900 dark:text-gray-100">
