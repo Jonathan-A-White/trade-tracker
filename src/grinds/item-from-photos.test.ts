@@ -129,4 +129,40 @@ describe("grinds/item-from-photos.md", () => {
       expect(instructions).toContain(`\`${field}\``);
     }
   });
+
+  describe("the price rule", () => {
+    const priceRule = instructions
+      .split(/\n- `/)
+      .find((part) => part.startsWith("price`"));
+
+    it("reads a price from any sign or tag, handwritten ones included", () => {
+      expect(priceRule).toBeDefined();
+      expect(priceRule).toMatch(/handwritten/i);
+      expect(priceRule).toMatch(/sticker/i);
+      expect(priceRule).toMatch(/plate|card/i);
+      expect(priceRule).not.toMatch(/only from a shelf tag/i);
+    });
+
+    it("still forbids the package price, flyers, receipts and guessing", () => {
+      expect(priceRule).toMatch(/printed on the package/i);
+      expect(priceRule).toMatch(/flyer/i);
+      expect(priceRule).toMatch(/receipt/i);
+      expect(priceRule).toMatch(/never guess/i);
+      expect(priceRule).toMatch(/`null`/);
+    });
+
+    it("lowers confidence and says so when a handwritten price is ambiguous", () => {
+      expect(priceRule).toMatch(/ambiguous/i);
+      expect(priceRule).toMatch(/confidence/i);
+      expect(priceRule).toMatch(/notes/i);
+    });
+
+    it("lets the price-only mode read a handwritten sign too", () => {
+      const priceOnly = instructions
+        .split(/\n- /)
+        .find((part) => part.startsWith("`price-only`"));
+      expect(priceOnly).toBeDefined();
+      expect(priceOnly).toMatch(/handwritten/i);
+    });
+  });
 });
