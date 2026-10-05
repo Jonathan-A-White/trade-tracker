@@ -75,3 +75,15 @@ export type CreateTripInput = Omit<
 >;
 export type CreateTripItemInput = Omit<TripItem, "id" | "lineTotal" | "addedAt">;
 export type CreatePriceHistoryInput = Omit<PriceHistoryEntry, "id">;
+
+/** Where the app's factory key stands: none made, wrapped but locked, unlocked, or unlocked and licensed. */
+export type FactoryDoorState = "no-key" | "locked" | "unlocked" | "licensed";
+
+/** What the app knows of its licence in the collection trade-tracker. */
+export type FactoryLicence =
+  | "checking"
+  | "held"
+  | "none"
+  | "revoked"
+  | "indexing"
+  | "unknown";

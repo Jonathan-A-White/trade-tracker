@@ -2,6 +2,7 @@ import { createBrowserRouter, RouterProvider } from "react-router";
 import { ActiveTripProvider } from "@/contexts/active-trip-context";
 import { ToastProvider } from "@/contexts/toast-context";
 import { ThemeProvider } from "@/contexts/theme-context";
+import { FactoryProvider } from "@/contexts/factory-context";
 import { AppShell } from "@/components/layout/app-shell";
 import { HomePage } from "@/pages/home-page";
 import NewTripPage from "@/pages/new-trip-page";
@@ -77,7 +78,9 @@ export default function App() {
       <ThemeProvider>
         <ActiveTripProvider>
           <ToastProvider>
-            <RouterProvider router={router} />
+            <FactoryProvider>
+              <RouterProvider router={router} />
+            </FactoryProvider>
           </ToastProvider>
         </ActiveTripProvider>
       </ThemeProvider>

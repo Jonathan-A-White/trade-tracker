@@ -5,6 +5,7 @@ import { seedPLUCodes } from "@/db/seed-plu-codes";
 import { seedTJBarcodes } from "@/db/seed-tj-barcodes";
 import { seedTJReceipt } from "@/db/seed-tj-receipt";
 import { PageHeader } from "@/components/layout/page-header";
+import { FactorySettings } from "@/components/factory/factory-settings";
 import { useTheme } from "@/contexts/theme-context";
 import { exportItemsData, exportTripsData, downloadAsFile } from "@/services/export-service";
 import {
@@ -286,6 +287,9 @@ export default function SettingsPage() {
             </button>
           </div>
         </div>
+
+        {/* Factory */}
+        <FactorySettings />
 
         {/* Storage usage */}
         <div className="bg-white dark:bg-gray-800 rounded-lg border dark:border-gray-700 p-4 space-y-3">
