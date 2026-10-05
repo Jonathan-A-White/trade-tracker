@@ -2,17 +2,24 @@ import { useState, useEffect, useCallback } from "react";
 import { useLiveQuery } from "dexie-react-hooks";
 import { useNavigate, Link, Outlet } from "react-router";
 import { db } from "@/db/database";
-import type { Item } from "@/contracts/types";
+import type { Item, PendingLookup } from "@/contracts/types";
 import { TripRepository } from "@/db/repositories/trip-repository";
 import { TripItemRepository } from "@/db/repositories/trip-item-repository";
+import { PendingLookupRepository } from "@/db/repositories/pending-lookup-repository";
+import { ItemRepository } from "@/db/repositories/item-repository";
+import { countsTowardTotal } from "@/core/pricing";
 import { PageHeader } from "@/components/layout/page-header";
 import { TripItemRow } from "@/components/data-display/trip-item-row";
 import { SubtotalBar } from "@/components/data-display/subtotal-bar";
+import { PendingLineRow } from "@/components/data-display/pending-line-row";
 import { InlineEditor } from "@/components/forms/inline-editor";
+import { ItemForm } from "@/components/forms/item-form";
 
 
 const tripRepo = new TripRepository();
 const tripItemRepo = new TripItemRepository();
+const pendingLookupRepo = new PendingLookupRepository();
+const itemRepo = new ItemRepository();
 
 function useElapsedTime(startedAt: number | undefined) {
   const [elapsed, setElapsed] = useState("");
@@ -47,6 +54,8 @@ export default function ActiveTripPage() {
   const [editingBudget, setEditingBudget] = useState(false);
   const [budgetInput, setBudgetInput] = useState("");
   const [searchQuery, setSearchQuery] = useState("");
+  const [fillingLookupId, setFillingLookupId] = useState<string | null>(null);
+  const [fillError, setFillError] = useState<string | null>(null);
 
   const trip = useLiveQuery(() => tripRepo.getActive(), []);
   const tripItems = useLiveQuery(
@@ -64,6 +73,17 @@ export default function ActiveTripPage() {
     }
     return map;
   }, [tripItems]);
+
+  // Pending lookups of this trip, keyed by the itemId their pending line carries.
+  const lookupsByItemId = useLiveQuery(async () => {
+    if (!trip) return {};
+    const lookups = await pendingLookupRepo.listByTrip(trip.id);
+    const map: Record<string, PendingLookup> = {};
+    for (const lookup of lookups) {
+      if (lookup.status !== "applied") map[lookup.itemId] = lookup;
+    }
+    return map;
+  }, [trip?.id]);
 
   const storeName = useLiveQuery(async () => {
     if (!trip) return "";
@@ -100,6 +120,45 @@ export default function ActiveTripPage() {
   const handleRemove = useCallback(async (id: string) => {
     await tripItemRepo.remove(id);
   }, []);
+
+  const handleDiscardPending = useCallback(async (lookupId: string) => {
+    await pendingLookupRepo.discard(lookupId);
+  }, []);
+
+  const handleFillByHand = useCallback((lookupId: string) => {
+    setFillError(null);
+    setFillingLookupId(lookupId);
+  }, []);
+
+  const handleSubmitFill = useCallback(
+    async (values: {
+      barcode: string;
+      name: string;
+      currentPrice: number;
+      unitType: string;
+      category: string;
+    }) => {
+      if (!fillingLookupId) return;
+      try {
+        const existing = await itemRepo.findByBarcode(values.barcode);
+        const item =
+          existing ??
+          (await itemRepo.create({
+            barcode: values.barcode,
+            name: values.name,
+            currentPrice: values.currentPrice,
+            unitType: values.unitType as Item["unitType"],
+            category: values.category || undefined,
+          }));
+        await pendingLookupRepo.fillByHand(fillingLookupId, item);
+        setFillingLookupId(null);
+      } catch (err) {
+        console.error("Failed to fill pending line:", err);
+        setFillError("Could not save the item. Please try again.");
+      }
+    },
+    [fillingLookupId],
+  );
 
   const handleOpenBudgetEdit = useCallback(() => {
     setBudgetInput(trip?.budget?.toFixed(2) ?? "");
@@ -139,9 +198,14 @@ export default function ActiveTripPage() {
 
   const items = tripItems ?? [];
   const map = itemsMap ?? {};
+  const lookups = lookupsByItemId ?? {};
+  const fillingLookup = Object.values(lookups).find(
+    (l) => l.id === fillingLookupId,
+  );
   const query = searchQuery.toLowerCase().trim();
   const filteredItems = query
     ? items.filter((ti) => {
+        if (ti.pending) return lookups[ti.itemId]?.barcode.includes(query);
         const name = map[ti.itemId]?.name ?? "";
         return name.toLowerCase().includes(query);
       })
@@ -236,6 +300,16 @@ export default function ActiveTripPage() {
               </div>
             ) : filteredItems.map((ti) => {
               const item = map[ti.itemId];
+              if (ti.pending && lookups[ti.itemId]) {
+                return (
+                  <PendingLineRow
+                    key={ti.id}
+                    lookup={lookups[ti.itemId]}
+                    onFillByHand={handleFillByHand}
+                    onDiscard={handleDiscardPending}
+                  />
+                );
+              }
               if (editingId === ti.id && editField) {
                 return (
                   <div key={ti.id} className="bg-white dark:bg-gray-800 border-b dark:border-gray-700 px-4 py-3">
@@ -271,7 +345,7 @@ export default function ActiveTripPage() {
 
       <SubtotalBar
         subtotal={trip.scannedSubtotal}
-        itemCount={items.length}
+        itemCount={items.filter(countsTowardTotal).length}
         budget={trip.budget}
         onEndTrip={() => navigate("/trips/active/end")}
       />
@@ -316,6 +390,28 @@ export default function ActiveTripPage() {
                 Save
               </button>
             </div>
+          </div>
+        </div>
+      )}
+
+      {/* Fill a pending line by hand with the existing item form */}
+      {fillingLookup && (
+        <div className="fixed inset-0 z-50 flex items-center justify-center bg-black/40">
+          <div className="bg-white dark:bg-gray-800 rounded-xl mx-4 p-6 max-w-sm w-full max-h-[90vh] overflow-y-auto shadow-xl">
+            <h2 className="text-lg font-semibold text-gray-900 dark:text-gray-100 mb-4">
+              Fill by hand
+            </h2>
+            <ItemForm
+              initialValues={{ barcode: fillingLookup.barcode }}
+              onSubmit={handleSubmitFill}
+              onCancel={() => setFillingLookupId(null)}
+              submitLabel="Save Item"
+            />
+            {fillError && (
+              <p role="alert" className="mt-3 text-sm text-red-600 dark:text-red-400">
+                {fillError}
+              </p>
+            )}
           </div>
         </div>
       )}
