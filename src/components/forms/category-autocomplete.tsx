@@ -1,26 +1,5 @@
 import { useState, useRef, useEffect, useCallback } from "react";
-
-const GROCERY_CATEGORIES = [
-  "Bakery",
-  "Beverages",
-  "Breakfast & Cereal",
-  "Canned Goods",
-  "Condiments & Sauces",
-  "Dairy & Eggs",
-  "Deli",
-  "Frozen Foods",
-  "Grains, Pasta & Sides",
-  "Health & Beauty",
-  "Household & Cleaning",
-  "International Foods",
-  "Meat & Seafood",
-  "Oils & Vinegars",
-  "Paper & Plastic Goods",
-  "Pet Supplies",
-  "Produce",
-  "Snacks & Candy",
-  "Spices & Seasonings",
-];
+import { GROCERY_CATEGORIES } from "@/core/categories";
 
 interface CategoryAutocompleteProps {
   value: string;
