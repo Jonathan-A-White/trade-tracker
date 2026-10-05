@@ -11,6 +11,8 @@ import {
   unlockKey as unlockStoredKey,
   writeBackendUrl,
 } from "@/services/factory-service";
+import { makeLookupClient } from "@/services/lookup-client";
+import { LookupRunner } from "@/services/lookup-runner";
 
 /** Reads a key's licence in a collection; the chain by default, a fake in tests. */
 export type FactoryLicenceChecker = (
@@ -110,6 +112,33 @@ export function FactoryProvider({ children, checkLicence = chainCheck }: Factory
   if (publicKeyHex) {
     door = !unlocked ? "locked" : licenceState === "held" ? "licensed" : "unlocked";
   }
+
+  // The lookup queue runs while the app is open: sending and polling only when the
+  // door is licensed and the device is online; polling only while the page is visible.
+  const [runner] = useState(() => new LookupRunner());
+  useEffect(() => {
+    runner.setOnline(navigator.onLine);
+    runner.setVisible(document.visibilityState !== "hidden");
+    const goOnline = () => runner.setOnline(true);
+    const goOffline = () => runner.setOnline(false);
+    const changeVisibility = () => runner.setVisible(document.visibilityState !== "hidden");
+    window.addEventListener("online", goOnline);
+    window.addEventListener("offline", goOffline);
+    document.addEventListener("visibilitychange", changeVisibility);
+    runner.start();
+    return () => {
+      window.removeEventListener("online", goOnline);
+      window.removeEventListener("offline", goOffline);
+      document.removeEventListener("visibilitychange", changeVisibility);
+      runner.stop();
+    };
+  }, [runner]);
+
+  const licensed = door === "licensed";
+  useEffect(() => {
+    const key = session.getKey();
+    runner.setClient(licensed && key ? makeLookupClient(backendUrl, key) : null);
+  }, [runner, session, licensed, backendUrl]);
 
   return (
     <FactoryContext
