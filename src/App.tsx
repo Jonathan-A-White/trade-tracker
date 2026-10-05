@@ -8,6 +8,7 @@ import { HomePage } from "@/pages/home-page";
 import NewTripPage from "@/pages/new-trip-page";
 import ActiveTripPage from "@/pages/active-trip-page";
 import ScannerPage from "@/pages/scanner-page";
+import PhotoCapturePage from "@/pages/photo-capture-page";
 import AddItemPage from "@/pages/add-item-page";
 import EndTripPage from "@/pages/end-trip-page";
 import TripHistoryPage from "@/pages/trip-history-page";
@@ -44,6 +45,7 @@ const router = createBrowserRouter(
           element: <ActiveTripPage />,
           children: [
             { path: "scan", element: <ScannerPage /> },
+            { path: "photo", element: <PhotoCapturePage /> },
             { path: "add", element: <AddItemPage /> },
           ],
         },

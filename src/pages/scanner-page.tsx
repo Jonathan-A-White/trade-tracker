@@ -26,7 +26,7 @@ export default function ScannerPage() {
       if (item) {
         setFoundItem(item);
       } else {
-        navigate(`/trips/active/add?barcode=${encodeURIComponent(barcode)}`);
+        navigate(`/trips/active/photo?barcode=${encodeURIComponent(barcode)}`);
       }
     },
     [foundItem, navigate],
