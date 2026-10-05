@@ -1,7 +1,7 @@
 import { liveQuery, type Subscription } from "dexie";
 import { door } from "bsv-kit/bsv";
 import { grist } from "bsv-kit/grist";
-import type { PendingLookup } from "@/contracts/types";
+import type { LookupMode, PendingLookup } from "@/contracts/types";
 import { GROCERY_CATEGORIES } from "@/core/categories";
 import { PendingLookupRepository } from "@/db/repositories/pending-lookup-repository";
 import { parseItemAnswer } from "@/services/lookup-answer";
@@ -9,7 +9,7 @@ import { parseItemAnswer } from "@/services/lookup-answer";
 /** What one lookup sends: the app's input (schemas/item-from-photos-input-1.0) plus its photos. */
 export interface LookupRequest {
   barcode: string;
-  mode: "new-item";
+  mode: LookupMode;
   categories: string[];
   photos: grist.Photo[];
   /** The lookup's id, so the backend stores a retried send once. */
@@ -179,7 +179,7 @@ export class LookupRunner {
       if ((await this.repo.getById(lookup.id))?.status !== "waiting-to-send") return true;
       const txid = await client.send({
         barcode: lookup.barcode,
-        mode: "new-item",
+        mode: lookup.mode ?? "new-item",
         categories: [...GROCERY_CATEGORIES],
         photos: await Promise.all(lookup.photos.map(toPhoto)),
         clientId: lookup.id,

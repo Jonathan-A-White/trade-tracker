@@ -66,18 +66,25 @@ export type PendingLookupStatus =
   | "applied"
   | "failed";
 
+/** What a lookup asks of the factory: the whole item from a new product, or only the price of a known item from its shelf tag. */
+export type LookupMode = "new-item" | "price-only";
+
 /** A photographed product waiting for the factory to name and price it. */
 export interface PendingLookup {
   id: string;
   barcode: string;
   tripId: string;
-  /** The itemId its pending TripItem carries: a placeholder until the line is filled, then the real item. */
+  /** The itemId its pending TripItem carries: a placeholder until the line is filled, then the real item. A price-only lookup carries the known item's id and has no pending line. */
   itemId: string;
+  /** Absent on lookups made before price-only existed: those are "new-item". */
+  mode?: LookupMode;
   photos: Blob[];
   status: PendingLookupStatus;
   gristTxid?: string;
   answer?: string;
   error?: string;
+  /** A price-only lookup the factory answered without a price: nothing changed, and the shopper is told until they dismiss it. */
+  noPrice?: true;
   createdAt: number;
 }
 
@@ -117,7 +124,11 @@ export type CreateTripItemInput = Omit<TripItem, "id" | "lineTotal" | "addedAt">
 export type CreatePendingLookupInput = Pick<
   PendingLookup,
   "barcode" | "tripId" | "photos"
->;
+> &
+  (
+    | { mode?: "new-item"; itemId?: undefined }
+    | { mode: "price-only"; itemId: string }
+  );
 export type CreatePriceHistoryInput = Omit<PriceHistoryEntry, "id">;
 
 /** Where the app's factory key stands: none made, wrapped but locked, unlocked, or unlocked and licensed. */

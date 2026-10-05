@@ -44,7 +44,9 @@ export class TradeTrackerDB extends Dexie {
     this.version(6).stores({});
 
     // Version 7: Add pendingLookups table (photographed products waiting on the
-    // factory); tripItems gain an optional pending flag (no index needed)
+    // factory); tripItems gain an optional pending flag (no index needed).
+    // pendingLookups later gained optional mode and noPrice fields: not indexed,
+    // so the schema stays at 7.
     this.version(7).stores({
       pendingLookups: "id, tripId, barcode, status, createdAt",
     });

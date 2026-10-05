@@ -445,3 +445,134 @@ describe("LookupRunner", () => {
     await waitFor(() => expect(fake.waiting.has("direct:tx1")).toBe(false));
   });
 });
+
+describe("LookupRunner price-only lookups", () => {
+  async function seedKnownItem() {
+    const trip = await startTrip();
+    const butter = await itemRepo.create({
+      barcode: "0055",
+      name: "Kerrygold Salted Butter",
+      currentPrice: 3.99,
+      unitType: "each",
+      category: "Dairy & Eggs",
+    });
+    const line = await tripItemRepo.addToTrip({
+      tripId: trip.id,
+      itemId: butter.id,
+      price: 3.99,
+      quantity: 2,
+      onSale: false,
+    });
+    const photo = new Blob(["tag"], { type: "image/jpeg" }) as unknown as globalThis.Blob;
+    const lookup = await lookups.create({
+      barcode: butter.barcode,
+      tripId: trip.id,
+      photos: [photo],
+      mode: "price-only",
+      itemId: butter.id,
+    });
+    return { trip, butter, line, lookup };
+  }
+
+  const tagAnswer = {
+    name: "Something Else Entirely",
+    category: "Snacks & Candy",
+    unitType: "per_lb",
+    price: 4.49,
+    confidence: "high",
+  };
+
+  it("creates no pending line: the lookup keeps the item's own id and mode", async () => {
+    const { trip, butter, lookup } = await seedKnownItem();
+    expect(lookup).toMatchObject({ mode: "price-only", itemId: butter.id, status: "waiting-to-send" });
+    expect(lookup.photos).toHaveLength(1);
+    const lines = await tripItemRepo.getByTrip(trip.id);
+    expect(lines).toHaveLength(1);
+    expect(lines[0].pending).toBeUndefined();
+  });
+
+  it("sends the lookup with mode price-only and its one photo", async () => {
+    await seedKnownItem();
+    const fake = fakeClient();
+    makeRunner(fake.client);
+    await waitFor(() => expect(fake.sent).toHaveLength(1));
+    expect(fake.sent[0].mode).toBe("price-only");
+    expect(fake.sent[0].barcode).toBe("0055");
+    expect(fake.sent[0].photos).toHaveLength(1);
+  });
+
+  it("an answered price updates currentPrice, the line, and appends history for the trip's store; name and category stay", async () => {
+    const { trip, butter, line, lookup } = await seedKnownItem();
+    const fake = fakeClient();
+    makeRunner(fake.client);
+    await waitFor(() => expect(fake.waiting.has("direct:tx1")).toBe(true));
+
+    fake.waiting.get("direct:tx1")!.resolve(answered("direct:tx1", tagAnswer));
+
+    await waitFor(async () => {
+      expect((await lookups.getById(lookup.id))?.status).toBe("applied");
+    });
+    const item = await itemRepo.getById(butter.id);
+    expect(item).toMatchObject({
+      name: "Kerrygold Salted Butter",
+      category: "Dairy & Eggs",
+      unitType: "each",
+      currentPrice: 4.49,
+    });
+    const history = await priceRepo.getByItem(butter.id);
+    // the entry made when the item joined the trip, then the one from the tag
+    expect(history).toHaveLength(2);
+    const fresh = history.find((h) => h.price === 4.49)!;
+    expect(fresh.storeId).toBe("s1");
+    expect(fresh.tripItemId).toBe(line.id);
+    expect(fresh.recordedAt).toBeGreaterThanOrEqual(trip.startedAt);
+    const lines = await tripItemRepo.getByTrip(trip.id);
+    expect(lines).toHaveLength(1);
+    expect(lines[0]).toMatchObject({ price: 4.49, quantity: 2, lineTotal: 8.98, priceFlag: "check" });
+    expect((await tripRepo.getById(trip.id))?.scannedSubtotal).toBe(8.98);
+    expect((await lookups.getById(lookup.id))?.photos).toEqual([]);
+  });
+
+  it("price null leaves the old price and the line alone and records that no price was read", async () => {
+    const { trip, butter, lookup } = await seedKnownItem();
+    const fake = fakeClient();
+    makeRunner(fake.client);
+    await waitFor(() => expect(fake.waiting.has("direct:tx1")).toBe(true));
+
+    fake.waiting.get("direct:tx1")!.resolve(answered("direct:tx1", { ...tagAnswer, price: null }));
+
+    await waitFor(async () => {
+      expect((await lookups.getById(lookup.id))?.status).toBe("applied");
+    });
+    expect((await lookups.getById(lookup.id))?.noPrice).toBe(true);
+    expect((await itemRepo.getById(butter.id))?.currentPrice).toBe(3.99);
+    expect(await priceRepo.getByItem(butter.id)).toHaveLength(1);
+    const lines = await tripItemRepo.getByTrip(trip.id);
+    expect(lines[0]).toMatchObject({ price: 3.99 });
+    expect(lines[0].priceFlag).toBeUndefined();
+  });
+
+  it("with the item not on the trip, still updates the item and its history", async () => {
+    const { trip, butter, line, lookup } = await seedKnownItem();
+    await tripItemRepo.remove(line.id);
+    const fake = fakeClient();
+    makeRunner(fake.client);
+    await waitFor(() => expect(fake.waiting.has("direct:tx1")).toBe(true));
+
+    fake.waiting.get("direct:tx1")!.resolve(answered("direct:tx1", tagAnswer));
+
+    await waitFor(async () => {
+      expect((await lookups.getById(lookup.id))?.status).toBe("applied");
+    });
+    expect((await itemRepo.getById(butter.id))?.currentPrice).toBe(4.49);
+    expect((await priceRepo.getByItem(butter.id)).some((h) => h.price === 4.49 && h.storeId === "s1")).toBe(true);
+    expect(await tripItemRepo.getByTrip(trip.id)).toHaveLength(0);
+  });
+
+  it("discarding a price-only lookup keeps the item's trip line", async () => {
+    const { trip, lookup } = await seedKnownItem();
+    await lookups.discard(lookup.id);
+    expect(await lookups.getById(lookup.id)).toBeUndefined();
+    expect(await tripItemRepo.getByTrip(trip.id)).toHaveLength(1);
+  });
+});

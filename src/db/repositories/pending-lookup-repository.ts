@@ -22,6 +22,7 @@ export class PendingLookupRepository {
    * carries a placeholder itemId (kept on the lookup) until it is filled.
    */
   async create(input: CreatePendingLookupInput): Promise<PendingLookup> {
+    if (input.mode === "price-only") return this.createPriceOnly(input);
     const id = crypto.randomUUID();
     const now = Date.now();
     const lookup: PendingLookup = {
@@ -50,6 +51,41 @@ export class PendingLookupRepository {
       await db.tripItems.put(line);
     });
     return lookup;
+  }
+
+  /**
+   * Records a price-only lookup for a known item: one tag photo, no pending
+   * line (the item's own line stays as it is). An earlier answered or failed
+   * price lookup for the same item on the trip is replaced.
+   */
+  private async createPriceOnly(
+    input: Extract<CreatePendingLookupInput, { mode: "price-only" }>,
+  ): Promise<PendingLookup> {
+    const lookup: PendingLookup = {
+      id: crypto.randomUUID(),
+      barcode: input.barcode,
+      tripId: input.tripId,
+      itemId: input.itemId,
+      mode: "price-only",
+      photos: input.photos,
+      status: "waiting-to-send",
+      createdAt: Date.now(),
+    };
+    await db.transaction("rw", db.pendingLookups, async () => {
+      const earlier = await this.listPriceOnlyByTrip(input.tripId);
+      for (const old of earlier) {
+        if (old.itemId === input.itemId && !RUNNABLE_STATUSES.includes(old.status)) {
+          await db.pendingLookups.delete(old.id);
+        }
+      }
+      await db.pendingLookups.put(lookup);
+    });
+    return lookup;
+  }
+
+  /** The price-only lookups of a trip, oldest first. */
+  async listPriceOnlyByTrip(tripId: string): Promise<PendingLookup[]> {
+    return (await this.listByTrip(tripId)).filter((l) => l.mode === "price-only");
   }
 
   async getById(id: string): Promise<PendingLookup | undefined> {
@@ -95,6 +131,11 @@ export class PendingLookupRepository {
   async discard(id: string): Promise<void> {
     const lookup = await db.pendingLookups.get(id);
     if (!lookup) return;
+    // a price-only lookup has no line of its own: the item's line stays
+    if (lookup.mode === "price-only") {
+      await db.pendingLookups.delete(id);
+      return;
+    }
 
     await db.transaction("rw", [db.pendingLookups, db.tripItems, db.trips], async () => {
       const pendingLine = await db.tripItems
@@ -147,6 +188,7 @@ export class PendingLookupRepository {
   async applyAnswer(id: string, answer: ItemFromPhotosAnswer): Promise<void> {
     const lookup = await db.pendingLookups.get(id);
     if (!lookup || lookup.status === "applied") return;
+    if (lookup.mode === "price-only") return this.applyPriceAnswer(lookup, answer);
 
     await db.transaction(
       "rw",
@@ -194,6 +236,53 @@ export class PendingLookupRepository {
           }
         }
         await db.pendingLookups.update(id, { status: "applied", photos: [], error: undefined });
+      },
+    );
+  }
+
+  /**
+   * Fills a price-only lookup from a checked answer. Only the price fields
+   * move: with a price, the item's currentPrice, the trip line for the item (if
+   * any, flagged 'check') and one priceHistory entry for the trip's store; the
+   * answer's name, category and unit are ignored. Without a price nothing
+   * changes but the lookup, which remembers that no price was read.
+   */
+  private async applyPriceAnswer(
+    lookup: PendingLookup,
+    answer: ItemFromPhotosAnswer,
+  ): Promise<void> {
+    await db.transaction(
+      "rw",
+      [db.pendingLookups, db.items, db.tripItems, db.priceHistory, db.trips],
+      async () => {
+        const price = answer.price;
+        const item = await db.items.get(lookup.itemId);
+        const trip = await db.trips.get(lookup.tripId);
+        if (price !== null && item) {
+          const now = Date.now();
+          await db.items.update(item.id, { currentPrice: price, updatedAt: now });
+          const line = await db.tripItems
+            .where("[tripId+itemId]")
+            .equals([lookup.tripId, item.id])
+            .first();
+          if (line) await tripItemRepo.update(line.id, { price, priceFlag: "check" });
+          if (trip) {
+            await db.priceHistory.put({
+              id: crypto.randomUUID(),
+              itemId: item.id,
+              storeId: trip.storeId,
+              tripItemId: line?.id ?? "",
+              price,
+              recordedAt: now,
+            });
+          }
+        }
+        await db.pendingLookups.update(lookup.id, {
+          status: "applied",
+          photos: [],
+          error: undefined,
+          noPrice: price === null || !item ? true : undefined,
+        });
       },
     );
   }
