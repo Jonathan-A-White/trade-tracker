@@ -73,13 +73,15 @@ export async function importAllData(jsonString: string): Promise<void> {
 
   await db.transaction(
     "rw",
-    [db.stores, db.items, db.trips, db.tripItems, db.priceHistory],
+    [db.stores, db.items, db.trips, db.tripItems, db.priceHistory, db.pendingLookups],
     async () => {
       await db.stores.clear();
       await db.items.clear();
       await db.trips.clear();
       await db.tripItems.clear();
       await db.priceHistory.clear();
+      // the export carries no pending lookups, and the lines they belong to are gone
+      await db.pendingLookups.clear();
 
       await db.stores.bulkAdd(data.stores);
       await db.items.bulkAdd(data.items);

@@ -1,4 +1,5 @@
 import { db } from "@/db/database";
+import { countsTowardTotal } from "@/core/pricing";
 
 function escapeCsvField(field: string): string {
   if (field.includes(",") || field.includes('"') || field.includes("\n")) {
@@ -69,7 +70,10 @@ export async function exportTripsAsCsv(): Promise<string> {
     const store = storeMap.get(trip.storeId);
     const storeName = store?.name ?? "Unknown Store";
     const date = new Date(trip.startedAt).toISOString().split("T")[0];
-    const relatedItems = tripItems.filter((ti) => ti.tripId === trip.id);
+    // a pending line with no price yet is not a purchase to export
+    const relatedItems = tripItems.filter(
+      (ti) => ti.tripId === trip.id && countsTowardTotal(ti),
+    );
 
     for (const ti of relatedItems) {
       const item = itemMap.get(ti.itemId);

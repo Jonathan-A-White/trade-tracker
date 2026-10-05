@@ -516,3 +516,31 @@ describe("findItemByDescriptionAndPrice", () => {
     expect(match!.id).toBe(real.id);
   });
 });
+
+describe("reimportTripFromAI and pending lookups", () => {
+  it("deletes the pending lookups of the trip whose items it replaces", async () => {
+    const { reimportTripFromAI } = await import("./trip-exchange-service");
+    const store = makeStore();
+    await db.stores.add(store);
+    const trip = makeTrip(store.id);
+    await db.trips.add(trip);
+    await db.pendingLookups.put({
+      id: "l1",
+      barcode: "0099887766",
+      tripId: trip.id,
+      itemId: "pending:l1",
+      photos: [],
+      status: "waiting-to-send",
+      createdAt: Date.now(),
+    });
+    const json = JSON.stringify({
+      type: "trip-import",
+      store: { name: "Test Store" },
+      trip: { startedAt: new Date().toISOString() },
+      items: [{ name: "Milk", barcode: "123456789012", currentPrice: 2, unitType: "each" }],
+      tripItems: [{ itemIndex: 0, price: 2, quantity: 1, onSale: false }],
+    });
+    await reimportTripFromAI(trip.id, json);
+    expect(await db.pendingLookups.where("tripId").equals(trip.id).count()).toBe(0);
+  });
+});

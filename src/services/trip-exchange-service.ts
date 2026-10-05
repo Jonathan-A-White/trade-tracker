@@ -508,7 +508,7 @@ export async function reimportTripFromAI(
 
   await db.transaction(
     "rw",
-    [db.items, db.trips, db.tripItems, db.priceHistory],
+    [db.items, db.trips, db.tripItems, db.priceHistory, db.pendingLookups],
     async () => {
       // Delete existing trip items and their price history
       const existingTripItems = await db.tripItems
@@ -518,6 +518,8 @@ export async function reimportTripFromAI(
       const existingTripItemIds = existingTripItems.map((ti) => ti.id);
 
       await db.tripItems.where("tripId").equals(existingTripId).delete();
+      // their pending lines are gone, so the lookups waiting to fill them go too
+      await db.pendingLookups.where("tripId").equals(existingTripId).delete();
       if (existingTripItemIds.length > 0) {
         await db.priceHistory
           .where("tripItemId")
