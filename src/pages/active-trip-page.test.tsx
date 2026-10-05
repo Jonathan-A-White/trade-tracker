@@ -115,3 +115,97 @@ describe("ActiveTripPage pending lines", () => {
     expect(await lookups.getById(lookup.id)).toBeUndefined();
   });
 });
+
+describe("ActiveTripPage factory answers", () => {
+  beforeEach(async () => {
+    await Promise.all(db.tables.map((table) => table.clear()));
+    URL.createObjectURL = vi.fn(() => "blob:thumb");
+    URL.revokeObjectURL = vi.fn();
+  });
+
+  it("shows 'At the factory' once the lookup has been sent", async () => {
+    const { lookup } = await seedTripWithMilkAndPending();
+    await lookups.markSent(lookup.id, "direct:tx1");
+    renderPage();
+
+    expect(await screen.findByText("At the factory")).toBeInTheDocument();
+    expect(screen.queryByRole("button", { name: "Retry" })).not.toBeInTheDocument();
+  });
+
+  it("shows why a lookup failed with Retry, and Retry puts it back in the queue", async () => {
+    const { lookup } = await seedTripWithMilkAndPending();
+    await lookups.markFailed(lookup.id, "The photos are too dark to read.");
+    const user = userEvent.setup();
+    renderPage();
+
+    expect(await screen.findByText("The photos are too dark to read.")).toBeInTheDocument();
+    await user.click(screen.getByRole("button", { name: "Retry" }));
+
+    expect(await screen.findByText("Waiting on the factory")).toBeInTheDocument();
+    expect((await lookups.getById(lookup.id))?.status).toBe("waiting-to-send");
+    expect(screen.queryByText("The photos are too dark to read.")).not.toBeInTheDocument();
+  });
+
+  it("marks a filled line 'Check price' until it is tapped", async () => {
+    const { lookup, trip } = await seedTripWithMilkAndPending();
+    await lookups.applyAnswer(lookup.id, {
+      name: "Oat Bars",
+      category: "Snacks & Candy",
+      unitType: "each",
+      price: 4.25,
+      confidence: "high",
+    });
+    const user = userEvent.setup();
+    renderPage();
+
+    const badge = await screen.findByRole("button", { name: "Check price" });
+    expect(await screen.findByText("Oat Bars")).toBeInTheDocument();
+    await user.click(badge);
+
+    await waitFor(() => {
+      expect(screen.queryByRole("button", { name: "Check price" })).not.toBeInTheDocument();
+    });
+    const lines = await tripItemRepo.getByTrip(trip.id);
+    expect(lines.find((l) => l.price === 4.25)?.priceFlag).toBeUndefined();
+  });
+
+  it("clears 'Check price' when the line is edited", async () => {
+    const { lookup, trip } = await seedTripWithMilkAndPending();
+    await lookups.applyAnswer(lookup.id, {
+      name: "Oat Bars",
+      category: "Snacks & Candy",
+      unitType: "each",
+      price: 4.25,
+      confidence: "high",
+    });
+    const line = (await tripItemRepo.getByTrip(trip.id)).find((l) => l.price === 4.25)!;
+    expect(line.priceFlag).toBe("check");
+
+    await tripItemRepo.update(line.id, { quantity: 2 });
+
+    expect((await tripItemRepo.getByTrip(trip.id)).find((l) => l.id === line.id)?.priceFlag).toBeUndefined();
+  });
+
+  it("reads 'Add price' when the tag gave none, until a price is entered", async () => {
+    const { lookup, trip } = await seedTripWithMilkAndPending();
+    await lookups.applyAnswer(lookup.id, {
+      name: "Gala Apples",
+      category: "Produce",
+      unitType: "per_lb",
+      price: null,
+      confidence: "medium",
+    });
+    renderPage();
+
+    expect(await screen.findByRole("button", { name: "Add price" })).toBeInTheDocument();
+    expect(screen.queryByRole("button", { name: "Check price" })).not.toBeInTheDocument();
+    const line = (await tripItemRepo.getByTrip(trip.id)).find((l) => l.priceFlag === "add")!;
+
+    await tripItemRepo.update(line.id, { quantity: 2 });
+    expect((await tripItemRepo.getByTrip(trip.id)).find((l) => l.id === line.id)?.priceFlag).toBe("add");
+
+    await tripItemRepo.update(line.id, { price: 1.5 });
+    expect((await tripItemRepo.getByTrip(trip.id)).find((l) => l.id === line.id)?.priceFlag).toBeUndefined();
+  });
+});
+

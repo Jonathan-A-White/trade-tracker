@@ -121,6 +121,14 @@ export default function ActiveTripPage() {
     await tripItemRepo.remove(id);
   }, []);
 
+  const handleRetryPending = useCallback(async (lookupId: string) => {
+    await pendingLookupRepo.retry(lookupId);
+  }, []);
+
+  const handleClearPriceFlag = useCallback(async (id: string) => {
+    await tripItemRepo.clearPriceFlag(id);
+  }, []);
+
   const handleDiscardPending = useCallback(async (lookupId: string) => {
     await pendingLookupRepo.discard(lookupId);
   }, []);
@@ -307,6 +315,7 @@ export default function ActiveTripPage() {
                     lookup={lookups[ti.itemId]}
                     onFillByHand={handleFillByHand}
                     onDiscard={handleDiscardPending}
+                    onRetry={handleRetryPending}
                   />
                 );
               }
@@ -336,6 +345,7 @@ export default function ActiveTripPage() {
                   onEditPrice={handleEditPrice}
                   onEditQuantity={handleEditQuantity}
                   onRemove={handleRemove}
+                  onClearPriceFlag={handleClearPriceFlag}
                 />
               );
             })}

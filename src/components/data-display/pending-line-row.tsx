@@ -5,7 +5,17 @@ interface PendingLineRowProps {
   lookup: PendingLookup;
   onFillByHand: (lookupId: string) => void;
   onDiscard: (lookupId: string) => void;
+  onRetry: (lookupId: string) => void;
 }
+
+/** What the line says of each state of its lookup. */
+const STATE_TEXT: Record<PendingLookup["status"], string> = {
+  "waiting-to-send": "Waiting on the factory",
+  "at-the-factory": "At the factory",
+  ready: "Answer ready",
+  applied: "Filled in",
+  failed: "The factory could not fill this in",
+};
 
 function useThumbnailUrl(photo: Blob | undefined): string | undefined {
   const [url, setUrl] = useState<string>();
@@ -31,6 +41,7 @@ export function PendingLineRow({
   lookup,
   onFillByHand,
   onDiscard,
+  onRetry,
 }: PendingLineRowProps) {
   const thumbnail = useThumbnailUrl(lookup.photos[0]);
 
@@ -50,12 +61,27 @@ export function PendingLineRow({
           <p className="font-medium text-gray-900 dark:text-gray-100 truncate">
             {lookup.barcode}
           </p>
-          <p className="text-sm text-amber-600 dark:text-amber-400 mt-0.5">
-            Waiting on the factory
-          </p>
+          {lookup.status === "failed" ? (
+            <p className="text-sm text-red-600 dark:text-red-400 mt-0.5">
+              {lookup.error || STATE_TEXT.failed}
+            </p>
+          ) : (
+            <p className="text-sm text-amber-600 dark:text-amber-400 mt-0.5">
+              {STATE_TEXT[lookup.status]}
+            </p>
+          )}
         </div>
       </div>
       <div className="mt-2 flex gap-3">
+        {lookup.status === "failed" && (
+          <button
+            type="button"
+            onClick={() => onRetry(lookup.id)}
+            className="flex-1 rounded-lg bg-blue-600 px-3 py-1.5 text-sm font-medium text-white hover:bg-blue-700 transition-colors cursor-pointer"
+          >
+            Retry
+          </button>
+        )}
         <button
           type="button"
           onClick={() => onFillByHand(lookup.id)}

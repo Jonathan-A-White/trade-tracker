@@ -8,6 +8,7 @@ interface TripItem {
   weightLbs?: number;
   lineTotal: number;
   onSale: boolean;
+  priceFlag?: "check" | "add";
 }
 
 interface TripItemRowProps {
@@ -17,6 +18,8 @@ interface TripItemRowProps {
   onEditPrice?: (id: string) => void;
   onEditQuantity?: (id: string) => void;
   onRemove?: (id: string) => void;
+  /** A tap on the 'Check price' badge: the shopper has looked. */
+  onClearPriceFlag?: (id: string) => void;
   editable?: boolean;
 }
 
@@ -30,6 +33,7 @@ export function TripItemRow({
   onEditPrice,
   onEditQuantity,
   onRemove,
+  onClearPriceFlag,
   editable = false,
 }: TripItemRowProps) {
   const quantityDisplay =
@@ -221,6 +225,19 @@ export function TripItemRow({
           <div className="flex-1 min-w-0">
             <div className="flex items-center gap-2">
               <p className="font-medium text-gray-900 dark:text-gray-100 truncate">{itemName}</p>
+              {tripItem.priceFlag && (
+                <button
+                  type="button"
+                  onClick={() =>
+                    tripItem.priceFlag === "add"
+                      ? onEditPrice?.(tripItem.id)
+                      : onClearPriceFlag?.(tripItem.id)
+                  }
+                  className="inline-flex items-center rounded-full bg-amber-100 dark:bg-amber-900 px-1.5 py-0.5 text-xs font-medium text-amber-800 dark:text-amber-200 cursor-pointer"
+                >
+                  {tripItem.priceFlag === "add" ? "Add price" : "Check price"}
+                </button>
+              )}
               {tripItem.onSale && (
                 <span className="inline-flex items-center rounded-full bg-orange-100 dark:bg-orange-900 px-1.5 py-0.5 text-xs font-medium text-orange-700 dark:text-orange-300">
                   SALE
