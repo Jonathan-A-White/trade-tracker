@@ -11,6 +11,15 @@ export default function PhotoCapturePage() {
   const navigate = useNavigate();
   const [searchParams] = useSearchParams();
   const barcode = searchParams.get("barcode") ?? "";
+  const priceOnlyItemId =
+    searchParams.get("mode") === "price-only" ? searchParams.get("itemId") : null;
+  const priceOnly = priceOnlyItemId !== null;
+  // only an in-app path is followed back; anything else goes to the trip
+  const fromParam = searchParams.get("from");
+  const backTo =
+    fromParam && fromParam.startsWith("/") && !fromParam.startsWith("//")
+      ? fromParam
+      : "/trips/active";
   const { door } = useFactory();
 
   const videoRef = useRef<HTMLVideoElement>(null);
@@ -58,8 +67,19 @@ export default function PhotoCapturePage() {
       try {
         const trip = await db.trips.where("status").equals("active").first();
         if (!trip) throw new Error("No active trip");
-        await pendingLookupRepo.create({ barcode, tripId: trip.id, photos: taken });
-        navigate("/trips/active/scan", { replace: true });
+        if (priceOnlyItemId) {
+          await pendingLookupRepo.create({
+            barcode,
+            tripId: trip.id,
+            photos: taken,
+            mode: "price-only",
+            itemId: priceOnlyItemId,
+          });
+          navigate(backTo, { replace: true });
+        } else {
+          await pendingLookupRepo.create({ barcode, tripId: trip.id, photos: taken });
+          navigate("/trips/active/scan", { replace: true });
+        }
       } catch (err) {
         console.error("Failed to save the photos:", err);
         setError("Could not save the photos. Please try again.");
@@ -67,7 +87,7 @@ export default function PhotoCapturePage() {
         setBusy(false);
       }
     },
-    [barcode, navigate],
+    [barcode, navigate, priceOnlyItemId, backTo],
   );
 
   const handleTake = useCallback(async () => {
@@ -77,6 +97,11 @@ export default function PhotoCapturePage() {
     setError(null);
     try {
       const still = await captureStill(video);
+      if (priceOnly) {
+        // one shot: the tag photo goes straight into the lookup
+        await save([still]);
+        return;
+      }
       setPhotos((prev) => [...prev, still]);
     } catch (err) {
       console.error("Failed to take a photo:", err);
@@ -84,15 +109,15 @@ export default function PhotoCapturePage() {
     } finally {
       setBusy(false);
     }
-  }, [busy]);
+  }, [busy, priceOnly, save]);
 
   const handleTypeInstead = useCallback(() => {
     navigate(`/trips/active/add?barcode=${encodeURIComponent(barcode)}`, { replace: true });
   }, [barcode, navigate]);
 
   const handleCancel = useCallback(() => {
-    navigate("/trips/active/scan", { replace: true });
-  }, [navigate]);
+    navigate(priceOnly ? backTo : "/trips/active/scan", { replace: true });
+  }, [navigate, priceOnly, backTo]);
 
   const step = photos.length === 0 ? "package" : "tag";
   const button =
@@ -109,7 +134,7 @@ export default function PhotoCapturePage() {
 
       <div className="absolute top-0 left-0 right-0 bg-gradient-to-b from-black/70 to-transparent p-4 pr-16">
         <h1 className="text-lg font-semibold text-white">
-          {step === "package" ? "Package" : "Shelf tag (optional)"}
+          {priceOnly ? "Shelf tag" : step === "package" ? "Package" : "Shelf tag (optional)"}
         </h1>
         <p className="text-sm text-white/80">Barcode {barcode}</p>
         {door !== "licensed" && (
@@ -147,13 +172,13 @@ export default function PhotoCapturePage() {
       </button>
 
       <div className="absolute bottom-0 left-0 right-0 space-y-3 bg-gradient-to-t from-black/80 to-transparent p-4 pb-8">
-        {step === "tag" && (
+        {!priceOnly && step === "tag" && (
           <p className="text-center text-sm text-white/80">
             {photos.length} photo{photos.length === 1 ? "" : "s"} taken
           </p>
         )}
         <div className="flex gap-3">
-          {step === "tag" && photos.length < 2 && (
+          {!priceOnly && step === "tag" && photos.length < 2 && (
             <button
               type="button"
               onClick={() => save(photos)}
@@ -171,7 +196,7 @@ export default function PhotoCapturePage() {
           >
             Take photo
           </button>
-          {step === "tag" && (
+          {!priceOnly && step === "tag" && (
             <button
               type="button"
               onClick={() => save(photos)}
@@ -182,13 +207,15 @@ export default function PhotoCapturePage() {
             </button>
           )}
         </div>
-        <button
-          type="button"
-          onClick={handleTypeInstead}
-          className="w-full text-center text-sm text-white/80 hover:text-white py-1 cursor-pointer"
-        >
-          Type it instead
-        </button>
+        {!priceOnly && (
+          <button
+            type="button"
+            onClick={handleTypeInstead}
+            className="w-full text-center text-sm text-white/80 hover:text-white py-1 cursor-pointer"
+          >
+            Type it instead
+          </button>
+        )}
       </div>
     </div>
   );

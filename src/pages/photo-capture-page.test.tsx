@@ -19,9 +19,9 @@ function Where() {
   return <p data-testid="where">{loc.pathname + loc.search}</p>;
 }
 
-function renderScreen() {
+function renderScreen(search = `barcode=${BARCODE}`) {
   return render(
-    <MemoryRouter initialEntries={[`/trips/active/photo?barcode=${BARCODE}`]}>
+    <MemoryRouter initialEntries={[`/trips/active/photo?${search}`]}>
       <FactoryProvider checkLicence={async () => ({ state: "none", checkedAt: "x" })}>
         <Routes>
           <Route path="/trips/active/photo" element={<PhotoCapturePage />} />
@@ -115,5 +115,67 @@ describe("PhotoCapturePage", () => {
       ),
     );
     expect(await db.pendingLookups.count()).toBe(0);
+  });
+
+  describe("tag only (a known item's price)", () => {
+    async function seedItem() {
+      const now = Date.now();
+      await db.items.put({
+        id: "i1",
+        barcode: BARCODE,
+        name: "Milk",
+        currentPrice: 3,
+        unitType: "each",
+        createdAt: now,
+        updatedAt: now,
+      });
+    }
+    const search = `barcode=${BARCODE}&mode=price-only&itemId=i1`;
+
+    it("asks for the shelf tag only: no Skip, Done or Type it instead", async () => {
+      await seedItem();
+      renderScreen(search);
+      expect(screen.getByText("Shelf tag")).toBeInTheDocument();
+      expect(screen.getByRole("button", { name: "Take photo" })).toBeInTheDocument();
+      expect(screen.queryByRole("button", { name: "Skip" })).not.toBeInTheDocument();
+      expect(screen.queryByRole("button", { name: "Done" })).not.toBeInTheDocument();
+      expect(screen.queryByRole("button", { name: "Type it instead" })).not.toBeInTheDocument();
+    });
+
+    it("one shot queues a price-only lookup with one photo and no pending line, then goes back to the trip", async () => {
+      await seedItem();
+      const user = userEvent.setup();
+      renderScreen(search);
+      await user.click(screen.getByRole("button", { name: "Take photo" }));
+
+      await waitFor(() => expect(screen.getByTestId("where")).toHaveTextContent("/trips/active"));
+      const lookups = await db.pendingLookups.toArray();
+      expect(lookups).toHaveLength(1);
+      expect(lookups[0]).toMatchObject({
+        barcode: BARCODE,
+        mode: "price-only",
+        itemId: "i1",
+        status: "waiting-to-send",
+      });
+      expect(lookups[0].photos).toHaveLength(1);
+      expect(await db.tripItems.count()).toBe(0);
+    });
+
+    it("goes back to where it came from", async () => {
+      await seedItem();
+      const user = userEvent.setup();
+      renderScreen(`${search}&from=${encodeURIComponent("/items/i1")}`);
+      await user.click(screen.getByRole("button", { name: "Take photo" }));
+      await waitFor(() => expect(screen.getByTestId("where")).toHaveTextContent("/items/i1"));
+    });
+
+    it("Cancel queues nothing", async () => {
+      await seedItem();
+      const user = userEvent.setup();
+      renderScreen(search);
+      await user.click(screen.getByRole("button", { name: "Cancel" }));
+      await waitFor(() => expect(screen.getByTestId("where")).toHaveTextContent("/trips/active"));
+      expect(await db.pendingLookups.count()).toBe(0);
+    });
   });
 });
