@@ -54,4 +54,17 @@ describe("askDoorLicence", () => {
     const badProof = fakeFetch(() => json(401, { reason: "signature" }));
     expect(await askDoorLicence("https://door.test", KEY, badProof.impl)).toBe("unreachable");
   });
+
+  it("signs the request with the v2 scheme: a Postern2 header, never the v1 'Postern' one", async () => {
+    const headers: string[] = [];
+    const impl: typeof fetch = async (input, init) => {
+      const url = String(input);
+      if (url.endsWith("/api/challenge")) return json(200, { nonce: NONCE });
+      headers.push(new Headers(init?.headers).get("Authorization") ?? "");
+      return json(200, { apps: ["trade-tracker"] });
+    };
+    await askDoorLicence("https://door.test", KEY, impl);
+    expect(headers).toHaveLength(1);
+    expect(headers[0]).toMatch(/^Postern2 [0-9a-f]{66}:[0-9a-f]+:[0-9a-f]+$/);
+  });
 });
