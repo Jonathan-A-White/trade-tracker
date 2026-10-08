@@ -578,7 +578,7 @@ export default function SettingsPage() {
           </div>
           <div className="flex justify-between text-sm">
             <span className="text-gray-500 dark:text-gray-400">Version</span>
-            <span className="text-gray-900 dark:text-gray-100 font-medium">1.0.0</span>
+            <span className="text-gray-900 dark:text-gray-100 font-medium text-right" data-testid="build-version">{__APP_VERSION__}</span>
           </div>
           <div className="flex justify-between text-sm">
             <span className="text-gray-500 dark:text-gray-400">Storage</span>
