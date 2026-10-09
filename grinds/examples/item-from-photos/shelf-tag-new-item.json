@@ -1,0 +1,16 @@
+{
+  "description": "A new item whose shelf tag shows a printed price: the price is read from the tag.",
+  "schemaVersion": "1.0",
+  "request": {
+    "barcode": "0123456789012",
+    "mode": "new-item"
+  },
+  "photos": ["shelf-tag-butter.jpg"],
+  "expect": {
+    "name": { "contains": "Butter" },
+    "category": { "equals": "Dairy & Eggs" },
+    "unitType": { "equals": "each" },
+    "price": { "equals": 4.99 },
+    "confidence": { "oneOf": ["high", "medium"] }
+  }
+}

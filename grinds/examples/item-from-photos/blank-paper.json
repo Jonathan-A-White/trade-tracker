@@ -1,0 +1,14 @@
+{
+  "description": "A photo with nothing readable in it: never guess a price, say so with low confidence and a note.",
+  "schemaVersion": "1.0",
+  "request": {
+    "barcode": "0123456789012",
+    "mode": "new-item"
+  },
+  "photos": ["blank-paper.jpg"],
+  "expect": {
+    "price": { "isNull": true },
+    "confidence": { "equals": "low" },
+    "notes": { "present": true }
+  }
+}

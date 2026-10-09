@@ -1,0 +1,14 @@
+{
+  "description": "A price-only lookup for an item the shopper already has: the price comes off the tag, and the shopper's categories are passed along.",
+  "schemaVersion": "1.0",
+  "request": {
+    "barcode": "0123456789012",
+    "mode": "price-only",
+    "categories": ["Dairy & Eggs", "Produce"]
+  },
+  "photos": ["shelf-tag-butter.jpg"],
+  "expect": {
+    "price": { "equals": 4.99 },
+    "unitType": { "equals": "each" }
+  }
+}

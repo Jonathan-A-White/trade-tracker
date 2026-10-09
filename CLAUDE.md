@@ -71,6 +71,12 @@ IndexedDB via Dexie with 5 tables: `stores`, `items`, `trips`, `tripItems`, `pri
 - Composite indexes exist for common query patterns (e.g., `[storeId+status]`, `[tripId+itemId]`)
 - When adding fields: add a new `this.version(N).stores({})` call (empty if no index changes needed)
 
+## Grinds and their examples
+
+Each grind (`grinds/<kind>.json`) keeps BDD-style scenarios under `grinds/examples/<kind>/<name>.json`: the request (with `schemaVersion`), optional photos beside it, and an `expect` block of simple checks on answer fields. Format: `grinds/examples/README.md`. `mw grist smoke trade-tracker` runs them against the real grist; `src/grinds/examples.test.ts` validates every request against the input schema and every `expect` path against the answer schema, and fails when a grind has no example.
+
+**When you change a grind's behaviour (its instructions, schemas, or what the app sends), update or add its examples in the same story. A new grind ships with at least one example.**
+
 ## Writing Tests
 
 - Test files go next to source: `src/**/*.test.{ts,tsx}`
