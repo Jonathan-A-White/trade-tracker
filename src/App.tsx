@@ -27,6 +27,7 @@ import { NewStorePage } from "@/pages/new-store-page";
 import { EditStorePage } from "@/pages/edit-store-page";
 import ExportPage from "@/pages/export-page";
 import SettingsPage from "@/pages/settings-page";
+import AboutPage from "@/pages/about-page";
 import { NotFoundPage } from "@/pages/not-found-page";
 import { ErrorBoundary } from "@/components/feedback/error-boundary";
 
@@ -67,6 +68,7 @@ const router = createBrowserRouter(
         { path: "stores/:id/edit", element: <EditStorePage /> },
         { path: "export", element: <ExportPage /> },
         { path: "settings", element: <SettingsPage /> },
+        { path: "about", element: <AboutPage /> },
         { path: "*", element: <NotFoundPage /> },
       ],
     },

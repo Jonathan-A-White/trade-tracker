@@ -1,5 +1,5 @@
 import { useState, useEffect, useRef } from "react";
-import { useNavigate } from "react-router";
+import { Link, useNavigate } from "react-router";
 import { db } from "@/db/database";
 import { seedPLUCodes } from "@/db/seed-plu-codes";
 import { seedTJBarcodes } from "@/db/seed-tj-barcodes";
@@ -584,6 +584,12 @@ export default function SettingsPage() {
             <span className="text-gray-500 dark:text-gray-400">Storage</span>
             <span className="text-gray-900 dark:text-gray-100 font-medium">IndexedDB (Dexie.js)</span>
           </div>
+          <Link
+            to="/about"
+            className="block pt-1 text-sm font-medium text-blue-600 dark:text-blue-400 underline"
+          >
+            Credits and thanks
+          </Link>
         </div>
       </div>
 
