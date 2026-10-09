@@ -73,6 +73,10 @@ export default defineConfig([
 ```
 npm warn exec The following package was not found and will be installed: tsx@4.23.15
 
+## Docs
+
+- [Module map](docs/module-map.md): each module's one responsibility and API, the files most stories collide on, and the refactors and shared libraries that would let stories run in parallel.
+
 ## Credits
 
 > “If I have seen further it is by standing on the shoulders of Giants.” — Isaac Newton, letter to Robert Hooke, 1675
