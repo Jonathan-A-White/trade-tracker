@@ -4,10 +4,6 @@ import { MemoryRouter } from "react-router";
 import AboutPage from "@/pages/about-page";
 import { CREDITS, NEWTON_QUOTE } from "@/content/credits";
 
-const pkg = JSON.parse(readFileSync("./package.json", "utf-8")) as {
-  dependencies: Record<string, string>;
-};
-
 function renderAbout() {
   return render(
     <MemoryRouter>
@@ -17,12 +13,6 @@ function renderAbout() {
 }
 
 describe("credits list", () => {
-  it("credits every runtime dependency in package.json", () => {
-    const credited = new Set(CREDITS.flatMap((c) => c.packages ?? []));
-    const missing = Object.keys(pkg.dependencies).filter((name) => !credited.has(name));
-    expect(missing).toEqual([]);
-  });
-
   it("lists every credit in the README's Credits section", () => {
     const readme = readFileSync("./README.md", "utf-8");
     const section = readme.slice(readme.indexOf("\n## Credits"));

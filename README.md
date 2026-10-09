@@ -79,6 +79,8 @@ npm warn exec The following package was not found and will be installed: tsx@4.2
 
 TradeTracker is built on other people's work, so we name every source, say what we use it for and under what licence, and say what we changed. The same list is in the app, under Settings > About > Credits and thanks (source: `src/content/credits.ts`).
 
+A source added or removed changes its credit in the same commit, and the test (`src/content/credits-check.test.ts`) says so: it fails on a runtime dependency with no credit, a credit for a package that is no longer a dependency, and a bundled font or data file with no credit.
+
 ### Libraries in the app
 
 - [React](https://react.dev): The user interface (react and react-dom). Licence: [MIT](https://opensource.org/license/mit). Changes: None.
