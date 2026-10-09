@@ -2,6 +2,14 @@
 
 ## Unreleased
 
+### Credits and thanks
+
+Settings > About now has a **Credits and thanks** link to a new About screen. It opens with
+Newton's line ("If I have seen further it is by standing on the shoulders of Giants.") and
+credits every library, tool, data source, service and borrowed idea the app stands on, each
+with its name as the link, what it is used for, its licence and what we changed. The README
+has the same list, and a test fails if a runtime dependency is missing from it.
+
 ### The licence is read from the Postern door
 
 With the key unlocked, Settings > Factory now asks the Postern door whether the key is
