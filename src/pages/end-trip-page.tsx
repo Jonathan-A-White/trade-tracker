@@ -17,12 +17,17 @@ const tripItemRepo = new TripItemRepository();
 
 export default function EndTripPage() {
   const navigate = useNavigate();
-  const [receiptTotal, setReceiptTotal] = useState("");
+  const [typedTotal, setReceiptTotal] = useState<string | null>(null);
   const [saving, setSaving] = useState(false);
   const [saveError, setSaveError] = useState<string | null>(null);
   const savingRef = useRef(false);
 
   const trip = useLiveQuery(() => tripRepo.getActive(), []);
+
+  // coming back to End Trip: until he types one, the Receipt Total is the one the last receipt read
+  const savedReceiptTotal = trip?.receiptReconcile?.total ?? null;
+  const receiptTotal =
+    typedTotal ?? (savedReceiptTotal !== null ? savedReceiptTotal.toFixed(2) : "");
 
   const tripItems = useLiveQuery(
     () => (trip ? tripItemRepo.getByTrip(trip.id) : []),

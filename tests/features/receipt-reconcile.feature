@@ -52,3 +52,27 @@ Feature: Reconcile a trip from a photo of its receipt
     When a new trip scans the barcode of "Milk"
     Then its line is priced 4.29
     And the price history of "Milk" carries 4.29
+
+  Scenario: An unmatched receipt line can be matched to a trip line
+    Given the receipt shows a line "ORG WHL WHT LOAF" at 4.49 that the factory could not match
+    And no receipt line matched "Bread"
+    When I send the receipt photo
+    Then "Bread" is marked "Not on receipt"
+    When I tap "Match to a line" and pick "Bread"
+    Then the "Bread" line takes the price 4.49
+    And "What changed" lists "Bread"
+    And I see "Not matched: 0"
+    And "Bread" is no longer marked "Not on receipt"
+
+  Scenario: An unmatched receipt line can be added as a new item
+    Given the receipt shows a line "TJ SNACK MIX" at 3.29 that the factory could not match
+    When I send the receipt photo
+    And I tap "Add as new item"
+    Then the trip has a "TJ SNACK MIX" line priced 3.29
+    And the new item has no barcode yet
+    And I see "Not matched: 0"
+
+  Scenario: Leaving End Trip and coming back shows the same lists
+    Given I sent a receipt with one changed price and one unmatched line
+    When I leave End Trip and open it again
+    Then "What changed", "Not matched" and the Receipt Total are as I left them

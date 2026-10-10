@@ -1,16 +1,20 @@
 import { useEffect, useRef, useState } from "react";
 import type { ChangeEvent } from "react";
+import { useLiveQuery } from "dexie-react-hooks";
 import type { grist } from "bsv-kit/grist";
+import { db } from "@/db/database";
 import { ReceiptCamera } from "@/components/scanner/receipt-camera";
 import { formatCurrency } from "@/core/pricing";
 import { useReceiptClient } from "@/hooks/use-receipt-client";
 import { RECEIPT_STILL, stillFromFile } from "@/scanner/capture-still";
 import {
+  addReceiptLineAsItem,
   applyReceiptAnswer,
   buildReceiptRequest,
+  matchReceiptLine,
   reconcileReceipt,
 } from "@/services/receipt-reconcile";
-import type { ReceiptApplyResult, ReceiptChange } from "@/services/receipt-reconcile";
+import type { ReceiptChange } from "@/contracts/types";
 
 /** The grind takes one to three photos of a receipt. */
 export const MAX_RECEIPT_PHOTOS = 3;
@@ -46,7 +50,20 @@ export function ReceiptReconcileCard({ tripId, onTotal }: ReceiptReconcileCardPr
   const [cameraOpen, setCameraOpen] = useState(false);
   const [waiting, setWaiting] = useState(false);
   const [error, setError] = useState<string | null>(null);
-  const [result, setResult] = useState<ReceiptApplyResult | null>(null);
+  // the trip keeps the last result, so leaving End Trip and coming back shows the same lists
+  const result = useLiveQuery(async () => (await db.trips.get(tripId))?.receiptReconcile ?? null, [tripId]);
+  const tripLines = useLiveQuery(async () => {
+    const lines = (await db.tripItems.where("tripId").equals(tripId).sortBy("addedAt")).filter(
+      (line) => !line.pending,
+    );
+    const items = await db.items.bulkGet(lines.map((line) => line.itemId));
+    return lines.map((line, index) => ({
+      id: line.id,
+      name: items[index]?.name ?? "Unknown Item",
+      price: line.price,
+    }));
+  }, [tripId]);
+  const [matching, setMatching] = useState<number | null>(null);
   const fileInput = useRef<HTMLInputElement>(null);
   const abort = useRef<AbortController | null>(null);
 
@@ -56,7 +73,6 @@ export function ReceiptReconcileCard({ tripId, onTotal }: ReceiptReconcileCardPr
 
   function addPhoto(photo: Blob) {
     setPhotos((prev) => [...prev, photo].slice(0, MAX_RECEIPT_PHOTOS));
-    setResult(null);
     setError(null);
   }
 
@@ -88,7 +104,6 @@ export function ReceiptReconcileCard({ tripId, onTotal }: ReceiptReconcileCardPr
     abort.current = controller;
     setWaiting(true);
     setError(null);
-    setResult(null);
     try {
       const request = await buildReceiptRequest(tripId);
       const outcome = await reconcileReceipt(client, request, await Promise.all(photos.map(toPhoto)), {
@@ -102,7 +117,7 @@ export function ReceiptReconcileCard({ tripId, onTotal }: ReceiptReconcileCardPr
       const applied = await applyReceiptAnswer(tripId, outcome.answer);
       if (controller.signal.aborted) return;
       if (applied.total !== null) onTotal(applied.total);
-      setResult(applied);
+      setMatching(null);
       setPhotos([]);
     } catch (err) {
       console.error("Failed to reconcile the receipt:", err);
@@ -114,6 +129,21 @@ export function ReceiptReconcileCard({ tripId, onTotal }: ReceiptReconcileCardPr
       if (!controller.signal.aborted) setWaiting(false);
     }
   }
+
+  async function place(action: () => Promise<boolean>) {
+    setError(null);
+    try {
+      await action();
+    } catch (err) {
+      console.error("Failed to place the receipt line:", err);
+      setError("That receipt line could not be placed. Please try again.");
+    } finally {
+      setMatching(null);
+    }
+  }
+
+  const matched = new Set(result?.matchedTripItemIds ?? []);
+  const notOnReceipt = result ? (tripLines ?? []).filter((line) => !matched.has(line.id)) : [];
 
   const button =
     "rounded-lg px-4 py-3 text-sm font-medium transition-colors cursor-pointer disabled:opacity-50 disabled:cursor-not-allowed";
@@ -225,18 +255,85 @@ export function ReceiptReconcileCard({ tripId, onTotal }: ReceiptReconcileCardPr
               Not matched: {result.unmatched.length}
             </h3>
             {result.unmatched.length > 0 && (
-              <ul className="mt-1 space-y-1 text-sm">
+              <ul className="mt-1 space-y-2 text-sm">
                 {result.unmatched.map((line, index) => (
-                  <li key={index} className="flex justify-between gap-3">
-                    <span className="text-gray-900 dark:text-gray-100">{line.text}</span>
-                    <span className="text-gray-600 dark:text-gray-300">
-                      {formatCurrency(line.price)}
-                    </span>
+                  <li key={index} className="space-y-1">
+                    <div className="flex justify-between gap-3">
+                      <span className="text-gray-900 dark:text-gray-100">{line.text}</span>
+                      <span className="text-gray-600 dark:text-gray-300">
+                        {formatCurrency(line.price)}
+                      </span>
+                    </div>
+                    {matching === index ? (
+                      <div className="space-y-1">
+                        <p className="text-xs text-gray-500 dark:text-gray-400">
+                          {notOnReceipt.length === 0
+                            ? "Every trip line already matches a receipt line."
+                            : "Which trip line is it?"}
+                        </p>
+                        {notOnReceipt.map((tripLine) => (
+                          <button
+                            key={tripLine.id}
+                            type="button"
+                            onClick={() => place(() => matchReceiptLine(tripId, index, tripLine.id))}
+                            className={`${secondary} block w-full text-left`}
+                          >
+                            {tripLine.name} ({formatCurrency(tripLine.price)})
+                          </button>
+                        ))}
+                        <button type="button" onClick={() => setMatching(null)} className={secondary}>
+                          Cancel
+                        </button>
+                      </div>
+                    ) : (
+                      <div className="flex flex-wrap gap-2">
+                        <button type="button" onClick={() => setMatching(index)} className={secondary}>
+                          Match to a line
+                        </button>
+                        <button
+                          type="button"
+                          onClick={() => place(() => addReceiptLineAsItem(tripId, index))}
+                          className={secondary}
+                        >
+                          Add as new item
+                        </button>
+                      </div>
+                    )}
                   </li>
                 ))}
               </ul>
             )}
           </div>
+          {result.added.length > 0 && (
+            <div>
+              <h3 className="text-sm font-semibold text-gray-900 dark:text-gray-100">Added as new items</h3>
+              <ul className="mt-1 space-y-1 text-sm">
+                {result.added.map((added) => (
+                  <li key={added.tripItemId} className="flex justify-between gap-3">
+                    <span className="text-gray-900 dark:text-gray-100">{added.name}</span>
+                    <span className="text-gray-600 dark:text-gray-300">{formatCurrency(added.price)}</span>
+                  </li>
+                ))}
+              </ul>
+            </div>
+          )}
+          {notOnReceipt.length > 0 && (
+            <div>
+              <h3 className="text-sm font-semibold text-gray-900 dark:text-gray-100">
+                Trip lines not on the receipt
+              </h3>
+              <ul className="mt-1 space-y-1 text-sm">
+                {notOnReceipt.map((tripLine) => (
+                  <li key={tripLine.id} className="flex items-center justify-between gap-3">
+                    <span className="text-gray-900 dark:text-gray-100">{tripLine.name}</span>
+                    <span className="rounded bg-amber-100 dark:bg-amber-900/40 px-2 py-0.5 text-xs text-amber-800 dark:text-amber-300">
+                      Not on receipt
+                    </span>
+                  </li>
+                ))}
+              </ul>
+            </div>
+          )}
         </div>
       )}
 
