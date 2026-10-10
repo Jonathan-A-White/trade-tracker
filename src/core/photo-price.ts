@@ -23,7 +23,7 @@ export function priceLookupNote(lookup: PendingLookup | undefined): PriceLookupN
     return { kind: "failed", text: lookup.error || "The factory could not read this tag." };
   }
   if (lookup.status === "applied") {
-    return lookup.noPrice ? { kind: "no-price", text: "No price read" } : null;
+    return lookup.noPrice ? { kind: "no-price", text: "No price found on that photo" } : null;
   }
   return { kind: "waiting", text: "Waiting on the factory" };
 }

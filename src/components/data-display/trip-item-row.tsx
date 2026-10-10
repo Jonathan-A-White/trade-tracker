@@ -27,7 +27,7 @@ interface TripItemRowProps {
   /** 'Photo price': photograph the shelf tag. Offered unless a lookup is waiting. */
   onPhotoPrice?: () => void;
   onRetryPriceLookup?: () => void;
-  /** Dismisses a failed or 'No price read' note. */
+  /** Dismisses a failed or 'No price found' note. */
   onDismissPriceLookup?: () => void;
   editable?: boolean;
 }
@@ -300,7 +300,7 @@ export function TripItemRow({
                   )}
                 {onPhotoPrice && !waiting && (
                   <button type="button" onClick={onPhotoPrice} className={linkButton}>
-                    Photo price
+                    {priceLookupNote?.kind === "no-price" ? "Retake price photo" : "Photo price"}
                   </button>
                 )}
               </div>

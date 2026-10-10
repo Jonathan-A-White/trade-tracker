@@ -190,7 +190,7 @@ export function ItemDetailPage() {
                       onClick={() => navigate(photoPricePath(item, `/items/${item.id}`))}
                       className="font-medium text-blue-600 dark:text-blue-400 hover:text-blue-700 dark:hover:text-blue-300 cursor-pointer"
                     >
-                      Photo price
+                      {note?.kind === "no-price" ? "Retake price photo" : "Photo price"}
                     </button>
                   )}
                 </div>

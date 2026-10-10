@@ -86,7 +86,7 @@ describe("ItemDetailPage Photo price", () => {
     expect(screen.queryByRole("button", { name: "Photo price" })).not.toBeInTheDocument();
   });
 
-  it("says 'No price read' when the tag gave no price", async () => {
+  it("says 'No price found on that photo' and offers Retake price photo when the tag gave no price", async () => {
     const milk = await seedItem();
     const trip = await startTrip();
     const lookup = await lookups.create({
@@ -105,7 +105,8 @@ describe("ItemDetailPage Photo price", () => {
     });
     renderPage(milk.id);
 
-    expect(await screen.findByText("No price read")).toBeInTheDocument();
+    expect(await screen.findByText("No price found on that photo")).toBeInTheDocument();
     expect(screen.getByText("$3.00")).toBeInTheDocument();
+    expect(screen.getByRole("button", { name: "Retake price photo" })).toBeInTheDocument();
   });
 });

@@ -318,7 +318,7 @@ describe("ActiveTripPage Photo price", () => {
     expect(screen.getByText("Milk")).toBeInTheDocument();
   });
 
-  it("says 'No price read' when the tag gave none, and keeps the old price", async () => {
+  it("says 'No price found on that photo' when the tag gave none, keeps the old price, and offers Retake price photo", async () => {
     const { trip, milk } = await seedKnown();
     const lookup = await priceLookup(trip.id, milk.id);
     await lookups.applyAnswer(lookup.id, {
@@ -330,9 +330,10 @@ describe("ActiveTripPage Photo price", () => {
     });
     renderPage();
 
-    expect(await screen.findByText("No price read")).toBeInTheDocument();
+    expect(await screen.findByText("No price found on that photo")).toBeInTheDocument();
     expect(screen.getByText(/\$3\.00 \/ each/)).toBeInTheDocument();
-    expect(await screen.findByRole("button", { name: "Photo price" })).toBeInTheDocument();
+    expect(await screen.findByRole("button", { name: "Retake price photo" })).toBeInTheDocument();
+    expect(screen.queryByRole("button", { name: "Photo price" })).not.toBeInTheDocument();
   });
 
   it("shows why a price lookup failed with Retry", async () => {
