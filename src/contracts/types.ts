@@ -99,6 +99,48 @@ export interface ItemFromPhotosAnswer {
   notes?: string;
 }
 
+/** One trip line as the receipt-reconcile request sends it (schemas/receipt-reconcile-input-1.0.schema.json). */
+export interface ReceiptReconcileRequestLine {
+  tripItemId: string;
+  name: string;
+  barcode: string;
+  price: number;
+  quantity: number;
+  weightLbs: number | null;
+  unitType: UnitType;
+  onSale: boolean;
+  bottleDeposit: number | null;
+}
+
+/** The receipt-reconcile input 1.0 (schemas/receipt-reconcile-input-1.0.schema.json). */
+export interface ReceiptReconcileRequest {
+  store: string;
+  lines: ReceiptReconcileRequestLine[];
+}
+
+/** One printed receipt line of the receipt-reconcile answer. */
+export interface ReceiptReconcileAnswerLine {
+  text: string;
+  price: number;
+  quantity: number;
+  weightLbs: number | null;
+  /** The request line this receipt line is, or null when unmatched or unsure. */
+  tripItemId: string | null;
+  confidence: "high" | "medium" | "low";
+}
+
+/** The receipt-reconcile answer 1.0 (schemas/receipt-reconcile-answer-1.0.schema.json). */
+export interface ReceiptReconcileAnswer {
+  store: string | null;
+  /** YYYY-MM-DD */
+  date: string | null;
+  subtotal: number | null;
+  tax: number | null;
+  total: number | null;
+  lines: ReceiptReconcileAnswerLine[];
+  unreadable: string | null;
+}
+
 export interface PriceHistoryEntry {
   id: string;
   itemId: string;
