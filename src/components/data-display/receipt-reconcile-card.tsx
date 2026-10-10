@@ -10,11 +10,13 @@ import { doorWords } from "@/factory/door-words";
 import { useReceiptClient } from "@/hooks/use-receipt-client";
 import { RECEIPT_STILL, stillFromFile } from "@/scanner/capture-still";
 import {
+  RECEIPT_TIMEOUT_MS,
   addReceiptLineAsItem,
-  applyReceiptAnswer,
-  buildReceiptRequest,
+  clearReceiptPending,
+  lastSentReceiptPhotos,
   matchReceiptLine,
-  reconcileReceipt,
+  receiptTimedOut,
+  sendReceipt,
 } from "@/services/receipt-reconcile";
 import type { ReceiptChange } from "@/contracts/types";
 
@@ -29,6 +31,10 @@ interface ReceiptReconcileCardProps {
 
 async function toPhoto(blob: Blob): Promise<grist.Photo> {
   return { bytes: new Uint8Array(await blob.arrayBuffer()), mime: blob.type };
+}
+
+function formatSentTime(sentAt: number): string {
+  return new Date(sentAt).toLocaleTimeString([], { hour: "numeric", minute: "2-digit" });
 }
 
 function describeChange(change: ReceiptChange): string {
@@ -52,13 +58,21 @@ export function ReceiptReconcileCard({ tripId, onTotal }: ReceiptReconcileCardPr
   const { ready, door, licence, unlock, getClient } = useReceiptClient();
   const [photos, setPhotos] = useState<Blob[]>([]);
   const [cameraOpen, setCameraOpen] = useState(false);
-  const [waiting, setWaiting] = useState(false);
+  const [sending, setSending] = useState(false);
+  // only here to draw the card again when the 10-minute wait runs out
+  const [, setClockTick] = useState(0);
   const [error, setError] = useState<string | null>(null);
   const [unlocking, setUnlocking] = useState(false);
   // why the fingerprint did not open the key; the card then points to Settings
   const [unlockError, setUnlockError] = useState<string | null>(null);
-  // the trip keeps the last result, so leaving End Trip and coming back shows the same lists
-  const result = useLiveQuery(async () => (await db.trips.get(tripId))?.receiptReconcile ?? null, [tripId]);
+  // the trip keeps the last result and the receipt still out at the factory, so leaving End Trip
+  // and coming back (or restarting the app) shows the same lists and the same wait
+  const kept = useLiveQuery(async () => {
+    const trip = await db.trips.get(tripId);
+    return { result: trip?.receiptReconcile ?? null, pending: trip?.receiptPending ?? null };
+  }, [tripId]);
+  const result = kept?.result ?? null;
+  const pending = kept?.pending ?? null;
   const tripLines = useLiveQuery(async () => {
     const lines = (await db.tripItems.where("tripId").equals(tripId).sortBy("addedAt")).filter(
       (line) => !line.pending,
@@ -72,9 +86,28 @@ export function ReceiptReconcileCard({ tripId, onTotal }: ReceiptReconcileCardPr
   }, [tripId]);
   const [matching, setMatching] = useState<number | null>(null);
   const fileInput = useRef<HTMLInputElement>(null);
-  const abort = useRef<AbortController | null>(null);
+  const [notice, setNotice] = useState<string | null>(null);
 
-  useEffect(() => () => abort.current?.abort(), []);
+  // the receipt runner (app-level) applies the answer; when it does while this card is open, the page gets the total
+  const hadPending = useRef(false);
+  useEffect(() => {
+    if (kept === undefined) return;
+    const answered = hadPending.current && pending === null && kept.result?.total != null;
+    hadPending.current = pending !== null && !pending.error;
+    if (answered && kept.result?.total != null) onTotal(kept.result.total);
+  }, [kept, pending, onTotal]);
+
+  // when the wait runs out, the card says so
+  useEffect(() => {
+    if (!pending || pending.error) return;
+    const left = pending.sentAt + RECEIPT_TIMEOUT_MS - Date.now();
+    if (left <= 0) return;
+    const timer = setTimeout(() => setClockTick((tick) => tick + 1), left);
+    return () => clearTimeout(timer);
+  }, [pending]);
+
+  const timedOut = pending !== null && !pending.error && receiptTimedOut(pending, Date.now());
+  const waiting = sending || (pending !== null && !pending.error && !timedOut);
 
   const full = photos.length >= MAX_RECEIPT_PHOTOS;
 
@@ -101,39 +134,45 @@ export function ReceiptReconcileCard({ tripId, onTotal }: ReceiptReconcileCardPr
     if (photos.length + 1 >= MAX_RECEIPT_PHOTOS) setCameraOpen(false);
   }
 
-  async function handleSend() {
+  async function send(sentPhotos: grist.Photo[]) {
     const client = getClient();
     if (!client) {
       setError(doorWords(door, licence) ?? "The factory is not ready. Try again in a moment.");
       return;
     }
-    const controller = new AbortController();
-    abort.current = controller;
-    setWaiting(true);
+    setSending(true);
     setError(null);
+    setNotice(null);
     try {
-      const request = await buildReceiptRequest(tripId);
-      const outcome = await reconcileReceipt(client, request, await Promise.all(photos.map(toPhoto)), {
-        signal: controller.signal,
-      });
-      if (controller.signal.aborted) return;
+      const outcome = await sendReceipt(client, tripId, sentPhotos);
       if (!outcome.ok) {
         setError(outcome.error);
         return;
       }
-      const applied = await applyReceiptAnswer(tripId, outcome.answer);
-      if (controller.signal.aborted) return;
-      if (applied.total !== null) onTotal(applied.total);
       setMatching(null);
       setPhotos([]);
-    } catch (err) {
-      console.error("Failed to reconcile the receipt:", err);
-      if (!controller.signal.aborted) {
-        setError("The receipt could not be used, and your trip is as it was. Please try again.");
-      }
     } finally {
-      if (abort.current === controller) abort.current = null;
-      if (!controller.signal.aborted) setWaiting(false);
+      setSending(false);
+    }
+  }
+
+  async function handleSend() {
+    try {
+      await send(await Promise.all(photos.map(toPhoto)));
+    } catch (err) {
+      console.error("Failed to send the receipt:", err);
+      setError("The receipt could not be sent. Please try again.");
+    }
+  }
+
+  /** Sends the same photos again when the app still has them; otherwise asks for the photos again. */
+  async function handleSendAgain() {
+    const photosKept = lastSentReceiptPhotos(tripId);
+    await clearReceiptPending(tripId);
+    if (photosKept.length > 0) {
+      await send(photosKept);
+    } else {
+      setNotice("Photograph the receipt again, then send it.");
     }
   }
 
@@ -257,9 +296,24 @@ export function ReceiptReconcileCard({ tripId, onTotal }: ReceiptReconcileCardPr
 
       {waiting && (
         <p role="status" className="text-sm text-gray-600 dark:text-gray-300">
-          Waiting for the factory to read your receipt. This can take a minute or two.
+          Waiting for the factory to read your receipt…
+          {pending ? ` Sent at ${formatSentTime(pending.sentAt)}.` : ""} This can take a minute or two.
         </p>
       )}
+
+      {pending && (timedOut || pending.error) && (
+        <div className="space-y-2">
+          <p role="alert" className="text-sm text-red-700 dark:text-red-300">
+            {pending.error ??
+              `The factory has not answered since ${formatSentTime(pending.sentAt)}. Your trip is as it was.`}
+          </p>
+          <button type="button" onClick={handleSendAgain} disabled={sending || !ready} className={primary}>
+            Send again
+          </button>
+        </div>
+      )}
+
+      {notice && <p className="text-sm text-gray-600 dark:text-gray-300">{notice}</p>}
 
       {error && (
         <p role="alert" className="text-sm text-red-700 dark:text-red-300">

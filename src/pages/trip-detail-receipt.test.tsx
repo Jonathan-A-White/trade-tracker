@@ -10,12 +10,25 @@ import { TripItemRepository } from "@/db/repositories/trip-item-repository";
 import { TripRepository } from "@/db/repositories/trip-repository";
 import type { ReceiptReconcileAnswer, ReceiptReconcileRequest } from "@/contracts/types";
 import type { ReceiptClient } from "@/services/receipt-reconcile";
+import { ReceiptRunner } from "@/services/receipt-runner";
 
 // the factory's door is not under test here: a flag and a fake client stand in for it
-const factory = vi.hoisted(() => ({
-  ready: true,
-  client: null as unknown as ReceiptClient,
-}));
+const factory = vi.hoisted(() => {
+  let client: unknown = null;
+  const state = {
+    ready: true,
+    onClient: null as null | ((client: unknown) => void),
+    get client() {
+      return client as ReceiptClient;
+    },
+    // setting the client also puts it under the app-level receipt runner, as FactoryProvider does
+    set client(next: ReceiptClient) {
+      client = next;
+      state.onClient?.(next);
+    },
+  };
+  return state;
+});
 vi.mock("@/hooks/use-receipt-client", () => ({
   useReceiptClient: () => ({ ready: factory.ready, door: "no-key", licence: null, unlock: async () => {}, getClient: () => (factory.ready ? factory.client : null) }),
 }));
@@ -26,6 +39,15 @@ vi.mock("@/scanner/capture-still", async (importOriginal) => ({
   captureStill: vi.fn(async () => new Blob(["jpeg"], { type: "image/jpeg" })),
   stillFromFile: vi.fn(async () => new Blob(["jpeg"], { type: "image/jpeg" })),
 }));
+
+const runners: ReceiptRunner[] = [];
+factory.onClient = (client) => {
+  const runner = new ReceiptRunner({ backoffBaseMs: 1 });
+  runner.setClient(client as ReceiptClient);
+  runner.start();
+  runners.push(runner);
+};
+afterEach(() => runners.splice(0).forEach((runner) => runner.stop()));
 
 const itemRepo = new ItemRepository();
 const tripRepo = new TripRepository();

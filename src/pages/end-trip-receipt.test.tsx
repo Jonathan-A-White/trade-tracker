@@ -10,12 +10,25 @@ import { TripItemRepository } from "@/db/repositories/trip-item-repository";
 import { TripRepository } from "@/db/repositories/trip-repository";
 import type { ReceiptReconcileAnswer, ReceiptReconcileRequest } from "@/contracts/types";
 import type { ReceiptClient } from "@/services/receipt-reconcile";
+import { ReceiptRunner } from "@/services/receipt-runner";
 
 // the factory's door is not under test here: a flag and a fake client stand in for it
-const factory = vi.hoisted(() => ({
-  ready: true,
-  client: null as unknown as ReceiptClient,
-}));
+const factory = vi.hoisted(() => {
+  let client: unknown = null;
+  const state = {
+    ready: true,
+    onClient: null as null | ((client: unknown) => void),
+    get client() {
+      return client as ReceiptClient;
+    },
+    // setting the client also puts it under the app-level receipt runner, as FactoryProvider does
+    set client(next: ReceiptClient) {
+      client = next;
+      state.onClient?.(next);
+    },
+  };
+  return state;
+});
 vi.mock("@/hooks/use-receipt-client", () => ({
   useReceiptClient: () => ({ ready: factory.ready, door: "no-key", licence: null, unlock: async () => {}, getClient: () => (factory.ready ? factory.client : null) }),
 }));
@@ -26,6 +39,15 @@ vi.mock("@/scanner/capture-still", async (importOriginal) => ({
   captureStill: vi.fn(async () => new Blob(["jpeg"], { type: "image/jpeg" })),
   stillFromFile: vi.fn(async () => new Blob(["jpeg"], { type: "image/jpeg" })),
 }));
+
+const runners: ReceiptRunner[] = [];
+factory.onClient = (client) => {
+  const runner = new ReceiptRunner({ backoffBaseMs: 1 });
+  runner.setClient(client as ReceiptClient);
+  runner.start();
+  runners.push(runner);
+};
+afterEach(() => runners.splice(0).forEach((runner) => runner.stop()));
 
 const itemRepo = new ItemRepository();
 const tripRepo = new TripRepository();
@@ -248,8 +270,9 @@ describe("End Trip: Photograph receipt", () => {
     expect(screen.getByPlaceholderText("0.00")).toHaveValue(null);
     expect((await db.tripItems.get(lines.Milk))?.price).toBe(3.99);
     expect((await db.tripItems.get(lines.Eggs))?.price).toBe(4.99);
-    // the photo is kept, so he can send it again
-    expect(screen.getByText("1 photo ready")).toBeInTheDocument();
+    // the refusal ends the wait, and he can send the same photo again
+    expect(screen.queryByRole("status")).not.toBeInTheDocument();
+    expect(screen.getByRole("button", { name: "Send again" })).toBeEnabled();
   });
 
   it("says in words when the factory cannot be reached, and leaves the trip as it was", async () => {
@@ -479,6 +502,125 @@ describe("End Trip: Photograph receipt", () => {
     expect(within(notOnReceipt.parentElement!).getByText("Bread")).toBeInTheDocument();
     // the receipt total comes back too
     expect(screen.getByPlaceholderText("0.00")).toHaveValue(16.53);
+  });
+
+  it("leaving the page while the factory reads the receipt still gets the answer applied", async () => {
+    const { lines } = await seedTrip();
+    let release: (record: grist.GristAnswer) => void = () => {};
+    const client: ReceiptClient = {
+      send: vi.fn(async () => "direct:tx1"),
+      awaitAnswer: vi.fn(() => new Promise<grist.GristAnswer>((resolve) => (release = resolve))),
+    };
+    factory.client = client;
+    const user = userEvent.setup();
+    const first = render(
+      <MemoryRouter>
+        <EndTripPage />
+      </MemoryRouter>,
+    );
+    await screen.findByRole("button", { name: "Photograph receipt" });
+    await takeOnePhoto(user);
+    await user.click(screen.getByRole("button", { name: "Send receipt" }));
+    expect(await screen.findByRole("status")).toHaveTextContent("Waiting for the factory");
+    first.unmount();
+
+    // the answer comes while the trip page is closed
+    await waitFor(() => expect(client.awaitAnswer).toHaveBeenCalled());
+    release(answered(receipt([{ tripItemId: lines.Milk, price: 4.29, text: "MILK" }], 4.29)));
+    await waitFor(async () => expect((await db.tripItems.get(lines.Milk))?.price).toBe(4.29));
+
+    await renderPage();
+    expect(await screen.findByRole("heading", { name: "What changed" })).toBeInTheDocument();
+    expect(screen.queryByText(/Waiting for the factory/)).not.toBeInTheDocument();
+    expect(screen.getByPlaceholderText("0.00")).toHaveValue(4.29);
+  });
+
+  it("shows the wait with the sent time after leaving and coming back, and after a restart", async () => {
+    const { trip } = await seedTrip();
+    const sentAt = new Date(2026, 9, 10, 16, 24).getTime();
+    vi.spyOn(Date, "now").mockReturnValue(sentAt + 60_000);
+    await db.trips.update(trip.id, {
+      receiptPending: { txid: "direct:tx9", sentAt, request: { store: "Trader Joe's", lines: [] } },
+    });
+    // no runner here: the app was just reopened and nothing has answered yet
+    factory.ready = false;
+
+    await renderPage();
+
+    expect(await screen.findByRole("status")).toHaveTextContent(
+      "Waiting for the factory to read your receipt…",
+    );
+    expect(screen.getByRole("status")).toHaveTextContent(
+      `Sent at ${new Date(sentAt).toLocaleTimeString([], { hour: "numeric", minute: "2-digit" })}`,
+    );
+    vi.restoreAllMocks();
+  });
+
+  it("after 10 minutes with no answer the card says so and offers Send again, which sends the same photo", async () => {
+    const user = userEvent.setup();
+    const { client, sent } = (() => {
+      const sent: { input: ReceiptReconcileRequest; photos: grist.Photo[] }[] = [];
+      const client: ReceiptClient = {
+        send: vi.fn(async (call) => {
+          sent.push({ input: call.input, photos: call.photos });
+          return `direct:tx${sent.length}`;
+        }),
+        awaitAnswer: vi.fn(() => new Promise<grist.GristAnswer>(() => {})),
+      };
+      return { client, sent };
+    })();
+    const { lines } = await seedTrip();
+    factory.client = client;
+    await renderPage();
+    await takeOnePhoto(user);
+    await user.click(screen.getByRole("button", { name: "Send receipt" }));
+    expect(await screen.findByRole("status")).toHaveTextContent("Waiting for the factory");
+    await waitFor(() => expect(sent).toHaveLength(1));
+
+    // eleven minutes on: the wait has run out
+    const now = Date.now();
+    vi.spyOn(Date, "now").mockReturnValue(now + 11 * 60_000);
+    const trip = (await db.trips.toArray())[0];
+    await db.trips.update(trip.id, {
+      receiptPending: { ...trip.receiptPending!, sentAt: now - 11 * 60_000 },
+    });
+
+    expect(await screen.findByRole("alert")).toHaveTextContent("The factory has not answered");
+    expect(screen.queryByRole("status")).not.toBeInTheDocument();
+    vi.restoreAllMocks();
+    await user.click(screen.getByRole("button", { name: "Send again" }));
+
+    await waitFor(() => expect(sent).toHaveLength(2));
+    expect(sent[1].photos).toHaveLength(1);
+    expect(sent[1].input.lines.map((l) => l[0]).sort()).toEqual(Object.values(lines).sort());
+    expect(await screen.findByRole("status")).toHaveTextContent("Waiting for the factory");
+  });
+
+  it("a refusal that arrives while the page is closed shows when he comes back", async () => {
+    await seedTrip();
+    let release: (record: grist.GristAnswer) => void = () => {};
+    const client: ReceiptClient = {
+      send: vi.fn(async () => "direct:tx1"),
+      awaitAnswer: vi.fn(() => new Promise<grist.GristAnswer>((resolve) => (release = resolve))),
+    };
+    factory.client = client;
+    const user = userEvent.setup();
+    const first = render(
+      <MemoryRouter>
+        <EndTripPage />
+      </MemoryRouter>,
+    );
+    await screen.findByRole("button", { name: "Photograph receipt" });
+    await takeOnePhoto(user);
+    await user.click(screen.getByRole("button", { name: "Send receipt" }));
+    await screen.findByRole("status");
+    first.unmount();
+    await waitFor(() => expect(client.awaitAnswer).toHaveBeenCalled());
+    release({ re: "direct:tx1", status: "refused", reason: "The photo is too dark.", grind });
+
+    await renderPage();
+    expect(await screen.findByRole("alert")).toHaveTextContent("The photo is too dark.");
+    expect(screen.queryByText(/Waiting for the factory/)).not.toBeInTheDocument();
   });
 
   it("offers no photo while the factory is not licensed", async () => {
