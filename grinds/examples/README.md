@@ -39,3 +39,7 @@ Every `expect` path must be a field of the grind's answer schema, and every `equ
 
 A story that changes a grind's behaviour updates or adds its scenarios in the same story.
 A new grind needs at least one scenario or the unit test fails.
+
+`grinds/<kind>.example.json` beside a grind is a bare request, as the app sends it, for a
+reader to copy. It is not a grind (the checker skips it) and not a scenario; its
+scenario under `grinds/examples/<kind>/` must carry the same request.

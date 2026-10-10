@@ -1,0 +1,60 @@
+{
+  "store": "Trader Joe's",
+  "lines": [
+    {
+      "tripItemId": "ti-steak",
+      "name": "Shaved Steak",
+      "barcode": "00508271",
+      "price": 11.34,
+      "quantity": 1,
+      "weightLbs": 1.12,
+      "unitType": "per_lb",
+      "onSale": false,
+      "bottleDeposit": null
+    },
+    {
+      "tripItemId": "ti-chicken",
+      "name": "Mandarin Orange Chicken",
+      "barcode": "00665636",
+      "price": 5.49,
+      "quantity": 1,
+      "weightLbs": null,
+      "unitType": "each",
+      "onSale": false,
+      "bottleDeposit": null
+    },
+    {
+      "tripItemId": "ti-guac",
+      "name": "Guacamole",
+      "barcode": "TJR00035",
+      "price": 5.99,
+      "quantity": 1,
+      "weightLbs": null,
+      "unitType": "each",
+      "onSale": true,
+      "bottleDeposit": null
+    },
+    {
+      "tripItemId": "ti-cucumber",
+      "name": "Cucumber",
+      "barcode": "TJR00025",
+      "price": 3.49,
+      "quantity": 2,
+      "weightLbs": null,
+      "unitType": "each",
+      "onSale": false,
+      "bottleDeposit": null
+    },
+    {
+      "tripItemId": "ti-juice",
+      "name": "Organic Pomegranate Juice",
+      "barcode": "TJR00032",
+      "price": 1.29,
+      "quantity": 1,
+      "weightLbs": null,
+      "unitType": "each",
+      "onSale": false,
+      "bottleDeposit": 0.05
+    }
+  ]
+}

@@ -36,8 +36,8 @@ function inputValidator(kind: string, version: string): ValidateFunction {
   return validate;
 }
 
-const grindFiles = readdirSync(resolve(ROOT, "grinds")).filter((f) =>
-  f.endsWith(".json")
+const grindFiles = readdirSync(resolve(ROOT, "grinds")).filter(
+  (f) => f.endsWith(".json") && !f.endsWith(".example.json")
 );
 
 describe("grind examples", () => {
