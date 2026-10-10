@@ -72,18 +72,27 @@ describe("PhotoCapturePage", () => {
     await tripRepo.create({ storeId: "s1", startedAt: now });
     // jsdom has no media playback
     HTMLMediaElement.prototype.play = vi.fn(async () => {});
+    // jsdom cannot make a URL for a picture
+    URL.createObjectURL = vi.fn(() => "blob:preview");
+    URL.revokeObjectURL = vi.fn();
     Object.defineProperty(navigator, "mediaDevices", {
       configurable: true,
       value: { getUserMedia: vi.fn(async () => ({ getTracks: () => [] })) },
     });
   });
 
+  /** Takes a shot and keeps it from the preview. */
+  async function takeAndUse(user: ReturnType<typeof userEvent.setup>) {
+    await user.click(screen.getByRole("button", { name: "Take photo" }));
+    await user.click(await screen.findByRole("button", { name: "Use photo" }));
+  }
+
   it("asks for the package first, then the shelf tag", async () => {
     const user = userEvent.setup();
     renderScreen();
-    expect(screen.getByText("Package")).toBeInTheDocument();
-    await user.click(screen.getByRole("button", { name: "Take photo" }));
-    expect(await screen.findByText("Shelf tag (optional)")).toBeInTheDocument();
+    expect(screen.getByText("Photo of the PACKAGE (front, name showing)")).toBeInTheDocument();
+    await takeAndUse(user);
+    expect(await screen.findByText("Photo of the PRICE TAG (on the shelf)")).toBeInTheDocument();
     expect(screen.getByRole("button", { name: "Skip" })).toBeInTheDocument();
     expect(screen.getByRole("button", { name: "Done" })).toBeInTheDocument();
   });
@@ -91,7 +100,7 @@ describe("PhotoCapturePage", () => {
   it("Done with one photo creates a pending line and a waiting-to-send lookup with one photo", async () => {
     const user = userEvent.setup();
     renderScreen();
-    await user.click(screen.getByRole("button", { name: "Take photo" }));
+    await takeAndUse(user);
     await user.click(await screen.findByRole("button", { name: "Done" }));
 
     await waitFor(() => expect(screen.getByTestId("where")).toHaveTextContent("/trips/active/scan"));
@@ -109,8 +118,8 @@ describe("PhotoCapturePage", () => {
   it("Done with two photos stores two", async () => {
     const user = userEvent.setup();
     renderScreen();
-    await user.click(screen.getByRole("button", { name: "Take photo" }));
-    await user.click(await screen.findByRole("button", { name: "Take photo" }));
+    await takeAndUse(user);
+    await takeAndUse(user);
     await user.click(await screen.findByRole("button", { name: "Done" }));
 
     await waitFor(() => expect(screen.getByTestId("where")).toHaveTextContent("/trips/active/scan"));
@@ -122,7 +131,7 @@ describe("PhotoCapturePage", () => {
   it("Skip on the tag leaves one photo and returns to the scanner", async () => {
     const user = userEvent.setup();
     renderScreen();
-    await user.click(screen.getByRole("button", { name: "Take photo" }));
+    await takeAndUse(user);
     await user.click(await screen.findByRole("button", { name: "Skip" }));
 
     await waitFor(() => expect(screen.getByTestId("where")).toHaveTextContent("/trips/active/scan"));
@@ -166,7 +175,7 @@ describe("PhotoCapturePage", () => {
     it("asks for the shelf tag only: no Skip, Done or Type it instead", async () => {
       await seedItem();
       renderScreen(search);
-      expect(screen.getByText("Shelf tag")).toBeInTheDocument();
+      expect(screen.getByText("Photo of the PRICE TAG (on the shelf)")).toBeInTheDocument();
       expect(screen.getByRole("button", { name: "Take photo" })).toBeInTheDocument();
       expect(screen.queryByRole("button", { name: "Skip" })).not.toBeInTheDocument();
       expect(screen.queryByRole("button", { name: "Done" })).not.toBeInTheDocument();
@@ -177,7 +186,7 @@ describe("PhotoCapturePage", () => {
       await seedItem();
       const user = userEvent.setup();
       renderScreen(search);
-      await user.click(screen.getByRole("button", { name: "Take photo" }));
+      await takeAndUse(user);
 
       await waitFor(() => expect(screen.getByTestId("where")).toHaveTextContent("/trips/active"));
       const lookups = await db.pendingLookups.toArray();
@@ -196,7 +205,7 @@ describe("PhotoCapturePage", () => {
       await seedItem();
       const user = userEvent.setup();
       renderScreen(`${search}&from=${encodeURIComponent("/items/i1")}`);
-      await user.click(screen.getByRole("button", { name: "Take photo" }));
+      await takeAndUse(user);
       await waitFor(() => expect(screen.getByTestId("where")).toHaveTextContent("/items/i1"));
     });
 
@@ -207,6 +216,115 @@ describe("PhotoCapturePage", () => {
       await user.click(screen.getByRole("button", { name: "Cancel" }));
       await waitFor(() => expect(screen.getByTestId("where")).toHaveTextContent("/trips/active"));
       expect(await db.pendingLookups.count()).toBe(0);
+    });
+  });
+
+  describe("preview before a shot is kept", () => {
+    const seedItem = async () => {
+      const now = Date.now();
+      await db.items.put({
+        id: "i1",
+        barcode: BARCODE,
+        name: "Milk",
+        currentPrice: 3,
+        unitType: "each",
+        createdAt: now,
+        updatedAt: now,
+      });
+    };
+    const priceOnlySearch = `barcode=${BARCODE}&mode=price-only&itemId=i1`;
+
+    it("shows the still full screen with Retake and Use photo, and sends nothing yet", async () => {
+      const user = userEvent.setup();
+      renderScreen();
+      await user.click(screen.getByRole("button", { name: "Take photo" }));
+
+      expect(await screen.findByRole("img", { name: "The photo you just took" })).toBeInTheDocument();
+      expect(screen.getByRole("button", { name: "Retake" })).toBeInTheDocument();
+      expect(screen.getByRole("button", { name: "Use photo" })).toBeInTheDocument();
+      expect(await db.pendingLookups.count()).toBe(0);
+    });
+
+    it("Retake throws the still away and goes back to the live camera", async () => {
+      const user = userEvent.setup();
+      renderScreen();
+      await user.click(screen.getByRole("button", { name: "Take photo" }));
+      await user.click(await screen.findByRole("button", { name: "Retake" }));
+
+      expect(screen.queryByRole("img", { name: "The photo you just took" })).not.toBeInTheDocument();
+      // still asking for the package: the shot was not kept
+      expect(screen.getByText("Photo of the PACKAGE (front, name showing)")).toBeInTheDocument();
+      expect(screen.getByRole("button", { name: "Take photo" })).toBeInTheDocument();
+      expect(screen.queryByRole("button", { name: "Done" })).not.toBeInTheDocument();
+      expect(await db.pendingLookups.count()).toBe(0);
+    });
+
+    it("a retaken package shot is not counted: Use photo on the second try keeps exactly one", async () => {
+      const user = userEvent.setup();
+      renderScreen();
+      await user.click(screen.getByRole("button", { name: "Take photo" }));
+      await user.click(await screen.findByRole("button", { name: "Retake" }));
+      await takeAndUse(user);
+      await user.click(await screen.findByRole("button", { name: "Done" }));
+      await waitFor(() => expect(screen.getByTestId("where")).toHaveTextContent("/trips/active/scan"));
+      const lookups = await db.pendingLookups.toArray();
+      expect(lookups[0].photos).toHaveLength(1);
+    });
+
+    it("a price-tag shot is previewed too: nothing is queued until Use photo", async () => {
+      await seedItem();
+      const user = userEvent.setup();
+      renderScreen(priceOnlySearch);
+      await user.click(screen.getByRole("button", { name: "Take photo" }));
+
+      expect(await screen.findByRole("button", { name: "Use photo" })).toBeInTheDocument();
+      expect(await db.pendingLookups.count()).toBe(0);
+      expect(screen.queryByTestId("where")).not.toBeInTheDocument();
+
+      await user.click(screen.getByRole("button", { name: "Retake" }));
+      expect(await db.pendingLookups.count()).toBe(0);
+      expect(screen.getByRole("button", { name: "Take photo" })).toBeInTheDocument();
+
+      await user.click(screen.getByRole("button", { name: "Take photo" }));
+      await user.click(await screen.findByRole("button", { name: "Use photo" }));
+      await waitFor(() => expect(screen.getByTestId("where")).toHaveTextContent("/trips/active"));
+      const lookups = await db.pendingLookups.toArray();
+      expect(lookups).toHaveLength(1);
+      expect(lookups[0].mode).toBe("price-only");
+      expect(lookups[0].photos).toHaveLength(1);
+    });
+  });
+
+  describe("package or price tag, unmistakably", () => {
+    it("the package camera has a tall frame and a blue button", async () => {
+      renderScreen();
+      expect(
+        screen.getByRole("heading", { name: "Photo of the PACKAGE (front, name showing)" }),
+      ).toBeInTheDocument();
+      expect(screen.getByTestId("photo-frame")).toHaveAttribute("data-frame", "tall");
+      expect(screen.getByRole("button", { name: "Take photo" })).toHaveClass("bg-blue-600");
+    });
+
+    it("the price-tag camera has a wide short frame and a different button colour", async () => {
+      renderScreen(`barcode=${BARCODE}&mode=price-only&itemId=i1`);
+      expect(
+        screen.getByRole("heading", { name: "Photo of the PRICE TAG (on the shelf)" }),
+      ).toBeInTheDocument();
+      expect(screen.getByTestId("photo-frame")).toHaveAttribute("data-frame", "wide");
+      const take = screen.getByRole("button", { name: "Take photo" });
+      expect(take).not.toHaveClass("bg-blue-600");
+      expect(take).toHaveClass("bg-amber-600");
+    });
+
+    it("after the package, the optional tag step switches to the price-tag look", async () => {
+      const user = userEvent.setup();
+      renderScreen();
+      await takeAndUse(user);
+      expect(
+        await screen.findByRole("heading", { name: "Photo of the PRICE TAG (on the shelf)" }),
+      ).toBeInTheDocument();
+      expect(screen.getByTestId("photo-frame")).toHaveAttribute("data-frame", "wide");
+      expect(screen.getByRole("button", { name: "Take photo" })).toHaveClass("bg-amber-600");
     });
   });
 

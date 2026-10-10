@@ -135,10 +135,12 @@ describe("the factory flow, start to finish", () => {
     // 1. an unknown scan opens the photo screen: Package, then Shelf tag, then Done
     await user.click(screen.getByRole("link", { name: "Scan" }));
     await user.click(await screen.findByText("read unknown"));
-    expect(await screen.findByText("Package")).toBeInTheDocument();
+    expect(await screen.findByText("Photo of the PACKAGE (front, name showing)")).toBeInTheDocument();
     await user.click(screen.getByRole("button", { name: "Take photo" }));
-    expect(await screen.findByText("Shelf tag (optional)")).toBeInTheDocument();
+    await user.click(await screen.findByRole("button", { name: "Use photo" }));
+    expect(await screen.findByText("Photo of the PRICE TAG (on the shelf)")).toBeInTheDocument();
     await user.click(screen.getByRole("button", { name: "Take photo" }));
+    await user.click(await screen.findByRole("button", { name: "Use photo" }));
     await user.click(await screen.findByRole("button", { name: "Done" }));
 
     // 2. the pending line is in the trip at once and counts for nothing
@@ -185,9 +187,10 @@ describe("the factory flow, start to finish", () => {
     // 5. 'Photo price' on the known item opens the tag-only screen; one shot goes back
     const milkRow = (await screen.findByText("Milk")).closest("div.relative") as HTMLElement;
     await user.click(await within(milkRow).findByRole("button", { name: "Photo price" }));
-    expect(await screen.findByText("Shelf tag")).toBeInTheDocument();
+    expect(await screen.findByText("Photo of the PRICE TAG (on the shelf)")).toBeInTheDocument();
     expect(screen.queryByRole("button", { name: "Done" })).not.toBeInTheDocument();
     await user.click(screen.getByRole("button", { name: "Take photo" }));
+    await user.click(await screen.findByRole("button", { name: "Use photo" }));
 
     await waitFor(() => expect(factory.sent).toHaveLength(2));
     expect(factory.sent[1]).toMatchObject({ barcode: "111", mode: "price-only" });
