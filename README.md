@@ -96,6 +96,7 @@ A source added or removed changes its credit in the same commit, and the test (`
 - [barcode-detector](https://github.com/Sec-ant/barcode-detector): Reading barcodes with the camera on phones that have no built-in barcode reader. Licence: [MIT](https://opensource.org/license/mit). Changes: None.
 - [zxing-wasm](https://github.com/Sec-ant/zxing-wasm): The barcode reading engine inside barcode-detector (a WebAssembly build of ZXing-C++). Licence: [MIT](https://opensource.org/license/mit). Changes: None.
 - [ZXing-C++](https://github.com/zxing-cpp/zxing-cpp): The barcode decoder that zxing-wasm is built from. Licence: [Apache-2.0](https://www.apache.org/licenses/LICENSE-2.0). Changes: None.
+- [qrcode](https://github.com/soldair/node-qrcode): Drawing this phone's key as a QR code in Settings, so Postern can scan it. Licence: [MIT](https://opensource.org/license/mit). Changes: None.
 - [bsv-kit](https://github.com/Jonathan-A-White/bsv-kit): The factory key, the licence check and the signed requests to the factory door. Licence: [MIT](https://opensource.org/license/mit). Changes: Our own library, pinned to a commit.
 
 ### Tools that build and test the app

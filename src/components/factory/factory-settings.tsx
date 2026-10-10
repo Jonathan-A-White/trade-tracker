@@ -1,6 +1,7 @@
 import { useState } from "react";
 import { useFactory } from "@/contexts/factory-context";
 import type { FactoryLicence } from "@/contracts/types";
+import { KeyQr } from "@/components/factory/key-qr";
 
 const LICENCE_TEXT: Record<FactoryLicence, string> = {
   checking: "Checking",
@@ -198,9 +199,10 @@ export function FactorySettings() {
 
       {publicKeyHex && (
         <div className="space-y-2">
+          <KeyQr text={publicKeyHex} />
           <div>
             <p className="text-xs text-gray-500 dark:text-gray-400">Public key</p>
-            <p className="font-mono text-xs break-all text-gray-900 dark:text-gray-100">{publicKeyHex}</p>
+            <p className="font-mono slashed-zero text-xs break-all text-gray-900 dark:text-gray-100">{publicKeyHex}</p>
           </div>
           <button type="button" onClick={handleCopy} className={buttonClass}>
             Copy

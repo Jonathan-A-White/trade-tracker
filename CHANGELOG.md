@@ -2,6 +2,10 @@
 
 ## Unreleased
 
+### The phone's key as a QR code
+
+Settings shows this phone's key as a QR code for Postern to scan, above the key text and Copy. The key text now draws its zero with a slash, so a 0 cannot be read as an o.
+
 ### Credits and thanks
 
 Settings > About now has a **Credits and thanks** link to a new About screen. It opens with

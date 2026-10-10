@@ -36,3 +36,10 @@ Feature: Settings Page
     When I tap "Cancel"
     Then no data is deleted
     And I remain on the Settings page
+
+  # From mw-iy99ci.29
+  Scenario: The phone's key is shown as a QR code for Postern to scan
+    Given the factory key is made and unlocked
+    When I view the Settings page
+    Then I see "This phone's key as a QR code" above the public key text and the Copy button
+    And the QR code holds exactly the public key shown

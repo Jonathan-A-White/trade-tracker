@@ -128,6 +128,16 @@ export const CREDIT_GROUPS: CreditGroup[] = [
         changes: "None.",
       },
       {
+        name: "qrcode",
+        kind: "package",
+        url: "https://github.com/soldair/node-qrcode",
+        use: "Drawing this phone's key as a QR code in Settings, so Postern can scan it.",
+        licence: "MIT",
+        licenceUrl: MIT,
+        changes: "None.",
+        packages: ["qrcode"],
+      },
+      {
         name: "bsv-kit",
         kind: "package",
         url: "https://github.com/Jonathan-A-White/bsv-kit",
