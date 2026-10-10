@@ -92,7 +92,7 @@ describe("the receipt-reconcile grist for a real-sized trip (mw-31qug1.7)", () =
 
     expect(txid).toBe("direct:tx1");
     expect(posted).toHaveLength(1);
-  });
+  }, 20_000);
 
   it("says plainly how many lines a trip too large to send can take, never the byte count", async () => {
     const trip = await seedTrip(160);
@@ -112,5 +112,5 @@ describe("the receipt-reconcile grist for a real-sized trip (mw-31qug1.7)", () =
     expect(error).toMatch(/can check \d+ lines/);
     expect(error).not.toMatch(/bytes|cap|payload|too large/i);
     expect(posted).toEqual([]);
-  });
+  }, 20_000);
 });

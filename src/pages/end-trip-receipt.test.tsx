@@ -287,6 +287,8 @@ describe("End Trip: Photograph receipt", () => {
 
     expect(await screen.findByRole("status")).toHaveTextContent("Waiting for the factory");
     expect(screen.getByRole("button", { name: "Send receipt" })).toBeDisabled();
+    // the status shows before the page starts waiting on the answer; release only once it does
+    await waitFor(() => expect(client.awaitAnswer).toHaveBeenCalled());
     release(answered(receipt([], 5)));
     expect(await screen.findByRole("heading", { name: "What changed" })).toBeInTheDocument();
     expect(screen.queryByRole("status")).not.toBeInTheDocument();

@@ -70,7 +70,8 @@ function fakeClient() {
   };
   const answer = (txid: string, body: unknown) =>
     waiting.get(txid)?.({ re: txid, status: "answered", answer: body, grind });
-  return { client, sent, answer };
+  const isWaiting = (txid: string) => waiting.has(txid);
+  return { client, sent, answer, isWaiting };
 }
 
 function renderApp() {
@@ -161,7 +162,7 @@ describe("the factory flow, start to finish", () => {
     expect(await screen.findByText("At the factory")).toBeInTheDocument();
 
     // 4. the answer fills the line in: name, price, 'Check price'
-    await waitFor(() => expect(factory.client.awaitAnswer).toHaveBeenCalledTimes(1));
+    await waitFor(() => expect(factory.isWaiting("direct:tx1")).toBe(true));
     factory.answer("direct:tx1", {
       name: "Oat Bars",
       category: "Snacks & Candy",
@@ -194,7 +195,7 @@ describe("the factory flow, start to finish", () => {
     expect(await screen.findByText("Waiting on the factory")).toBeInTheDocument();
 
     // 6. the tag's price lands on the row, flagged 'Check price', with a history entry
-    await waitFor(() => expect(factory.client.awaitAnswer).toHaveBeenCalledTimes(2));
+    await waitFor(() => expect(factory.isWaiting("direct:tx2")).toBe(true));
     factory.answer("direct:tx2", {
       name: "Milk",
       category: "Dairy & Eggs",
