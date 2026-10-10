@@ -102,6 +102,30 @@ describe("ActiveTripPage pending lines", () => {
     expect((await tripRepo.getById(trip.id))?.scannedSubtotal).toBe(7.25);
   });
 
+  it("+ on the pending line saves the quantity, and the filled-in item keeps it", async () => {
+    const { trip, lookup } = await seedTripWithMilkAndPending();
+    const user = userEvent.setup();
+    renderPage();
+
+    await user.click(await screen.findByRole("button", { name: "Increase quantity" }));
+
+    await waitFor(() => {
+      expect(screen.getByTestId("pending-quantity")).toHaveTextContent("2");
+    });
+    const pendingLine = (await tripItemRepo.getByTrip(trip.id)).find((l) => l.pending);
+    expect(pendingLine?.quantity).toBe(2);
+
+    await lookups.applyAnswer(lookup.id, {
+      name: "Oat Bars",
+      unitType: "each",
+      category: "other",
+      price: 4.25,
+      confidence: "high",
+    });
+    expect(await screen.findByText(/x2/)).toBeInTheDocument();
+    expect((await tripRepo.getById(trip.id))?.scannedSubtotal).toBe(11.5);
+  });
+
   it("discard removes the pending line", async () => {
     const { lookup } = await seedTripWithMilkAndPending();
     const user = userEvent.setup();

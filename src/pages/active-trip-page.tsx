@@ -146,6 +146,13 @@ export default function ActiveTripPage() {
     await tripItemRepo.clearPriceFlag(id);
   }, []);
 
+  const handleChangePendingQuantity = useCallback(
+    async (lookupId: string, quantity: number) => {
+      await pendingLookupRepo.setQuantity(lookupId, quantity);
+    },
+    [],
+  );
+
   const handleDiscardPending = useCallback(async (lookupId: string) => {
     await pendingLookupRepo.discard(lookupId);
   }, []);
@@ -334,6 +341,8 @@ export default function ActiveTripPage() {
                     onFillByHand={handleFillByHand}
                     onDiscard={handleDiscardPending}
                     onRetry={handleRetryPending}
+                    quantity={ti.quantity}
+                    onQuantityChange={handleChangePendingQuantity}
                   />
                 );
               }

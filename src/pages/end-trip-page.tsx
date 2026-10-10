@@ -169,7 +169,7 @@ export default function EndTripPage() {
               Not priced yet
             </h2>
             {pendingLines.map((ti) => (
-              <PendingLineRow key={ti.id} lookup={lookups[ti.itemId]} />
+              <PendingLineRow key={ti.id} lookup={lookups[ti.itemId]} quantity={ti.quantity} />
             ))}
           </div>
         )}

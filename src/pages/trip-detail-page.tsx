@@ -296,7 +296,7 @@ export default function TripDetailPage() {
                 if (ti.pending && lookups[ti.itemId]) {
                   return (
                     <li key={ti.id}>
-                      <PendingLineRow lookup={lookups[ti.itemId]} />
+                      <PendingLineRow lookup={lookups[ti.itemId]} quantity={ti.quantity} />
                     </li>
                   );
                 }

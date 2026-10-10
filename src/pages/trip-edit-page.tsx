@@ -146,6 +146,7 @@ export default function TripEditPage() {
                     lookup={lookups[ti.itemId]}
                     onDiscard={handleDiscardPending}
                     onRetry={handleRetryPending}
+                    quantity={ti.quantity}
                   />
                 );
               }

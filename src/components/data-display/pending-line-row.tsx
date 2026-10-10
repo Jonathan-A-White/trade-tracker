@@ -7,6 +7,9 @@ interface PendingLineRowProps {
   onFillByHand?: (lookupId: string) => void;
   onDiscard?: (lookupId: string) => void;
   onRetry?: (lookupId: string) => void;
+  /** The quantity of the pending line; the control shows only with a handler. */
+  quantity?: number;
+  onQuantityChange?: (lookupId: string, quantity: number) => void;
 }
 
 /** What the line says of each state of its lookup. */
@@ -43,6 +46,8 @@ export function PendingLineRow({
   onFillByHand,
   onDiscard,
   onRetry,
+  quantity,
+  onQuantityChange,
 }: PendingLineRowProps) {
   const thumbnail = useThumbnailUrl(lookup.photos[0]);
 
@@ -72,6 +77,37 @@ export function PendingLineRow({
             </p>
           )}
         </div>
+        {quantity !== undefined && (
+          <div className="flex flex-none items-center gap-1">
+            {onQuantityChange && (
+              <button
+                type="button"
+                aria-label="Decrease quantity"
+                disabled={quantity <= 1}
+                onClick={() => onQuantityChange(lookup.id, quantity - 1)}
+                className="h-8 w-8 rounded-lg border border-gray-300 dark:border-gray-600 text-lg leading-none text-gray-700 dark:text-gray-300 hover:bg-gray-50 dark:hover:bg-gray-700 disabled:opacity-40 disabled:cursor-not-allowed cursor-pointer"
+              >
+                −
+              </button>
+            )}
+            <span
+              data-testid="pending-quantity"
+              className="min-w-6 text-center font-medium text-gray-900 dark:text-gray-100"
+            >
+              {quantity}
+            </span>
+            {onQuantityChange && (
+              <button
+                type="button"
+                aria-label="Increase quantity"
+                onClick={() => onQuantityChange(lookup.id, quantity + 1)}
+                className="h-8 w-8 rounded-lg border border-gray-300 dark:border-gray-600 text-lg leading-none text-gray-700 dark:text-gray-300 hover:bg-gray-50 dark:hover:bg-gray-700 cursor-pointer"
+              >
+                +
+              </button>
+            )}
+          </div>
+        )}
       </div>
       {(onRetry || onFillByHand || onDiscard) && (
         <div className="mt-2 flex gap-3">
