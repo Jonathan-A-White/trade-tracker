@@ -54,6 +54,8 @@ export class TradeTrackerDB extends Dexie {
     // Version 8: trips gain an optional receiptReconcile record (what the last
     // receipt reconcile found; not indexed). tripItems later gained an optional
     // guess mark (a best-guess price): not indexed, so the schema stays at 8.
+    // trips later gained an optional receiptPending mark (a receipt sent and not
+    // yet answered): not indexed, so the schema stays at 8.
     this.version(8).stores({});
   }
 }

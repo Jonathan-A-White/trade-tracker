@@ -34,6 +34,8 @@ export interface Trip {
   note?: string;
   /** What the last receipt reconcile found, kept so End Trip shows the same lists when he comes back. */
   receiptReconcile?: ReceiptReconcileRecord;
+  /** A receipt sent to the factory and not yet answered; kept so the wait survives leaving the page or restarting the app. */
+  receiptPending?: ReceiptPending;
   createdAt: number;
   updatedAt: number;
 }
@@ -175,6 +177,18 @@ export interface ReceiptAddedLine {
   tripItemId: string;
   name: string;
   price: number;
+}
+
+/** A receipt-reconcile grist in flight: what the app needs to fetch its answer and check it later. */
+export interface ReceiptPending {
+  /** The grist's txid, to ask the factory for the answer. */
+  txid: string;
+  /** When it was sent (epoch ms). */
+  sentAt: number;
+  /** What was sent, so the answer is checked against the same trip lines. */
+  request: ReceiptReconcileRequest;
+  /** Set when the factory refused or could not read it; nothing more is awaited. */
+  error?: string;
 }
 
 /** A trip's receipt reconcile, as applied: kept on the trip (no index) so End Trip can be left and reopened. */

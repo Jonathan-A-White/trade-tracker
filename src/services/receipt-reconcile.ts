@@ -6,6 +6,7 @@ import { newManualBarcode } from "@/services/trip-exchange-service";
 import type {
   Item,
   ReceiptChange,
+  ReceiptPending,
   ReceiptReconcileAnswer,
   ReceiptReconcileAnswerLine,
   ReceiptReconcileRequest,
@@ -169,6 +170,102 @@ export async function reconcileReceipt(
 }
 
 /**
+ * The photos of the receipt last sent for each trip, kept in memory so 'Send again' needs no new
+ * photos while the app stays open (after a restart he photographs the receipt again).
+ */
+const sentPhotos = new Map<string, grist.Photo[]>();
+
+export function lastSentReceiptPhotos(tripId: string): grist.Photo[] {
+  return sentPhotos.get(tripId) ?? [];
+}
+
+/** True once the factory has had RECEIPT_TIMEOUT_MS to answer a receipt and has not. */
+export function receiptTimedOut(pending: ReceiptPending, now: number): boolean {
+  return now - pending.sentAt >= RECEIPT_TIMEOUT_MS;
+}
+
+/**
+ * Sends the request and photos as one receipt-reconcile grist and marks the trip as waiting for
+ * its answer (txid and sent time, kept in the database). The answer is fetched and applied by the
+ * receipt runner, whether or not any page is open. Never throws: a refusal, a network error or a
+ * request too large comes back as a plain sentence, and the trip is not marked.
+ */
+export async function sendReceipt(
+  client: ReceiptClient,
+  tripId: string,
+  photos: grist.Photo[],
+): Promise<{ ok: true } | { ok: false; error: string }> {
+  try {
+    const request = await buildReceiptRequest(tripId);
+    const tooLarge = tooLargeSentence(client, request, photos.length);
+    if (tooLarge) return { ok: false, error: tooLarge };
+    const txid = await client.send({ input: request, photos, clientId: crypto.randomUUID() });
+    sentPhotos.set(tripId, photos);
+    await db.trips.update(tripId, { receiptPending: { txid, sentAt: Date.now(), request } });
+    return { ok: true };
+  } catch (err) {
+    return { ok: false, error: describeFailure(err) };
+  }
+}
+
+/** Drops the pending mark (he chose to send again). */
+export async function clearReceiptPending(tripId: string): Promise<void> {
+  await db.trips.update(tripId, { receiptPending: undefined });
+}
+
+async function failPending(tripId: string, txid: string, error: string): Promise<void> {
+  await db.transaction("rw", db.trips, async () => {
+    const trip = await db.trips.get(tripId);
+    if (trip?.receiptPending?.txid !== txid) return;
+    await db.trips.update(tripId, { receiptPending: { ...trip.receiptPending, error } });
+  });
+}
+
+/**
+ * The factory's answer to the receipt the trip is waiting on (matched by txid; an answer to a
+ * receipt since sent again is dropped): checked against what was sent and applied, which clears the
+ * pending mark; or, when it was refused or is out of shape, the mark keeps a plain sentence saying
+ * so and nothing else changes. A completed trip's actual total follows the receipt's total.
+ */
+export async function settleReceipt(
+  tripId: string,
+  txid: string,
+  record: grist.GristAnswer,
+): Promise<void> {
+  const pending = (await db.trips.get(tripId))?.receiptPending;
+  if (!pending || pending.txid !== txid || pending.error) return;
+  if (record.status !== "answered") {
+    const reason = record.reason?.trim();
+    await failPending(
+      tripId,
+      txid,
+      reason
+        ? `The factory could not read the receipt: ${reason}`
+        : "The factory could not read the receipt.",
+    );
+    return;
+  }
+  const parsed = parseReceiptAnswer(record.answer, pending.request);
+  if (!parsed.ok) {
+    await failPending(tripId, txid, parsed.error);
+    return;
+  }
+  try {
+    const applied = await applyReceiptAnswer(tripId, parsed.answer);
+    if (applied.total !== null && (await db.trips.get(tripId))?.status === "completed") {
+      await db.trips.update(tripId, { actualTotal: applied.total, updatedAt: Date.now() });
+    }
+  } catch (err) {
+    console.error("Failed to apply the receipt:", err);
+    await failPending(
+      tripId,
+      txid,
+      "The receipt could not be used, and your trip is as it was. Please try again.",
+    );
+  }
+}
+
+/**
  * Gives one trip line the receipt's figures for it, when they differ: the line's
  * price (and count, or per-pound weight), then the item's currentPrice and one
  * priceHistory entry when the unit price moved. Returns what changed, or null.
@@ -292,6 +389,7 @@ export async function applyReceiptAnswer(
         total: answer.total,
         unreadable: answer.unreadable,
       },
+      receiptPending: undefined,
     });
   });
 
