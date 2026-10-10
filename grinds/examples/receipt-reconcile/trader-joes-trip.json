@@ -78,7 +78,7 @@
       "equals": 0
     },
     "unreadable": {
-      "isNull": true
+      "is_null": true
     }
   }
 }

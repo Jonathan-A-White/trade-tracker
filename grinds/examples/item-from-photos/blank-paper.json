@@ -7,7 +7,7 @@
   },
   "photos": ["blank-paper.jpg"],
   "expect": {
-    "price": { "isNull": true },
+    "price": { "is_null": true },
     "confidence": { "equals": "low" },
     "notes": { "present": true }
   }

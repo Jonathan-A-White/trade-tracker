@@ -11,6 +11,6 @@
     "category": { "equals": "Dairy & Eggs" },
     "unitType": { "equals": "each" },
     "price": { "equals": 4.99 },
-    "confidence": { "oneOf": ["high", "medium"] }
+    "confidence": { "one_of": ["high", "medium"] }
   }
 }
