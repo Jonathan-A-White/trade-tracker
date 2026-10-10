@@ -1,20 +1,17 @@
 import { useState, useMemo, useCallback, useRef } from "react";
 import { useLiveQuery } from "dexie-react-hooks";
 import { useNavigate } from "react-router";
-import { db } from "@/db/database";
 import { TripRepository } from "@/db/repositories/trip-repository";
-import { TripItemRepository } from "@/db/repositories/trip-item-repository";
 import { PageHeader } from "@/components/layout/page-header";
 import { PendingLineRow } from "@/components/data-display/pending-line-row";
 import { ReceiptReconcileCard } from "@/components/data-display/receipt-reconcile-card";
-import { usePendingLookupsByItemId } from "@/hooks/use-pending-lookups";
+import { useTripLines } from "@/trips/use-trip-lines";
 import { formatCurrency } from "@/core/pricing";
-import { countsTowardTotal } from "@/core/trip-totals";
+import { countsTowardTotal, tripTotals } from "@/core/trip-totals";
 import { getTaxModule } from "@/core/tax";
 import type { TaxEstimate } from "@/core/tax";
 
 const tripRepo = new TripRepository();
-const tripItemRepo = new TripItemRepository();
 
 export default function EndTripPage() {
   const navigate = useNavigate();
@@ -24,43 +21,30 @@ export default function EndTripPage() {
   const savingRef = useRef(false);
 
   const trip = useLiveQuery(() => tripRepo.getActive(), []);
+  const {
+    store,
+    lines: tripItems,
+    itemsById,
+    pendingByItemId: lookups,
+    loading,
+  } = useTripLines(trip?.id);
 
   // coming back to End Trip: until he types one, the Receipt Total is the one the last receipt read
   const savedReceiptTotal = trip?.receiptReconcile?.total ?? null;
   const receiptTotal =
     typedTotal ?? (savedReceiptTotal !== null ? savedReceiptTotal.toFixed(2) : "");
 
-  const tripItems = useLiveQuery(
-    () => (trip ? tripItemRepo.getByTrip(trip.id) : []),
-    [trip?.id],
-  );
-
-  const store = useLiveQuery(async () => {
-    if (!trip) return undefined;
-    return db.stores.get(trip.storeId);
-  }, [trip?.storeId]);
-
   const storeName = store?.name ?? "Unknown Store";
-
-  const lookups = usePendingLookupsByItemId(trip?.id);
-
-  // Load items to get categories for tax calculation
-  const itemsById = useLiveQuery(async () => {
-    if (!tripItems || tripItems.length === 0) return new Map<string, { name: string; category?: string }>();
-    const itemIds = tripItems.map((ti) => ti.itemId);
-    const items = await db.items.where("id").anyOf(itemIds).toArray();
-    return new Map(items.map((item) => [item.id, { name: item.name, category: item.category }]));
-  }, [tripItems]);
 
   // Calculate tax estimate if a tax module is available for this store's state
   const storeState = store?.state;
   const taxEstimate = useMemo((): TaxEstimate | null => {
-    if (!storeState || !tripItems || !itemsById) return null;
+    if (!storeState || loading) return null;
     const taxModule = getTaxModule(storeState);
     if (!taxModule) return null;
 
     const lineItems = tripItems.map((ti) => {
-      const item = itemsById.get(ti.itemId);
+      const item = itemsById[ti.itemId];
       return {
         name: item?.name ?? "Unknown Item",
         lineTotal: ti.lineTotal,
@@ -70,14 +54,11 @@ export default function EndTripPage() {
     });
 
     return taxModule.calculate(lineItems);
-  }, [storeState, tripItems, itemsById]);
+  }, [storeState, loading, tripItems, itemsById]);
 
   const receiptValue = parseFloat(receiptTotal) || 0;
   const scannedSubtotal = trip?.scannedSubtotal ?? 0;
-  const bottleDeposits = (tripItems ?? []).reduce(
-    (sum, ti) => sum + (ti.bottleDeposit ?? 0),
-    0,
-  );
+  const { bottleDeposits } = tripTotals(tripItems);
   const estimatedTotal =
     (taxEstimate ? scannedSubtotal + taxEstimate.totalTax : scannedSubtotal) +
     bottleDeposits;
@@ -128,8 +109,8 @@ export default function EndTripPage() {
     );
   }
 
-  const itemCount = (tripItems ?? []).filter(countsTowardTotal).length;
-  const pendingLines = (tripItems ?? []).filter(
+  const itemCount = tripItems.filter(countsTowardTotal).length;
+  const pendingLines = tripItems.filter(
     (ti) => ti.pending && lookups[ti.itemId],
   );
   const tripDate = new Date(trip.startedAt).toLocaleDateString("en-US", {

@@ -1,12 +1,10 @@
 import { useState, useCallback } from "react";
-import { useLiveQuery } from "dexie-react-hooks";
 import { useParams, useNavigate } from "react-router";
-import { db } from "@/db/database";
-import type { Item } from "@/contracts/types";
 import { TripRepository } from "@/db/repositories/trip-repository";
 import { TripItemRepository } from "@/db/repositories/trip-item-repository";
 import { PendingLookupRepository } from "@/db/repositories/pending-lookup-repository";
-import { usePendingLookupsByItemId } from "@/hooks/use-pending-lookups";
+import { useTripLines } from "@/trips/use-trip-lines";
+import { tripTotals } from "@/core/trip-totals";
 import { PageHeader } from "@/components/layout/page-header";
 import { PendingLineRow } from "@/components/data-display/pending-line-row";
 import { TripItemRow } from "@/components/data-display/trip-item-row";
@@ -25,28 +23,12 @@ export default function TripEditPage() {
   const [confirmRemoveId, setConfirmRemoveId] = useState<string | null>(null);
   const [saving, setSaving] = useState(false);
 
-  const trip = useLiveQuery(
-    () => (id ? tripRepo.getById(id) : undefined),
-    [id],
-  );
-
-  const tripItems = useLiveQuery(
-    () => (id ? tripItemRepo.getByTrip(id) : []),
-    [id],
-  );
-
-  const lookups = usePendingLookupsByItemId(id);
-
-  const itemsMap = useLiveQuery(async () => {
-    if (!tripItems || tripItems.length === 0) return {};
-    const itemIds = [...new Set(tripItems.map((ti) => ti.itemId))];
-    const items = await db.items.where("id").anyOf(itemIds).toArray();
-    const map: Record<string, Item> = {};
-    for (const item of items) {
-      map[item.id] = item;
-    }
-    return map;
-  }, [tripItems]);
+  const {
+    trip,
+    lines: items,
+    itemsById: map,
+    pendingByItemId: lookups,
+  } = useTripLines(id);
 
   const handleRetryPending = useCallback(async (lookupId: string) => {
     await pendingLookupRepo.retry(lookupId);
@@ -105,7 +87,7 @@ export default function TripEditPage() {
       // Subtotal is auto-recalculated by the repository on item changes,
       // but force a recalc to be safe
       const allItems = await tripItemRepo.getByTrip(id);
-      const subtotal = allItems.reduce((sum, ti) => sum + ti.lineTotal, 0);
+      const { subtotal } = tripTotals(allItems);
       await tripRepo.updateSubtotal(id, subtotal);
       navigate(`/trips/${id}`);
     } finally {
@@ -125,9 +107,6 @@ export default function TripEditPage() {
       </div>
     );
   }
-
-  const items = tripItems ?? [];
-  const map = itemsMap ?? {};
 
   return (
     <div className="flex flex-col min-h-screen bg-gray-50 dark:bg-gray-900">
