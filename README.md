@@ -76,6 +76,7 @@ npm warn exec The following package was not found and will be installed: tsx@4.2
 ## Docs
 
 - [Module map](docs/module-map.md): each module's one responsibility and API, the files most stories collide on, and the refactors and shared libraries that would let stories run in parallel.
+- [Best-practices audit](docs/best-practices-audit.md): every line of the factory's PWA checklist and the newer rules, pass / fail / not applicable with evidence, and the failures ranked into fix stories.
 
 ## Credits
 
