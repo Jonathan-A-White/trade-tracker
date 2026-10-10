@@ -8,6 +8,8 @@ npm run build    # Typecheck + production build (tsc -b && vite build)
 npm run lint     # ESLint (flat config)
 npm test         # Vitest (single run)
 npx tsc -b       # Typecheck only
+npm run e2e      # Real-browser (Playwright/Chromium) specs in tests/e2e against a preview build
+npm run shots    # The same specs at 390x844, screenshots to shots/
 ```
 
 CI runs lint, typecheck, and test in parallel — all three must pass.
