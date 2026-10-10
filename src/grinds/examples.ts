@@ -51,6 +51,11 @@ function asChecks(check: unknown): FieldCheck {
   return isCheckObject(check) ? (check as FieldCheck) : { equals: check };
 }
 
+/** A `matches` pattern is a Go regular expression in the smoke; JS lacks its leading (?i), so read it as the i flag. */
+function compilePattern(pattern: string): RegExp {
+  return pattern.startsWith("(?i)") ? new RegExp(pattern.slice(4), "i") : new RegExp(pattern);
+}
+
 type Schema = Record<string, unknown>;
 
 function schemaAt(root: Schema, path: string): Schema | undefined {
@@ -131,7 +136,7 @@ export function expectProblems(expectBlock: unknown, answerSchema: Schema): stri
     }
     if (typeof c.matches === "string") {
       try {
-        new RegExp(c.matches);
+        compilePattern(c.matches);
       } catch {
         problems.push(`${path}: matches is not a valid pattern`);
       }
@@ -168,7 +173,7 @@ export function checkExpect(expectBlock: ExpectBlock, answer: unknown): string[]
     if (c.contains !== undefined && !(typeof value === "string" && value.includes(c.contains))) {
       failures.push(`${path}: expected to contain ${JSON.stringify(c.contains)}, got ${shown}`);
     }
-    if (c.matches !== undefined && !(typeof value === "string" && new RegExp(c.matches).test(value))) {
+    if (c.matches !== undefined && !(typeof value === "string" && compilePattern(c.matches).test(value))) {
       failures.push(`${path}: expected to match /${c.matches}/, got ${shown}`);
     }
     if (c.present !== undefined && (value !== undefined) !== c.present) {
