@@ -180,6 +180,28 @@ describe("End Trip: Photograph receipt", () => {
     expect((await tripRepo.getActive())?.id).toBe(trip.id);
   });
 
+  it("a receipt replaces a guessed price and lists it as 'Guess $3.99 → $4.29'", async () => {
+    const { lines } = await seedTrip();
+    await tripItemRepo.update(lines.Milk, { guess: { basis: "Typical price." } });
+    const { client } = fakeClient(() =>
+      answered(receipt([{ tripItemId: lines.Milk, price: 4.29, text: "MILK" }], 4.29)),
+    );
+    factory.client = client;
+    const user = userEvent.setup();
+    await renderPage();
+
+    await takeOnePhoto(user);
+    await user.click(screen.getByRole("button", { name: "Send receipt" }));
+
+    const changed = await screen.findByRole("heading", { name: "What changed" });
+    const rows = within(within(changed.parentElement!).getByRole("list")).getAllByRole("listitem");
+    expect(rows).toHaveLength(1);
+    expect(rows[0]).toHaveTextContent("Guess $3.99 → $4.29");
+    const milk = await db.tripItems.get(lines.Milk);
+    expect(milk?.price).toBe(4.29);
+    expect(milk?.guess).toBeUndefined();
+  });
+
   it("a receipt line with no trip line shows 'Not matched: 1'", async () => {
     const { lines } = await seedTrip();
     const { client } = fakeClient(() =>
