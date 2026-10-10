@@ -1,10 +1,12 @@
 import { useEffect, useRef, useState } from "react";
 import type { ChangeEvent } from "react";
 import { useLiveQuery } from "dexie-react-hooks";
+import { Link } from "react-router";
 import type { grist } from "bsv-kit/grist";
 import { db } from "@/db/database";
 import { ReceiptCamera } from "@/components/scanner/receipt-camera";
 import { formatCurrency } from "@/core/pricing";
+import { doorWords } from "@/factory/door-words";
 import { useReceiptClient } from "@/hooks/use-receipt-client";
 import { RECEIPT_STILL, stillFromFile } from "@/scanner/capture-still";
 import {
@@ -47,11 +49,14 @@ function describeChange(change: ReceiptChange): string {
  * update every matched line's price and the receipt total, then list what changed.
  */
 export function ReceiptReconcileCard({ tripId, onTotal }: ReceiptReconcileCardProps) {
-  const { ready, getClient } = useReceiptClient();
+  const { ready, door, licence, unlock, getClient } = useReceiptClient();
   const [photos, setPhotos] = useState<Blob[]>([]);
   const [cameraOpen, setCameraOpen] = useState(false);
   const [waiting, setWaiting] = useState(false);
   const [error, setError] = useState<string | null>(null);
+  const [unlocking, setUnlocking] = useState(false);
+  // why the fingerprint did not open the key; the card then points to Settings
+  const [unlockError, setUnlockError] = useState<string | null>(null);
   // the trip keeps the last result, so leaving End Trip and coming back shows the same lists
   const result = useLiveQuery(async () => (await db.trips.get(tripId))?.receiptReconcile ?? null, [tripId]);
   const tripLines = useLiveQuery(async () => {
@@ -99,7 +104,7 @@ export function ReceiptReconcileCard({ tripId, onTotal }: ReceiptReconcileCardPr
   async function handleSend() {
     const client = getClient();
     if (!client) {
-      setError("The factory is not ready. Unlock it under Settings.");
+      setError(doorWords(door, licence) ?? "The factory is not ready. Try again in a moment.");
       return;
     }
     const controller = new AbortController();
@@ -129,6 +134,18 @@ export function ReceiptReconcileCard({ tripId, onTotal }: ReceiptReconcileCardPr
     } finally {
       if (abort.current === controller) abort.current = null;
       if (!controller.signal.aborted) setWaiting(false);
+    }
+  }
+
+  async function handleUnlock() {
+    setUnlocking(true);
+    setUnlockError(null);
+    try {
+      await unlock();
+    } catch (err) {
+      setUnlockError(err instanceof Error ? err.message : "The fingerprint did not open the key.");
+    } finally {
+      setUnlocking(false);
     }
   }
 
@@ -162,9 +179,31 @@ export function ReceiptReconcileCard({ tripId, onTotal }: ReceiptReconcileCardPr
       </p>
 
       {!ready && (
-        <p className="text-sm text-amber-600 dark:text-amber-400">
-          The factory needs a licence to read a receipt. Set it up under Settings.
-        </p>
+        <div className="space-y-2">
+          <p className="text-sm text-amber-600 dark:text-amber-400">{doorWords(door, licence)}</p>
+          {door === "locked" && (
+            <div className="flex flex-wrap items-center gap-2">
+              <button type="button" onClick={handleUnlock} disabled={unlocking} className={primary}>
+                Unlock
+              </button>
+              {unlockError && (
+                <Link to="/settings" className="text-sm text-blue-600 dark:text-blue-400 underline">
+                  Unlock in Settings
+                </Link>
+              )}
+            </div>
+          )}
+          {door !== "locked" && (
+            <Link to="/settings" className="text-sm text-blue-600 dark:text-blue-400 underline">
+              Open Settings
+            </Link>
+          )}
+          {unlockError && (
+            <p role="alert" className="text-sm text-red-700 dark:text-red-300">
+              {unlockError}
+            </p>
+          )}
+        </div>
       )}
 
       {photos.length > 0 && (

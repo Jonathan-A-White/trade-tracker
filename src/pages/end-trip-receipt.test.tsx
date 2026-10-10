@@ -17,7 +17,7 @@ const factory = vi.hoisted(() => ({
   client: null as unknown as ReceiptClient,
 }));
 vi.mock("@/hooks/use-receipt-client", () => ({
-  useReceiptClient: () => ({ ready: factory.ready, getClient: () => (factory.ready ? factory.client : null) }),
+  useReceiptClient: () => ({ ready: factory.ready, door: "no-key", licence: null, unlock: async () => {}, getClient: () => (factory.ready ? factory.client : null) }),
 }));
 
 // jsdom has no canvas
@@ -486,7 +486,7 @@ describe("End Trip: Photograph receipt", () => {
     factory.ready = false;
     await renderPage();
 
-    expect(screen.getByText(/needs a licence/)).toBeInTheDocument();
+    expect(screen.getByText("Set up the factory in Settings")).toBeInTheDocument();
     expect(screen.getByRole("button", { name: "Photograph receipt" })).toBeDisabled();
     expect(screen.getByRole("button", { name: "Choose a photo" })).toBeDisabled();
   });
