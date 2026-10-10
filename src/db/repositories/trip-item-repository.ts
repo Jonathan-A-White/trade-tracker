@@ -4,7 +4,8 @@ import type {
   CreateTripItemInput,
   PriceHistoryEntry,
 } from "../../contracts/types";
-import { calculateLineTotal, countsTowardTotal } from "../../core/pricing";
+import { calculateLineTotal } from "../../core/pricing";
+import { tripTotals } from "../../core/trip-totals";
 
 export class TripItemRepository {
   async addToTrip(input: CreateTripItemInput): Promise<TripItem> {
@@ -148,11 +149,8 @@ export class TripItemRepository {
 
   private async recalcTripSubtotal(tripId: string): Promise<void> {
     const items = await db.tripItems.where("tripId").equals(tripId).toArray();
-    const subtotal = items
-      .filter(countsTowardTotal)
-      .reduce((sum, item) => sum + item.lineTotal, 0);
     await db.trips.update(tripId, {
-      scannedSubtotal: subtotal,
+      scannedSubtotal: tripTotals(items).subtotal,
       updatedAt: Date.now(),
     });
   }

@@ -7,7 +7,8 @@ import type {
   PriceHistoryEntry,
   UnitType,
 } from "@/contracts/types";
-import { calculateLineTotal, countsTowardTotal } from "@/core/pricing";
+import { calculateLineTotal } from "@/core/pricing";
+import { countsTowardTotal } from "@/core/trip-totals";
 
 // --- Export types ---
 

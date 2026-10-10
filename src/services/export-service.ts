@@ -1,5 +1,5 @@
 import { db } from "@/db/database";
-import { countsTowardTotal } from "@/core/pricing";
+import { countsTowardTotal } from "@/core/trip-totals";
 
 export async function exportAllData(): Promise<string> {
   const [stores, items, trips, tripItems, priceHistory] = await Promise.all([

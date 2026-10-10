@@ -43,17 +43,6 @@ export function formatCurrency(amount: number): string {
 }
 
 /**
- * Whether a trip line adds to the trip's totals and item count. A pending
- * lookup line only counts once it has a price.
- */
-export function countsTowardTotal(tripItem: {
-  pending?: true;
-  price: number;
-}): boolean {
-  return !tripItem.pending || tripItem.price > 0;
-}
-
-/**
  * How many trip lines carry a price that is not known: a Guess price, or no
  * price at all (zero or still waiting on a lookup).
  */

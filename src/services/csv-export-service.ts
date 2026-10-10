@@ -1,5 +1,5 @@
 import { db } from "@/db/database";
-import { countsTowardTotal } from "@/core/pricing";
+import { countsTowardTotal } from "@/core/trip-totals";
 
 function escapeCsvField(field: string): string {
   if (field.includes(",") || field.includes('"') || field.includes("\n")) {
