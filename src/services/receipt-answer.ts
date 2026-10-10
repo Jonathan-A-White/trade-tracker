@@ -24,7 +24,7 @@ export function parseReceiptAnswer(
 ): ParsedReceiptAnswer {
   if (!validate(value)) return { ok: false, error: RECEIPT_ANSWER_NOT_IN_SHAPE };
 
-  const known = new Set(request.lines.map((line) => line.tripItemId));
+  const known = new Set(request.lines.map((line) => line[0]));
   const claims = new Map<string, number>();
   for (const line of value.lines) {
     if (line.tripItemId !== null && known.has(line.tripItemId)) {

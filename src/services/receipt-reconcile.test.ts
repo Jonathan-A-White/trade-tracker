@@ -28,7 +28,12 @@ async function addLine(
   name: string,
   price: number,
   quantity: number,
-  options: { unitType?: "each" | "per_lb"; weightLbs?: number } = {},
+  options: {
+    unitType?: "each" | "per_lb";
+    weightLbs?: number;
+    onSale?: boolean;
+    bottleDeposit?: number;
+  } = {},
 ) {
   const item = await itemRepo.create({
     barcode,
@@ -42,7 +47,8 @@ async function addLine(
     price,
     quantity,
     weightLbs: options.weightLbs,
-    onSale: false,
+    onSale: options.onSale ?? false,
+    bottleDeposit: options.bottleDeposit,
   });
   return { item, line };
 }
@@ -75,26 +81,28 @@ describe("buildReceiptRequest", () => {
     await Promise.all(db.tables.map((table) => table.clear()));
   });
 
-  it("sends the trip's priced lines with their barcodes and the store's name", async () => {
+  it("sends the trip's priced lines as compact rows, with the store's name", async () => {
     const trip = await seedTrip();
     const { line } = await addLine(trip.id, "0042", "Milk", 3.99, 2);
 
     const request = await buildReceiptRequest(trip.id);
 
     expect(request.store).toBe("Trader Joe's");
-    expect(request.lines).toEqual([
-      {
-        tripItemId: line.id,
-        name: "Milk",
-        barcode: "0042",
-        price: 3.99,
-        quantity: 2,
-        weightLbs: null,
-        unitType: "each",
-        onSale: false,
-        bottleDeposit: null,
-      },
-    ]);
+    expect(request.lines).toEqual([[line.id, "Milk", 3.99, 2, null]]);
+  });
+
+  it("leaves the barcode, unit type, sale flag and bottle deposit out of the request", async () => {
+    const trip = await seedTrip();
+    await addLine(trip.id, "0042-barcode", "Seltzer", 1.29, 1, { onSale: true, bottleDeposit: 0.05 });
+
+    const request = await buildReceiptRequest(trip.id);
+    const sent = JSON.stringify(request);
+
+    expect(sent).not.toContain("0042-barcode");
+    expect(sent).not.toMatch(/barcode|unitType|onSale|bottleDeposit/);
+    expect(request.lines[0]).toHaveLength(5);
+    expect(request.lines[0]).not.toContain(0.05);
+    expect(request.lines[0]).not.toContain(true);
   });
 });
 

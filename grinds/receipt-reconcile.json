@@ -2,7 +2,7 @@
   "grind": 1,
   "app": "trade-tracker",
   "kind": "receipt-reconcile",
-  "versions": ["1.0"],
+  "versions": ["2.0"],
   "model": "sonnet",
   "effort": "medium",
   "instructions": "grinds/receipt-reconcile.md",

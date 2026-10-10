@@ -15,9 +15,9 @@ import type {
 } from "@/contracts/types";
 import { parseReceiptAnswer } from "@/services/receipt-answer";
 
-/** The grind the receipt reconcile runs: grinds/receipt-reconcile.json, version 1.0 of its input and answer. */
+/** The grind the receipt reconcile runs: grinds/receipt-reconcile.json, version 2.0 of its input (the compact rows), 1.0 of its answer. */
 export const RECEIPT_KIND = "receipt-reconcile";
-export const RECEIPT_VERSION = "1.0";
+export const RECEIPT_VERSION = "2.0";
 
 /** How long the page waits for the factory's answer before it gives up and says so. */
 export const RECEIPT_TIMEOUT_MS = 10 * 60_000;
@@ -27,6 +27,11 @@ const itemRepo = new ItemRepository();
 
 /** The two things a receipt reconcile needs of bsv-kit/grist; a fake in tests. */
 export interface ReceiptClient {
+  /**
+   * How big the sealed record would be and the most one record may be, measured the way bsv-kit's
+   * send measures it. A fake may leave it out, and nothing is measured then.
+   */
+  measure?(input: ReceiptReconcileRequest, photoCount: number): { bytes: number; cap: number };
   /** Uploads the photos and posts the grist; resolves with its txid. */
   send(call: {
     input: ReceiptReconcileRequest;
@@ -64,19 +69,40 @@ export async function buildReceiptRequest(tripId: string): Promise<ReceiptReconc
   lines.forEach((line, index) => {
     const item = items[index];
     if (!item) return;
-    requestLines.push({
-      tripItemId: line.id,
-      name: item.name,
-      barcode: item.barcode,
-      price: line.price,
-      quantity: line.quantity,
-      weightLbs: line.weightLbs ?? null,
-      unitType: item.unitType,
-      onSale: line.onSale,
-      bottleDeposit: line.bottleDeposit ?? null,
-    });
+    requestLines.push([line.id, item.name, line.price, line.quantity, line.weightLbs ?? null]);
   });
   return { store: store?.name ?? "", lines: requestLines };
+}
+
+/**
+ * Null when the request fits one record; otherwise a plain sentence saying how many of the trip's
+ * lines a receipt check can take, found by measuring the first lines until they just fit.
+ */
+function tooLargeSentence(
+  client: ReceiptClient,
+  request: ReceiptReconcileRequest,
+  photoCount: number,
+): string | null {
+  if (!client.measure) return null;
+  const fits = (count: number) => {
+    const { bytes, cap } = client.measure!(
+      { ...request, lines: request.lines.slice(0, count) },
+      photoCount,
+    );
+    return bytes <= cap;
+  };
+  if (fits(request.lines.length)) return null;
+  let low = 0;
+  let high = request.lines.length;
+  while (low < high) {
+    const mid = Math.ceil((low + high) / 2);
+    if (fits(mid)) low = mid;
+    else high = mid - 1;
+  }
+  return (
+    `This trip has ${request.lines.length} lines, too many to check against a receipt at once. ` +
+    `The factory can check ${low} lines. Take some lines off the trip, then send the receipt again.`
+  );
 }
 
 function describeFailure(err: unknown): string {
@@ -109,6 +135,8 @@ export async function reconcileReceipt(
   options.signal?.addEventListener("abort", relay);
 
   try {
+    const tooLarge = tooLargeSentence(client, request, photos.length);
+    if (tooLarge) return { ok: false, error: tooLarge };
     const txid = await client.send({ input: request, photos, clientId: crypto.randomUUID() });
     const record = await client.awaitAnswer(txid, controller.signal);
     if (record.status !== "answered") {

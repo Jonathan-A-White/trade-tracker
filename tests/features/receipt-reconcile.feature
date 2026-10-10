@@ -33,6 +33,12 @@ Feature: Reconcile a trip from a photo of its receipt
     And every price is as it was
     And the Receipt Total is empty
 
+  Scenario: A trip with too many lines for one request says how many it can take
+    Given the trip has more lines than fit in one request to the factory
+    When I send the receipt photo
+    Then I see how many lines the factory can check, in words, with no byte count
+    And nothing is sent and every price is as it was
+
   Scenario: A photo chosen from the gallery counts like a camera photo
     When I tap "Choose a photo" and pick a picture
     Then "1 photo ready" is shown

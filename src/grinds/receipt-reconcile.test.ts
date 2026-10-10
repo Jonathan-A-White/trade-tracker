@@ -13,7 +13,7 @@ const instructions = readFileSync(
   "utf8"
 );
 const answerSchema = readJson("schemas/receipt-reconcile-answer-1.0.schema.json");
-const inputSchema = readJson("schemas/receipt-reconcile-input-1.0.schema.json");
+const inputSchema = readJson("schemas/receipt-reconcile-input-2.0.schema.json");
 
 const ajv = new Ajv({ allErrors: true, strict: true });
 const validateAnswer = ajv.compile(answerSchema);
@@ -50,7 +50,7 @@ describe("grinds/receipt-reconcile.json", () => {
   it("names the app, kind, version, model, effort and attachment limits", () => {
     expect(grind.app).toBe("trade-tracker");
     expect(grind.kind).toBe("receipt-reconcile");
-    expect(grind.versions).toEqual(["1.0"]);
+    expect(grind.versions).toEqual(["2.0"]);
     expect(grind.model).toBe("sonnet");
     expect(grind.effort).toBe("medium");
     expect(grind.instructions).toBe("grinds/receipt-reconcile.md");
@@ -78,23 +78,33 @@ describe("receipt-reconcile example request", () => {
     expect(scenario.request).toEqual(example);
   });
 
-  it("is built from the dev seed's Trader Joe's items", () => {
-    const lines = example.lines as { name: string; barcode: string; price: number }[];
+  it("is built from the dev seed's Trader Joe's items, in short rows with no barcode", () => {
+    const lines = example.lines as [string, string, number, number, number | null][];
     expect(lines.length).toBeGreaterThan(2);
-    for (const line of lines) {
-      const seeded = tjReceiptSeedData.find((i) => i.barcode === line.barcode);
-      expect(seeded, line.barcode).toBeDefined();
-      expect(seeded?.name).toBe(line.name);
-      expect(seeded?.currentPrice).toBe(line.price);
+    for (const [, name, price] of lines) {
+      const seeded = tjReceiptSeedData.find((i) => i.name === name);
+      expect(seeded, name).toBeDefined();
+      expect(seeded?.currentPrice).toBe(price);
     }
+    expect(JSON.stringify(example)).not.toMatch(/barcode|unitType|onSale|bottleDeposit/);
   });
 });
 
 describe("receipt-reconcile input schema", () => {
   it("rejects a missing store, a bad line and an extra key", () => {
     expect(validateInput({ lines: [] })).toBe(false);
-    expect(validateInput({ store: "TJ", lines: [{ tripItemId: "a" }] })).toBe(false);
+    expect(validateInput({ store: "TJ", lines: [["a"]] })).toBe(false);
     expect(validateInput({ store: "TJ", lines: [], extra: 1 })).toBe(false);
+  });
+
+  it("takes a row of five and refuses a sixth value, an object row and the old fields", () => {
+    expect(validateInput({ store: "TJ", lines: [["a", "Milk", 3.99, 2, null]] })).toBe(true);
+    expect(validateInput({ store: "TJ", lines: [["a", "Milk", 3.99, 2, 1.1]] })).toBe(true);
+    expect(validateInput({ store: "TJ", lines: [["a", "Milk", 3.99, 2, null, "0042"]] })).toBe(false);
+    expect(validateInput({ store: "TJ", lines: [["a", "Milk", "3.99", 2, null]] })).toBe(false);
+    expect(
+      validateInput({ store: "TJ", lines: [{ tripItemId: "a", name: "Milk", price: 1, quantity: 1, weightLbs: null }] }),
+    ).toBe(false);
   });
 });
 

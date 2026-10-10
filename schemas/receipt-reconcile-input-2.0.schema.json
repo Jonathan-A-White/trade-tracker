@@ -1,0 +1,47 @@
+{
+  "$schema": "http://json-schema.org/draft-07/schema#",
+  "$id": "receipt-reconcile-input-2.0",
+  "title": "Receipt Reconcile input 2.0",
+  "description": "Each line is a short row, to keep a whole trip inside the 10 KB record: [tripItemId, name, price, quantity, weightLbs]. tripItemId is the id the answer names the line by; name is the item's name; price is the unit price the shopper logged (per pound for a weighed line); quantity is the count; weightLbs is the weight in pounds, or null.",
+  "type": "object",
+  "additionalProperties": false,
+  "required": [
+    "store",
+    "lines"
+  ],
+  "properties": {
+    "store": {
+      "type": "string"
+    },
+    "lines": {
+      "type": "array",
+      "items": {
+        "type": "array",
+        "minItems": 5,
+        "maxItems": 5,
+        "items": [
+          {
+            "type": "string",
+            "minLength": 1
+          },
+          {
+            "type": "string"
+          },
+          {
+            "type": "number"
+          },
+          {
+            "type": "number"
+          },
+          {
+            "type": [
+              "number",
+              "null"
+            ]
+          }
+        ],
+        "additionalItems": false
+      }
+    }
+  }
+}
