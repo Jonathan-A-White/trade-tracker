@@ -1,0 +1,73 @@
+{
+  "$schema": "http://json-schema.org/draft-07/schema#",
+  "$id": "receipt-reconcile-input-1.0",
+  "title": "Receipt Reconcile input 1.0",
+  "type": "object",
+  "additionalProperties": false,
+  "required": [
+    "store",
+    "lines"
+  ],
+  "properties": {
+    "store": {
+      "type": "string"
+    },
+    "lines": {
+      "type": "array",
+      "items": {
+        "type": "object",
+        "additionalProperties": false,
+        "required": [
+          "tripItemId",
+          "name",
+          "barcode",
+          "price",
+          "quantity",
+          "weightLbs",
+          "unitType",
+          "onSale",
+          "bottleDeposit"
+        ],
+        "properties": {
+          "tripItemId": {
+            "type": "string",
+            "minLength": 1
+          },
+          "name": {
+            "type": "string"
+          },
+          "barcode": {
+            "type": "string"
+          },
+          "price": {
+            "type": "number"
+          },
+          "quantity": {
+            "type": "number"
+          },
+          "weightLbs": {
+            "type": [
+              "number",
+              "null"
+            ]
+          },
+          "unitType": {
+            "enum": [
+              "each",
+              "per_lb"
+            ]
+          },
+          "onSale": {
+            "type": "boolean"
+          },
+          "bottleDeposit": {
+            "type": [
+              "number",
+              "null"
+            ]
+          }
+        }
+      }
+    }
+  }
+}
