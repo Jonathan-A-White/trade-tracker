@@ -149,7 +149,7 @@ describe("End Trip: Photograph receipt", () => {
     // the request carries the trip's lines and the photo
     await waitFor(() => expect(sent).toHaveLength(1));
     expect(sent[0].input.store).toBe("Trader Joe's");
-    expect(sent[0].input.lines.map((l) => l.name).sort()).toEqual(["Bread", "Eggs", "Milk"]);
+    expect(sent[0].input.lines.map((l) => l[1]).sort()).toEqual(["Bread", "Eggs", "Milk"]);
     expect(sent[0].photos).toHaveLength(1);
     expect(sent[0].photos[0].mime).toBe("image/jpeg");
 

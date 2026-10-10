@@ -150,7 +150,7 @@ describe("A completed trip: Photograph receipt", () => {
     await user.click(screen.getByRole("button", { name: "Send receipt" }));
 
     await waitFor(() => expect(sent).toHaveLength(1));
-    expect(sent[0].input.lines.map((l) => l.name).sort()).toEqual(["Bread", "Milk"]);
+    expect(sent[0].input.lines.map((l) => l[1]).sort()).toEqual(["Bread", "Milk"]);
     expect(sent[0].photos).toHaveLength(1);
 
     const changed = await screen.findByRole("heading", { name: "What changed" });

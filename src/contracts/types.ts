@@ -114,20 +114,20 @@ export interface ItemFromPhotosAnswer {
   notes?: string;
 }
 
-/** One trip line as the receipt-reconcile request sends it (schemas/receipt-reconcile-input-1.0.schema.json). */
-export interface ReceiptReconcileRequestLine {
-  tripItemId: string;
-  name: string;
-  barcode: string;
-  price: number;
-  quantity: number;
-  weightLbs: number | null;
-  unitType: UnitType;
-  onSale: boolean;
-  bottleDeposit: number | null;
-}
+/**
+ * One trip line as the receipt-reconcile request sends it, a short row to fit the 10 KB record
+ * (schemas/receipt-reconcile-input-2.0.schema.json): [tripItemId, name, price, quantity, weightLbs].
+ * The barcode, unit type, sale flag and bottle deposit stay on the app's own lines.
+ */
+export type ReceiptReconcileRequestLine = [
+  tripItemId: string,
+  name: string,
+  price: number,
+  quantity: number,
+  weightLbs: number | null,
+];
 
-/** The receipt-reconcile input 1.0 (schemas/receipt-reconcile-input-1.0.schema.json). */
+/** The receipt-reconcile input 2.0 (schemas/receipt-reconcile-input-2.0.schema.json). */
 export interface ReceiptReconcileRequest {
   store: string;
   lines: ReceiptReconcileRequestLine[];

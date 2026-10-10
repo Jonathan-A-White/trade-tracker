@@ -7,28 +7,8 @@ import type { ReceiptReconcileRequest } from "@/contracts/types";
 const request: ReceiptReconcileRequest = {
   store: "Trader Joe's",
   lines: [
-    {
-      tripItemId: "ti-steak",
-      name: "Shaved Steak",
-      barcode: "00508271",
-      price: 11.34,
-      quantity: 1,
-      weightLbs: 1.12,
-      unitType: "per_lb",
-      onSale: false,
-      bottleDeposit: null,
-    },
-    {
-      tripItemId: "ti-guac",
-      name: "Guacamole",
-      barcode: "TJR00035",
-      price: 5.99,
-      quantity: 1,
-      weightLbs: null,
-      unitType: "each",
-      onSale: false,
-      bottleDeposit: null,
-    },
+    ["ti-steak", "Shaved Steak", 11.34, 1, 1.12],
+    ["ti-guac", "Guacamole", 5.99, 1, null],
   ],
 };
 
