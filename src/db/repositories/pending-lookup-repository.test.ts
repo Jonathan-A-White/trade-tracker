@@ -197,4 +197,118 @@ describe("PendingLookupRepository", () => {
       expect((await fresh.getByTrip(trip.id))[0].quantity).toBe(4);
     });
   });
+  describe("weight read from a per-pound label", () => {
+    beforeEach(async () => {
+      // the db singleton outlives the per-test IDBFactory, so start each test empty
+      await Promise.all(db.tables.map((table) => table.clear()));
+    });
+
+    const chicken = {
+      name: "Fresh Boneless Skinless Chicken Thighs",
+      unitType: "per_lb" as const,
+      category: "Meat & Seafood",
+      price: 4.99,
+      weightLbs: 2.03,
+      size: "2.03 lb",
+      confidence: "high" as const,
+    };
+
+    it("applyAnswer sets the line's weightLbs so the total is price x weight", async () => {
+      const trip = await startTrip();
+      const lookup = await lookups.create({ barcode: "0055", tripId: trip.id, photos: [] });
+
+      await lookups.applyAnswer(lookup.id, chicken);
+
+      const lines = await tripItemRepo.getByTrip(trip.id);
+      expect(lines).toHaveLength(1);
+      expect(lines[0].weightLbs).toBe(2.03);
+      expect(lines[0].price).toBe(4.99);
+      expect(lines[0].lineTotal).toBeCloseTo(10.13, 2);
+      expect((await tripRepo.getById(trip.id))?.scannedSubtotal).toBeCloseTo(10.13, 2);
+    });
+
+    it("a per_lb answer without a weight leaves the line as price x quantity", async () => {
+      const trip = await startTrip();
+      const lookup = await lookups.create({ barcode: "0055", tripId: trip.id, photos: [] });
+      await lookups.setQuantity(lookup.id, 2);
+
+      await lookups.applyAnswer(lookup.id, { ...chicken, weightLbs: undefined });
+
+      const [line] = await tripItemRepo.getByTrip(trip.id);
+      expect(line.weightLbs).toBeUndefined();
+      expect(line.lineTotal).toBeCloseTo(9.98, 2);
+    });
+
+    it("ignores a weight on an each item", async () => {
+      const trip = await startTrip();
+      const lookup = await lookups.create({ barcode: "0055", tripId: trip.id, photos: [] });
+
+      await lookups.applyAnswer(lookup.id, { ...chicken, unitType: "each" });
+
+      const [line] = await tripItemRepo.getByTrip(trip.id);
+      expect(line.weightLbs).toBeUndefined();
+      expect(line.lineTotal).toBe(4.99);
+    });
+
+    it("a price-only answer with a weight sets the weight on the item's per_lb line", async () => {
+      const trip = await startTrip();
+      const thighs = await itemRepo.create({
+        barcode: "0055",
+        name: "Chicken Thighs",
+        currentPrice: 3.99,
+        unitType: "per_lb",
+      });
+      await tripItemRepo.addToTrip({
+        tripId: trip.id,
+        itemId: thighs.id,
+        price: 3.99,
+        quantity: 1,
+        onSale: false,
+      });
+      const lookup = await lookups.create({
+        barcode: "0055",
+        tripId: trip.id,
+        photos: [],
+        mode: "price-only",
+        itemId: thighs.id,
+      });
+
+      await lookups.applyAnswer(lookup.id, chicken);
+
+      const [line] = await tripItemRepo.getByTrip(trip.id);
+      expect(line.price).toBe(4.99);
+      expect(line.weightLbs).toBe(2.03);
+      expect(line.lineTotal).toBeCloseTo(10.13, 2);
+    });
+
+    it("a price-only answer with a weight leaves an each item's line alone", async () => {
+      const trip = await startTrip();
+      const milk = await itemRepo.create({
+        barcode: "0055",
+        name: "Milk",
+        currentPrice: 3,
+        unitType: "each",
+      });
+      await tripItemRepo.addToTrip({
+        tripId: trip.id,
+        itemId: milk.id,
+        price: 3,
+        quantity: 2,
+        onSale: false,
+      });
+      const lookup = await lookups.create({
+        barcode: "0055",
+        tripId: trip.id,
+        photos: [],
+        mode: "price-only",
+        itemId: milk.id,
+      });
+
+      await lookups.applyAnswer(lookup.id, chicken);
+
+      const [line] = await tripItemRepo.getByTrip(trip.id);
+      expect(line.weightLbs).toBeUndefined();
+      expect(line.lineTotal).toBe(9.98);
+    });
+  });
 });

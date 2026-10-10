@@ -16,6 +16,14 @@ export const RUNNABLE_STATUSES: readonly PendingLookup["status"][] = [
   "at-the-factory",
 ];
 
+/** The weight the label gave, for a per_lb item only: the line's weightLbs, else no change. */
+function weightChange(unitType: Item["unitType"], answer: ItemFromPhotosAnswer): { weightLbs?: number } {
+  const weight = answer.weightLbs;
+  return unitType === "per_lb" && answer.unitType === "per_lb" && weight !== undefined && weight > 0
+    ? { weightLbs: weight }
+    : {};
+}
+
 export class PendingLookupRepository {
   /**
    * Records a pending lookup and puts its pending line in the trip. The line
@@ -237,6 +245,7 @@ export class PendingLookupRepository {
             price: linePrice,
             pending: undefined,
             priceFlag: price === null ? "add" : "check",
+            ...weightChange(item.unitType, answer),
           });
           const trip = await db.trips.get(lookup.tripId);
           if (price !== null && trip) {
@@ -280,7 +289,13 @@ export class PendingLookupRepository {
             .where("[tripId+itemId]")
             .equals([lookup.tripId, item.id])
             .first();
-          if (line) await tripItemRepo.update(line.id, { price, priceFlag: "check" });
+          if (line) {
+            await tripItemRepo.update(line.id, {
+              price,
+              priceFlag: "check",
+              ...weightChange(item.unitType, answer),
+            });
+          }
           if (trip) {
             await db.priceHistory.put({
               id: crypto.randomUUID(),

@@ -56,6 +56,10 @@
     "size": {
       "type": "string"
     },
+    "weightLbs": {
+      "type": "number",
+      "exclusiveMinimum": 0
+    },
     "confidence": {
       "enum": [
         "high",

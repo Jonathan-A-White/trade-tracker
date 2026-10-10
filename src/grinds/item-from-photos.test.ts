@@ -66,6 +66,19 @@ describe("item-from-photos answer schema", () => {
     expect(validateAnswer(noPriceAnswer)).toBe(true);
   });
 
+  it("accepts an optional weightLbs for a per-pound label, as a number", () => {
+    expect(
+      validateAnswer({ ...noPriceAnswer, price: 4.99, weightLbs: 2.03, size: "2.03 lb" })
+    ).toBe(true);
+    expect(validateAnswer({ ...noPriceAnswer, weightLbs: "2.03" })).toBe(false);
+    expect(validateAnswer({ ...noPriceAnswer, weightLbs: -1 })).toBe(false);
+  });
+
+  it("tells the factory to read the weight from the label and never guess it", () => {
+    expect(instructions).toContain("`weightLbs`");
+    expect(instructions).toMatch(/never guess/i);
+  });
+
   it("rejects a price given as a string", () => {
     expect(validateAnswer({ ...tagAnswer, price: "4.99" })).toBe(false);
   });

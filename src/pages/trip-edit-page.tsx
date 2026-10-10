@@ -67,10 +67,13 @@ export default function TripEditPage() {
   }, []);
 
   const handleSaveEdit = useCallback(
-    async (value: number) => {
+    async (value: number, byWeight: boolean) => {
       if (!editingId || !editField) return;
       if (editField === "price") {
         await tripItemRepo.update(editingId, { price: value });
+      } else if (byWeight) {
+        // a per-pound line is edited by its weight; no weight (0) falls back to price x quantity
+        await tripItemRepo.update(editingId, { weightLbs: value > 0 ? value : undefined });
       } else {
         await tripItemRepo.update(editingId, { quantity: value });
       }
@@ -158,11 +161,21 @@ export default function TripEditPage() {
                       {item?.name ?? "Unknown Item"}
                     </p>
                     <InlineEditor
-                      label={editField === "price" ? "Price" : "Qty"}
-                      value={editField === "price" ? ti.price : ti.quantity}
-                      onSave={handleSaveEdit}
+                      label={
+                        editField === "price" ? "Price" : item?.unitType === "per_lb" ? "Weight (lb)" : "Qty"
+                      }
+                      value={
+                        editField === "price"
+                          ? ti.price
+                          : item?.unitType === "per_lb"
+                            ? (ti.weightLbs ?? ti.quantity)
+                            : ti.quantity
+                      }
+                      onSave={(v) => handleSaveEdit(v, item?.unitType === "per_lb")}
                       onCancel={handleCancelEdit}
-                      inputType={editField === "price" ? "currency" : "integer"}
+                      inputType={
+                        editField === "price" ? "currency" : item?.unitType === "per_lb" ? "decimal" : "integer"
+                      }
                     />
                   </div>
                 );
