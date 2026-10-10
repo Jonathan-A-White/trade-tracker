@@ -30,6 +30,12 @@ Answer with one item-from-photos answer: a single JSON object with these fields.
   `each`, the per-pound price for `per_lb`.
 - `size`: optional. The package size as printed ("8 oz", "1 gal", "12 ct"). Leave it
   out when you cannot read one.
+- `weightLbs`: optional, only for a `per_lb` item. When the label (a meat or deli
+  counter label, a weighed-package sticker) shows the package's net weight, give it
+  in pounds as a number ("NET WT 2.03 lb" is 2.03; convert ounces to pounds). Read it
+  from the label and never guess it: leave it out when no weight is printed, for an
+  `each` item, and when the weight is unreadable. The `price` stays the per-pound
+  price, not the package total.
 - `confidence`: `high` when the name and category are clear and the price (if any)
   is plainly legible, `medium` when part of it is a judgement, `low` when the photos
   are blurry, cut off or ambiguous.

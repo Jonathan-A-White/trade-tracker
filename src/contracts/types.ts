@@ -95,6 +95,8 @@ export interface ItemFromPhotosAnswer {
   unitType: UnitType;
   price: number | null;
   size?: string;
+  /** Net weight in lb read from a per-pound label; only for a per_lb item whose label shows it. */
+  weightLbs?: number;
   confidence: "high" | "medium" | "low";
   notes?: string;
 }

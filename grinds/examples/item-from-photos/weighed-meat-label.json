@@ -1,0 +1,17 @@
+{
+  "description": "A weighed meat label showing price per lb, the net weight and the package total: the per-pound price is the price, and the weight read from the label comes back as weightLbs.",
+  "schemaVersion": "1.0",
+  "request": {
+    "barcode": "0123456789012",
+    "mode": "new-item"
+  },
+  "photos": ["per-lb-label.jpg"],
+  "expect": {
+    "name": { "contains": "Chicken" },
+    "category": { "equals": "Meat & Seafood" },
+    "unitType": { "equals": "per_lb" },
+    "price": { "equals": 4.99 },
+    "weightLbs": { "equals": 2.03 },
+    "confidence": { "oneOf": ["high", "medium"] }
+  }
+}
