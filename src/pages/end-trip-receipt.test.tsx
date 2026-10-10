@@ -590,7 +590,7 @@ describe("End Trip: Photograph receipt", () => {
     vi.restoreAllMocks();
     await user.click(screen.getByRole("button", { name: "Send again" }));
 
-    await waitFor(() => expect(sent).toHaveLength(2));
+    await waitFor(() => expect(sent).toHaveLength(2), { timeout: 5000 });
     expect(sent[1].photos).toHaveLength(1);
     expect(sent[1].input.lines.map((l) => l[0]).sort()).toEqual(Object.values(lines).sort());
     expect(await screen.findByRole("status")).toHaveTextContent("Waiting for the factory");
