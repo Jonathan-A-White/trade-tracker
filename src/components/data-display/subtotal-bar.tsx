@@ -2,6 +2,8 @@ interface SubtotalBarProps {
   subtotal: number;
   itemCount: number;
   budget?: number;
+  /** Lines whose price is a guess or missing; the bar says so when above zero. */
+  guessCount?: number;
   onEndTrip: () => void;
 }
 
@@ -43,7 +45,7 @@ const STATE_STYLES: Record<
   },
 };
 
-export function SubtotalBar({ subtotal, itemCount, budget, onEndTrip }: SubtotalBarProps) {
+export function SubtotalBar({ subtotal, itemCount, budget, guessCount = 0, onEndTrip }: SubtotalBarProps) {
   const hasBudget = budget !== undefined && budget > 0;
   const remaining = hasBudget ? budget - subtotal : 0;
   const overBudget = hasBudget && remaining < 0;
@@ -82,6 +84,11 @@ export function SubtotalBar({ subtotal, itemCount, budget, onEndTrip }: Subtotal
           <p className={`text-sm ${styles.muted}`}>
             {itemCount} {itemCount === 1 ? "item" : "items"}
           </p>
+          {guessCount > 0 && (
+            <p className={`text-xs ${styles.muted}`}>
+              {guessCount === 1 ? "1 price is a guess" : `${guessCount} prices are guesses`}
+            </p>
+          )}
         </div>
         <button
           type="button"

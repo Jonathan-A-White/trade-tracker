@@ -1,3 +1,5 @@
+import type { TripItem } from "@/contracts/types";
+
 /**
  * Calculates the line total for a trip item.
  * Uses weightLbs if provided (per-lb pricing), otherwise uses quantity.
@@ -49,4 +51,14 @@ export function countsTowardTotal(tripItem: {
   price: number;
 }): boolean {
   return !tripItem.pending || tripItem.price > 0;
+}
+
+/**
+ * How many trip lines carry a price that is not known: a Guess price, or no
+ * price at all (zero or still waiting on a lookup).
+ */
+export function countGuessedPrices(
+  tripItems: Pick<TripItem, "price" | "guess">[],
+): number {
+  return tripItems.filter((ti) => ti.guess !== undefined || !(ti.price > 0)).length;
 }

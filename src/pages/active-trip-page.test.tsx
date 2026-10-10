@@ -367,4 +367,25 @@ describe("ActiveTripPage Photo price", () => {
     expect(screen.queryByRole("button", { name: "Add price" })).not.toBeInTheDocument();
     expect((await tripRepo.getById(trip.id))?.scannedSubtotal).toBeCloseTo(6.49, 2);
   });
+
+  it("tells the shopper how many prices are guesses, and goes quiet once none is", async () => {
+    const { lookup } = await seedTripWithMilkAndPending();
+    await lookups.applyAnswer(lookup.id, {
+      name: "Oat Bars",
+      category: "Snacks & Candy",
+      unitType: "each",
+      price: null,
+      estimatedPrice: 3.49,
+      estimateNote: "Typical price for a box of granola bars.",
+      confidence: "medium",
+    });
+    renderPage();
+
+    expect(await screen.findByText("1 price is a guess")).toBeInTheDocument();
+    const oats = (await db.tripItems.toArray()).find((ti) => ti.guess);
+    await tripItemRepo.update(oats!.id, { price: 3.99 });
+    await waitFor(() =>
+      expect(screen.queryByText(/guess(es)?$/)).not.toBeInTheDocument(),
+    );
+  });
 });

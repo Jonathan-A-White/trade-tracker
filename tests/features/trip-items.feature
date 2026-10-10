@@ -60,3 +60,13 @@ Feature: Trip Item Interactions
     When I long-press on "Organic Milk"
     Then the edit menu should be fully visible
     And the menu should not be clipped by the container's overflow
+
+  # Commit: Say under the subtotal how many prices are guesses
+  Scenario: The subtotal bar says when prices are guesses
+    Given the active trip has one line with a Guess price and the other prices are real
+    When I view the Active Trip page
+    Then the subtotal bar should say "1 price is a guess"
+    When a second line has no price at all
+    Then the subtotal bar should say "2 prices are guesses"
+    When I enter the real price on both lines
+    Then the subtotal bar should not mention guesses

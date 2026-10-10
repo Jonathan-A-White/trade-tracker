@@ -1,9 +1,15 @@
 import { render, screen } from "@testing-library/react";
 import { SubtotalBar } from "./subtotal-bar";
 
-function renderBar(subtotal: number, budget?: number) {
+function renderBar(subtotal: number, budget?: number, guessCount?: number) {
   const { container } = render(
-    <SubtotalBar subtotal={subtotal} itemCount={1} budget={budget} onEndTrip={() => {}} />,
+    <SubtotalBar
+      subtotal={subtotal}
+      itemCount={1}
+      budget={budget}
+      guessCount={guessCount}
+      onEndTrip={() => {}}
+    />,
   );
   // The outermost fixed bar carries the state background color.
   return container.firstElementChild as HTMLElement;
@@ -35,5 +41,24 @@ describe("SubtotalBar budget states", () => {
     renderBar(210, 200);
     expect(screen.getByText(/Over budget by/)).toBeInTheDocument();
     expect(screen.getByText("$10.00")).toBeInTheDocument();
+  });
+});
+
+describe("SubtotalBar guessed prices", () => {
+  it("says '1 price is a guess' for a single guessed line", () => {
+    renderBar(10, undefined, 1);
+    expect(screen.getByText("1 price is a guess")).toBeInTheDocument();
+  });
+
+  it("says 'N prices are guesses' for several", () => {
+    renderBar(10, undefined, 3);
+    expect(screen.getByText("3 prices are guesses")).toBeInTheDocument();
+  });
+
+  it("shows nothing when every price is real", () => {
+    renderBar(10, undefined, 0);
+    expect(screen.queryByText(/guess/)).not.toBeInTheDocument();
+    renderBar(10);
+    expect(screen.queryByText(/guess/)).not.toBeInTheDocument();
   });
 });

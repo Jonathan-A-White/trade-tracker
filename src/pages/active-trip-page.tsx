@@ -7,7 +7,7 @@ import { TripRepository } from "@/db/repositories/trip-repository";
 import { TripItemRepository } from "@/db/repositories/trip-item-repository";
 import { PendingLookupRepository } from "@/db/repositories/pending-lookup-repository";
 import { ItemRepository } from "@/db/repositories/item-repository";
-import { countsTowardTotal } from "@/core/pricing";
+import { countGuessedPrices, countsTowardTotal } from "@/core/pricing";
 import { photoPricePath, priceLookupNote } from "@/core/photo-price";
 import { PageHeader } from "@/components/layout/page-header";
 import { TripItemRow } from "@/components/data-display/trip-item-row";
@@ -404,6 +404,7 @@ export default function ActiveTripPage() {
       <SubtotalBar
         subtotal={trip.scannedSubtotal}
         itemCount={items.filter(countsTowardTotal).length}
+        guessCount={countGuessedPrices(items)}
         budget={trip.budget}
         onEndTrip={() => navigate("/trips/active/end")}
       />
