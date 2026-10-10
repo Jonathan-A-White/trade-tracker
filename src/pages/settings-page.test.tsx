@@ -1,4 +1,4 @@
-import { render, screen } from "@testing-library/react";
+import { render, screen, waitFor } from "@testing-library/react";
 import userEvent from "@testing-library/user-event";
 import { MemoryRouter } from "react-router";
 import { FactoryProvider } from "@/contexts/factory-context";
@@ -123,6 +123,23 @@ describe("SettingsPage confirm dialogs", () => {
     expect(screen.getByRole("button", { name: "Cancel" })).toBeInTheDocument();
     await user.click(screen.getByRole("button", { name: "Cancel" }));
     expect(screen.queryByRole("heading", { name: "Clear All Data?" })).not.toBeInTheDocument();
+  });
+
+  it("reads the storage meter again after the data is cleared", async () => {
+    const user = userEvent.setup();
+    const estimate = vi.fn().mockResolvedValue({ usage: 1024, quota: 1048576 });
+    Object.defineProperty(navigator, "storage", { value: { estimate }, configurable: true });
+    try {
+      renderSettings();
+      expect(await screen.findByText("1.0 KB used")).toBeInTheDocument();
+      expect(estimate).toHaveBeenCalledTimes(1);
+      await user.click(screen.getByRole("button", { name: "Clear All Data" }));
+      await user.click(screen.getByRole("button", { name: "Delete Everything" }));
+      await screen.findByText("All data has been cleared.");
+      await waitFor(() => expect(estimate).toHaveBeenCalledTimes(2));
+    } finally {
+      Reflect.deleteProperty(navigator, "storage");
+    }
   });
 
   it("clears the data on Delete Everything", async () => {
