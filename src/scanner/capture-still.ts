@@ -19,17 +19,18 @@ export function fitWithin(
 
 /**
  * Tries ever smaller encodings (lower quality, then smaller scale) until one is
- * under MAX_STILL_BYTES; falls back to the smallest if none is.
+ * under maxBytes (MAX_STILL_BYTES by default); falls back to the smallest if none is.
  */
 export async function shrinkToLimit(
   encode: (scale: number, quality: number) => Promise<Blob | null>,
+  maxBytes: number = MAX_STILL_BYTES,
 ): Promise<Blob> {
   let smallest: Blob | null = null;
   for (const scale of SCALES) {
     for (const quality of QUALITIES) {
       const blob = await encode(scale, quality);
       if (!blob) continue;
-      if (blob.size < MAX_STILL_BYTES) return blob;
+      if (blob.size < maxBytes) return blob;
       if (!smallest || blob.size < smallest.size) smallest = blob;
     }
   }
@@ -37,11 +38,24 @@ export async function shrinkToLimit(
   return smallest;
 }
 
-/** Takes a JPEG still from a playing video, at most 1600 px on the long side and under 1 MB. */
-export async function captureStill(video: HTMLVideoElement): Promise<Blob> {
-  const frame = fitWithin(video.videoWidth, video.videoHeight, MAX_LONG_SIDE);
+/** A receipt is read for small print: a longer long side, and a size under the grind's 4 MB. */
+export const RECEIPT_STILL: StillOptions = { maxLongSide: 2400, maxBytes: 3_000_000 };
+
+export interface StillOptions {
+  maxLongSide?: number;
+  maxBytes?: number;
+}
+
+/** Encodes a drawable as a JPEG that fits the options, trying smaller encodings until it does. */
+async function encodeJpeg(
+  source: CanvasImageSource,
+  width: number,
+  height: number,
+  options: StillOptions,
+): Promise<Blob> {
+  const frame = fitWithin(width, height, options.maxLongSide ?? MAX_LONG_SIDE);
   if (frame.width === 0 || frame.height === 0) {
-    throw new Error("The camera is not ready yet");
+    throw new Error("The picture is empty");
   }
   const canvas = document.createElement("canvas");
 
@@ -50,9 +64,30 @@ export async function captureStill(video: HTMLVideoElement): Promise<Blob> {
     canvas.height = Math.round(frame.height * scale);
     const context = canvas.getContext("2d");
     if (!context) return Promise.resolve(null);
-    context.drawImage(video, 0, 0, canvas.width, canvas.height);
+    context.drawImage(source, 0, 0, canvas.width, canvas.height);
     return new Promise<Blob | null>((resolve) =>
       canvas.toBlob(resolve, "image/jpeg", quality),
     );
-  });
+  }, options.maxBytes);
+}
+
+/** Takes a JPEG still from a playing video, at most 1600 px on the long side and under 1 MB unless told otherwise. */
+export async function captureStill(
+  video: HTMLVideoElement,
+  options: StillOptions = {},
+): Promise<Blob> {
+  if (video.videoWidth === 0 || video.videoHeight === 0) {
+    throw new Error("The camera is not ready yet");
+  }
+  return encodeJpeg(video, video.videoWidth, video.videoHeight, options);
+}
+
+/** Turns a photo chosen from the gallery into a JPEG that fits the options. */
+export async function stillFromFile(file: Blob, options: StillOptions = {}): Promise<Blob> {
+  const bitmap = await createImageBitmap(file);
+  try {
+    return await encodeJpeg(bitmap, bitmap.width, bitmap.height, options);
+  } finally {
+    bitmap.close();
+  }
 }

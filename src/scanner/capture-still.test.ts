@@ -1,5 +1,5 @@
 import { Blob } from "node:buffer";
-import { fitWithin, shrinkToLimit, MAX_LONG_SIDE, MAX_STILL_BYTES } from "./capture-still";
+import { fitWithin, shrinkToLimit, MAX_LONG_SIDE, MAX_STILL_BYTES, RECEIPT_STILL } from "./capture-still";
 
 function blobOf(size: number): globalThis.Blob {
   return new Blob([new Uint8Array(size)], { type: "image/jpeg" }) as unknown as globalThis.Blob;
@@ -42,5 +42,20 @@ describe("shrinkToLimit", () => {
 
   it("rejects when the camera gives nothing", async () => {
     await expect(shrinkToLimit(async () => null)).rejects.toThrow();
+  });
+});
+
+describe("a receipt still", () => {
+  it("may be 2400 px on the long side and up to 3 MB, under the grind's 4 MB", () => {
+    expect(RECEIPT_STILL.maxLongSide).toBe(2400);
+    expect(RECEIPT_STILL.maxBytes).toBe(3_000_000);
+    expect(fitWithin(4000, 3000, RECEIPT_STILL.maxLongSide!)).toEqual({ width: 2400, height: 1800 });
+  });
+
+  it("shrinks to the size given instead of 1 MB", async () => {
+    const encode = vi.fn(async () => blobOf(2_000_000));
+    const result = await shrinkToLimit(encode, RECEIPT_STILL.maxBytes);
+    expect(result.size).toBe(2_000_000);
+    expect(encode).toHaveBeenCalledTimes(1);
   });
 });
