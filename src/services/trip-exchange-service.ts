@@ -152,6 +152,11 @@ RULES:
 12. TAX: If the receipt marks individual lines as taxable (e.g., with a "T" flag, or a "Taxable" column), set tripItem.taxable accordingly (true = taxed, false = exempt). Omit taxable if the receipt doesn't distinguish — the app will fall back to its own classification heuristic. Do NOT include a separate tax line as a tripItem.
 13. BOTTLE DEPOSITS: If the receipt shows a per-container deposit (e.g., CT $0.05/can, "CT DEP"), attribute it to the beverage line it belongs to by setting tripItem.bottleDeposit to the total deposit for that line (e.g., 12 cans × $0.05 = 0.60). Do NOT create a separate tripItem for deposit lines, and do NOT include the deposit in tripItem.price or items.currentPrice.`;
 
+/** The placeholder barcode of an item added without one; the trip page offers to fix it later. */
+export function newManualBarcode(): string {
+  return `${MANUAL_BARCODE_PREFIX}${crypto.randomUUID()}`;
+}
+
 export function isManualBarcode(barcode: string): boolean {
   return barcode.startsWith(MANUAL_BARCODE_PREFIX);
 }
@@ -464,7 +469,7 @@ async function resolveImportItem(
 
   // 3. No match — create a new item, generating a placeholder barcode if needed.
   const itemId = crypto.randomUUID();
-  const barcode = importBarcode ?? `${MANUAL_BARCODE_PREFIX}${crypto.randomUUID()}`;
+  const barcode = importBarcode ?? newManualBarcode();
   const item: Item = {
     id: itemId,
     barcode,
@@ -586,6 +591,8 @@ export async function reimportTripFromAI(
         scannedSubtotal,
         actualTotal: data.trip.actualTotal ?? existingTrip.actualTotal,
         note: data.trip.note ?? existingTrip.note,
+        // the lines were replaced, so what a receipt reconcile said of the old ones no longer holds
+        receiptReconcile: undefined,
         updatedAt: now,
       });
 

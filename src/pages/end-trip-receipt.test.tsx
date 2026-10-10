@@ -308,6 +308,155 @@ describe("End Trip: Photograph receipt", () => {
     expect(sent[0].photos).toHaveLength(3);
   });
 
+  it("'Match to a line' on a not-matched line updates that trip line and moves it to What changed", async () => {
+    const { lines } = await seedTrip();
+    const { client } = fakeClient(() =>
+      answered(
+        receipt(
+          [
+            { tripItemId: lines.Milk, price: 3.99, text: "MILK" },
+            { tripItemId: lines.Eggs, price: 4.99, text: "EGGS" },
+            { tripItemId: null, price: 4.49, text: "ORG WHL WHT LOAF" },
+          ],
+          13.47,
+        ),
+      ),
+    );
+    factory.client = client;
+    const user = userEvent.setup();
+    await renderPage();
+    await takeOnePhoto(user);
+    await user.click(screen.getByRole("button", { name: "Send receipt" }));
+
+    expect(await screen.findByRole("heading", { name: "Not matched: 1" })).toBeInTheDocument();
+    expect(screen.getByText("ORG WHL WHT LOAF")).toBeInTheDocument();
+    // Bread is the one trip line no receipt line matched
+    const notOnReceipt = screen.getByRole("heading", { name: "Trip lines not on the receipt" });
+    expect(within(notOnReceipt.parentElement!).getByText("Bread")).toBeInTheDocument();
+    expect(within(notOnReceipt.parentElement!).getByText("Not on receipt")).toBeInTheDocument();
+
+    await user.click(screen.getByRole("button", { name: "Match to a line" }));
+    // only the lines the receipt has not matched are offered
+    expect(screen.queryByRole("button", { name: /Milk/ })).not.toBeInTheDocument();
+    expect(screen.queryByRole("button", { name: /Eggs/ })).not.toBeInTheDocument();
+    await user.click(screen.getByRole("button", { name: /Bread/ }));
+
+    expect(await screen.findByRole("heading", { name: "Not matched: 0" })).toBeInTheDocument();
+    const changed = screen.getByRole("heading", { name: "What changed" });
+    const rows = within(within(changed.parentElement!).getByRole("list")).getAllByRole("listitem");
+    expect(rows).toHaveLength(1);
+    expect(rows[0]).toHaveTextContent("Bread");
+    expect(rows[0]).toHaveTextContent("$2.50 → $4.49");
+    expect(screen.queryByText("Not on receipt")).not.toBeInTheDocument();
+
+    expect((await db.tripItems.get(lines.Bread))?.price).toBe(4.49);
+    const bread = (await db.items.toArray()).find((i) => i.name === "Bread")!;
+    expect(bread.currentPrice).toBe(4.49);
+    expect(bread.barcode).toBe("0002");
+    expect((await db.priceHistory.where("itemId").equals(bread.id).toArray()).map((h) => h.price)).toContain(4.49);
+    expect((await tripRepo.getActive())?.scannedSubtotal).toBeCloseTo(3.99 + 4.49 + 4.99);
+  });
+
+  it("'Add as new item' adds a trip line and an item with no barcode", async () => {
+    const { trip, lines } = await seedTrip();
+    const { client } = fakeClient(() =>
+      answered(
+        receipt(
+          [
+            { tripItemId: lines.Milk, price: 3.99, text: "MILK" },
+            { tripItemId: lines.Bread, price: 2.5, text: "BREAD" },
+            { tripItemId: lines.Eggs, price: 4.99, text: "EGGS" },
+            { tripItemId: null, price: 3.29, text: "TJ SNACK MIX" },
+          ],
+          14.77,
+        ),
+      ),
+    );
+    factory.client = client;
+    const user = userEvent.setup();
+    await renderPage();
+    await takeOnePhoto(user);
+    await user.click(screen.getByRole("button", { name: "Send receipt" }));
+    expect(await screen.findByRole("heading", { name: "Not matched: 1" })).toBeInTheDocument();
+
+    await user.click(screen.getByRole("button", { name: "Add as new item" }));
+
+    expect(await screen.findByRole("heading", { name: "Not matched: 0" })).toBeInTheDocument();
+    const item = (await db.items.toArray()).find((i) => i.name === "TJ SNACK MIX");
+    expect(item).toBeDefined();
+    expect(item!.barcode).toMatch(/^manual-/);
+    expect(item!.currentPrice).toBe(3.29);
+    const added = (await db.tripItems.where("tripId").equals(trip.id).toArray()).find(
+      (l) => l.itemId === item!.id,
+    );
+    expect(added?.price).toBe(3.29);
+    expect(added?.quantity).toBe(1);
+    expect((await tripRepo.getActive())?.scannedSubtotal).toBeCloseTo(3.99 + 2.5 + 4.99 + 3.29);
+    // the receipt has it, so it is not 'Not on receipt'
+    expect(screen.queryByText("Not on receipt")).not.toBeInTheDocument();
+  });
+
+  it("a trip line no receipt line matched shows 'Not on receipt'", async () => {
+    const { lines } = await seedTrip();
+    const { client } = fakeClient(() =>
+      answered(receipt([{ tripItemId: lines.Milk, price: 3.99, text: "MILK" }], 3.99)),
+    );
+    factory.client = client;
+    const user = userEvent.setup();
+    await renderPage();
+    await takeOnePhoto(user);
+    await user.click(screen.getByRole("button", { name: "Send receipt" }));
+
+    const heading = await screen.findByRole("heading", { name: "Trip lines not on the receipt" });
+    const rows = within(heading.parentElement!).getAllByRole("listitem");
+    expect(rows.map((r) => r.textContent)).toEqual([
+      expect.stringContaining("Bread"),
+      expect.stringContaining("Eggs"),
+    ]);
+    expect(screen.getAllByText("Not on receipt")).toHaveLength(2);
+  });
+
+  it("leaving End Trip and coming back shows the same lists", async () => {
+    const { lines } = await seedTrip();
+    const { client } = fakeClient(() =>
+      answered(
+        receipt(
+          [
+            { tripItemId: lines.Milk, price: 4.29, text: "MILK" },
+            { tripItemId: lines.Eggs, price: 4.99, text: "EGGS" },
+            { tripItemId: null, price: 7.25, text: "MYSTERY" },
+          ],
+          16.53,
+        ),
+      ),
+    );
+    factory.client = client;
+    const user = userEvent.setup();
+    const { unmount } = render(
+      <MemoryRouter>
+        <EndTripPage />
+      </MemoryRouter>,
+    );
+    await screen.findByRole("button", { name: "Photograph receipt" });
+    await takeOnePhoto(user);
+    await user.click(screen.getByRole("button", { name: "Send receipt" }));
+    expect(await screen.findByRole("heading", { name: "Not matched: 1" })).toBeInTheDocument();
+    unmount();
+
+    await renderPage();
+
+    expect(await screen.findByRole("heading", { name: "Not matched: 1" })).toBeInTheDocument();
+    expect(screen.getByText("MYSTERY")).toBeInTheDocument();
+    const changed = screen.getByRole("heading", { name: "What changed" });
+    const rows = within(within(changed.parentElement!).getByRole("list")).getAllByRole("listitem");
+    expect(rows).toHaveLength(1);
+    expect(rows[0]).toHaveTextContent("Milk");
+    const notOnReceipt = await screen.findByRole("heading", { name: "Trip lines not on the receipt" });
+    expect(within(notOnReceipt.parentElement!).getByText("Bread")).toBeInTheDocument();
+    // the receipt total comes back too
+    expect(screen.getByPlaceholderText("0.00")).toHaveValue(16.53);
+  });
+
   it("offers no photo while the factory is not licensed", async () => {
     await seedTrip();
     factory.ready = false;

@@ -50,6 +50,10 @@ export class TradeTrackerDB extends Dexie {
     this.version(7).stores({
       pendingLookups: "id, tripId, barcode, status, createdAt",
     });
+
+    // Version 8: trips gain an optional receiptReconcile record (what the last
+    // receipt reconcile found; not indexed).
+    this.version(8).stores({});
   }
 }
 
