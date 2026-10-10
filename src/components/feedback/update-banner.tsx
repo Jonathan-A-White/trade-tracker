@@ -10,7 +10,7 @@ export function UpdateBanner() {
       type="button"
       onClick={applyUpdate}
       disabled={updating}
-      className="flex w-full items-center justify-center bg-blue-600 px-3 py-3 text-base font-medium text-white disabled:opacity-70"
+      className="flex w-full items-center justify-center bg-amber-400 px-3 py-3 text-base font-medium text-gray-900 disabled:opacity-70"
     >
       {updating ? "Updating…" : "Update ready, tap to reload"}
     </button>
