@@ -19,6 +19,7 @@ import {
 import { downloadAsFile } from "@/services/export-service";
 import { PendingLineRow } from "@/components/data-display/pending-line-row";
 import { usePendingLookupsByItemId } from "@/hooks/use-pending-lookups";
+import { ReceiptReconcileCard } from "@/components/data-display/receipt-reconcile-card";
 import { FixUnknownItemModal } from "@/components/forms/fix-unknown-item-modal";
 
 const tripRepo = new TripRepository();
@@ -400,6 +401,14 @@ export default function TripDetailPage() {
             </ul>
           )}
         </div>
+
+        {/* A finished trip takes a receipt too: the same factory read as End Trip */}
+        {trip.status === "completed" && (
+          <ReceiptReconcileCard
+            tripId={trip.id}
+            onTotal={(total) => tripRepo.setActualTotal(trip.id, total)}
+          />
+        )}
 
         {/* Export for AI */}
         <button

@@ -67,6 +67,14 @@ export class TripRepository {
     });
   }
 
+  /** The total the store charged, as a receipt read it; a trip already completed keeps its status. */
+  async setActualTotal(id: string, actualTotal: number): Promise<void> {
+    await db.trips.update(id, {
+      actualTotal,
+      updatedAt: Date.now(),
+    });
+  }
+
   async updateSubtotal(id: string, subtotal: number): Promise<void> {
     await db.trips.update(id, {
       scannedSubtotal: subtotal,

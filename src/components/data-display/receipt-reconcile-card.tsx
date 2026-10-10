@@ -43,7 +43,7 @@ function describeChange(change: ReceiptChange): string {
 }
 
 /**
- * End Trip: photograph the receipt, send it with the trip's lines to the factory, and let its answer
+ * End Trip, or a completed trip's page: photograph the receipt, send it with the trip's lines to the factory, and let its answer
  * update every matched line's price and the receipt total, then list what changed.
  */
 export function ReceiptReconcileCard({ tripId, onTotal }: ReceiptReconcileCardProps) {
