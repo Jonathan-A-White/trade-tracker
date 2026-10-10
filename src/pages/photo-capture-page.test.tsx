@@ -1,15 +1,26 @@
 import { Blob } from "node:buffer";
-import { render, screen, waitFor } from "@testing-library/react";
+import { fireEvent, render, screen, waitFor } from "@testing-library/react";
 import userEvent from "@testing-library/user-event";
-import { MemoryRouter, Route, Routes, useLocation } from "react-router";
+import { MemoryRouter, Route, Routes, useLocation, useNavigate } from "react-router";
 import PhotoCapturePage from "./photo-capture-page";
 import { FactoryProvider } from "@/contexts/factory-context";
 import { db } from "@/db/database";
 import { TripRepository } from "@/db/repositories/trip-repository";
+import { captureStill } from "@/scanner/capture-still";
 
 vi.mock("@/scanner/capture-still", () => ({
   captureStill: vi.fn(async () => new Blob(["jpeg"], { type: "image/jpeg" })),
 }));
+
+// jsdom has no PointerEvent; a MouseEvent with a pointerId is enough for React's handlers
+class FakePointerEvent extends MouseEvent {
+  pointerId: number;
+  constructor(type: string, init: PointerEventInit = {}) {
+    super(type, init);
+    this.pointerId = init.pointerId ?? 1;
+  }
+}
+Object.defineProperty(window, "PointerEvent", { configurable: true, value: FakePointerEvent });
 
 const tripRepo = new TripRepository();
 const BARCODE = "0099887766";
@@ -17,6 +28,15 @@ const BARCODE = "0099887766";
 function Where() {
   const loc = useLocation();
   return <p data-testid="where">{loc.pathname + loc.search}</p>;
+}
+
+function NextItem() {
+  const navigate = useNavigate();
+  return (
+    <button type="button" onClick={() => navigate("/trips/active/photo?barcode=NEXT")}>
+      next item
+    </button>
+  );
 }
 
 function renderScreen(search = `barcode=${BARCODE}`) {
@@ -27,7 +47,15 @@ function renderScreen(search = `barcode=${BARCODE}`) {
         askDoor={async () => "unreachable"}
       >
         <Routes>
-          <Route path="/trips/active/photo" element={<PhotoCapturePage />} />
+          <Route
+            path="/trips/active/photo"
+            element={
+              <>
+                <PhotoCapturePage />
+                <NextItem />
+              </>
+            }
+          />
           <Route path="*" element={<Where />} />
         </Routes>
       </FactoryProvider>
@@ -179,6 +207,202 @@ describe("PhotoCapturePage", () => {
       await user.click(screen.getByRole("button", { name: "Cancel" }));
       await waitFor(() => expect(screen.getByTestId("where")).toHaveTextContent("/trips/active"));
       expect(await db.pendingLookups.count()).toBe(0);
+    });
+  });
+
+  describe("camera quality, zoom and focus", () => {
+    const get = (id: string) => screen.getByTestId(id);
+
+    function openWith(capabilities: Record<string, unknown> | undefined, settings = {}) {
+      const applyConstraints = vi.fn(async (constraints: unknown) => {
+        void constraints;
+      });
+      const track = {
+        kind: "video",
+        stop: vi.fn(),
+        getCapabilities: capabilities ? () => capabilities : undefined,
+        getSettings: () => settings,
+        applyConstraints,
+      };
+      const getUserMedia = vi.fn(async () => ({ getTracks: () => [track] }));
+      Object.defineProperty(navigator, "mediaDevices", { configurable: true, value: { getUserMedia } });
+      return { applyConstraints, getUserMedia };
+    }
+
+    function pinch(el: Element, from: number, to: number) {
+      fireEvent.pointerDown(el, { pointerId: 1, clientX: 200 - from / 2, clientY: 400 });
+      fireEvent.pointerDown(el, { pointerId: 2, clientX: 200 + from / 2, clientY: 400 });
+      fireEvent.pointerMove(el, { pointerId: 1, clientX: 200 - to / 2, clientY: 400 });
+      fireEvent.pointerMove(el, { pointerId: 2, clientX: 200 + to / 2, clientY: 400 });
+      fireEvent.pointerUp(el, { pointerId: 1, clientX: 200 - to / 2, clientY: 400 });
+      fireEvent.pointerUp(el, { pointerId: 2, clientX: 200 + to / 2, clientY: 400 });
+    }
+
+    beforeEach(() => {
+      vi.mocked(captureStill).mockClear();
+      Object.defineProperty(HTMLVideoElement.prototype, "videoWidth", { configurable: true, value: 1920 });
+      Object.defineProperty(HTMLVideoElement.prototype, "videoHeight", { configurable: true, value: 1080 });
+      vi.spyOn(HTMLElement.prototype, "getBoundingClientRect").mockReturnValue({
+        left: 0, top: 0, width: 400, height: 800, right: 400, bottom: 800, x: 0, y: 0,
+        toJSON: () => ({}),
+      });
+    });
+    afterEach(() => vi.restoreAllMocks());
+
+    it("asks for the rear camera at 1920x1080 as ideals, not a minimum", async () => {
+      const { getUserMedia } = openWith({});
+      renderScreen();
+      await waitFor(() => expect(getUserMedia).toHaveBeenCalled());
+      expect(getUserMedia).toHaveBeenCalledWith({
+        video: { facingMode: "environment", width: { ideal: 1920 }, height: { ideal: 1080 } },
+      });
+    });
+
+    it("asks for continuous focus once open where the track supports it", async () => {
+      const { applyConstraints } = openWith({ focusMode: ["manual", "continuous"] });
+      renderScreen();
+      await waitFor(() =>
+        expect(applyConstraints).toHaveBeenCalledWith({ advanced: [{ focusMode: "continuous" }] }),
+      );
+    });
+
+    it("opens fine on a track that reports no capabilities at all", async () => {
+      const { applyConstraints } = openWith(undefined);
+      renderScreen();
+      await screen.findByRole("button", { name: "Take photo" });
+      await waitFor(() => expect(HTMLMediaElement.prototype.play).toHaveBeenCalled());
+      expect(applyConstraints).not.toHaveBeenCalled();
+      expect(screen.queryByRole("alert")).not.toBeInTheDocument();
+    });
+
+    it("pinching out zooms the camera itself where the track has zoom", async () => {
+      const { applyConstraints } = openWith({ zoom: { min: 1, max: 8, step: 0.1 } });
+      renderScreen();
+      await waitFor(() => expect(HTMLMediaElement.prototype.play).toHaveBeenCalled());
+      pinch(get("photo-camera"), 100, 300);
+      const zooms = applyConstraints.mock.calls.map(
+        ([c]) => (c as { advanced: { zoom?: number }[] }).advanced[0].zoom,
+      );
+      expect(zooms.at(-1)).toBeCloseTo(3);
+      expect(Math.max(...zooms.filter((z): z is number => z !== undefined))).toBeLessThanOrEqual(8);
+      // the camera does the zooming, so the picture is not scaled again
+      expect(get("photo-camera").querySelector("video")).not.toHaveStyle({ transform: "scale(3)" });
+    });
+
+    it("pinching in goes back down, and stops at the camera's minimum", async () => {
+      const { applyConstraints } = openWith({ zoom: { min: 1, max: 8, step: 0.1 } });
+      renderScreen();
+      await waitFor(() => expect(HTMLMediaElement.prototype.play).toHaveBeenCalled());
+      pinch(get("photo-camera"), 100, 400);
+      pinch(get("photo-camera"), 400, 40);
+      const last = applyConstraints.mock.calls.at(-1)?.[0] as { advanced: { zoom: number }[] };
+      expect(last.advanced[0].zoom).toBe(1);
+    });
+
+    it("pinching crops the picture digitally where the track cannot zoom, and the still is that crop", async () => {
+      const user = userEvent.setup();
+      const { applyConstraints } = openWith({});
+      renderScreen();
+      await waitFor(() => expect(HTMLMediaElement.prototype.play).toHaveBeenCalled());
+      pinch(get("photo-camera"), 100, 200);
+      const video = get("photo-camera").querySelector("video");
+      expect(video).toHaveStyle({ transform: "scale(2)" });
+      expect(applyConstraints).not.toHaveBeenCalled();
+
+      await user.click(screen.getByRole("button", { name: "Take photo" }));
+      expect(captureStill).toHaveBeenCalledWith(expect.anything(), { zoom: 2 });
+    });
+
+    it("a digital zoom stops at the cap", async () => {
+      openWith({});
+      renderScreen();
+      await waitFor(() => expect(HTMLMediaElement.prototype.play).toHaveBeenCalled());
+      pinch(get("photo-camera"), 50, 800);
+      expect(get("photo-camera").querySelector("video")).toHaveStyle({ transform: "scale(4)" });
+    });
+
+    it("an unzoomed still is asked for with no crop", async () => {
+      const user = userEvent.setup();
+      openWith({});
+      renderScreen();
+      await user.click(screen.getByRole("button", { name: "Take photo" }));
+      expect(captureStill).toHaveBeenCalledWith(expect.anything(), { zoom: 1 });
+    });
+
+    it("zoom goes back to the start on the next item", async () => {
+      const user = userEvent.setup();
+      const { getUserMedia } = openWith({});
+      renderScreen();
+      await waitFor(() => expect(HTMLMediaElement.prototype.play).toHaveBeenCalled());
+      pinch(get("photo-camera"), 100, 300);
+      expect(get("photo-camera").querySelector("video")).toHaveStyle({ transform: "scale(3)" });
+      await user.click(screen.getByRole("button", { name: "next item" }));
+      expect(getUserMedia).toHaveBeenCalledTimes(1); // the camera is not reopened for a new item
+      expect(get("photo-camera").querySelector("video")).not.toHaveStyle({ transform: "scale(3)" });
+      expect(screen.getByText("Barcode NEXT")).toBeInTheDocument();
+    });
+
+    it("the camera's own zoom goes back to its minimum on the next item", async () => {
+      const user = userEvent.setup();
+      const { applyConstraints } = openWith({ zoom: { min: 1, max: 8, step: 0.1 } });
+      renderScreen();
+      await waitFor(() => expect(HTMLMediaElement.prototype.play).toHaveBeenCalled());
+      pinch(get("photo-camera"), 100, 300);
+      applyConstraints.mockClear();
+      await user.click(screen.getByRole("button", { name: "next item" }));
+      await waitFor(() =>
+        expect(applyConstraints).toHaveBeenCalledWith({ advanced: [{ zoom: 1 }] }),
+      );
+    });
+
+    it("tapping the picture focuses there, and shows a ring", async () => {
+      const { applyConstraints } = openWith({ focusMode: ["continuous"] });
+      renderScreen();
+      await waitFor(() => expect(HTMLMediaElement.prototype.play).toHaveBeenCalled());
+      applyConstraints.mockClear();
+      const surface = get("photo-camera");
+      fireEvent.pointerDown(surface, { pointerId: 1, clientX: 200, clientY: 400 });
+      fireEvent.pointerUp(surface, { pointerId: 1, clientX: 200, clientY: 400 });
+      await waitFor(() => expect(applyConstraints).toHaveBeenCalledTimes(1));
+      const [[constraints]] = applyConstraints.mock.calls as unknown as [
+        [{ advanced: { pointsOfInterest: { x: number; y: number }[]; focusMode: string }[] }],
+      ];
+      expect(constraints.advanced[0].focusMode).toBe("continuous");
+      expect(constraints.advanced[0].pointsOfInterest[0].x).toBeCloseTo(0.5);
+      expect(constraints.advanced[0].pointsOfInterest[0].y).toBeCloseTo(0.5);
+      expect(await screen.findByTestId("focus-ring")).toBeInTheDocument();
+    });
+
+    it("tapping where the track cannot focus does nothing and breaks nothing", async () => {
+      const { applyConstraints } = openWith({});
+      renderScreen();
+      await waitFor(() => expect(HTMLMediaElement.prototype.play).toHaveBeenCalled());
+      const surface = get("photo-camera");
+      fireEvent.pointerDown(surface, { pointerId: 1, clientX: 200, clientY: 400 });
+      fireEvent.pointerUp(surface, { pointerId: 1, clientX: 200, clientY: 400 });
+      expect(applyConstraints).not.toHaveBeenCalled();
+      expect(screen.queryByTestId("focus-ring")).not.toBeInTheDocument();
+      expect(screen.queryByRole("alert")).not.toBeInTheDocument();
+    });
+
+    it("a pinch is not also a tap to focus", async () => {
+      const { applyConstraints } = openWith({ focusMode: ["continuous"] });
+      renderScreen();
+      await waitFor(() => expect(HTMLMediaElement.prototype.play).toHaveBeenCalled());
+      applyConstraints.mockClear();
+      pinch(get("photo-camera"), 100, 200);
+      expect(applyConstraints).not.toHaveBeenCalled();
+    });
+
+    it("a touch on a button is not a tap on the picture", async () => {
+      const { applyConstraints } = openWith({ focusMode: ["continuous"] });
+      renderScreen();
+      await waitFor(() => expect(HTMLMediaElement.prototype.play).toHaveBeenCalled());
+      applyConstraints.mockClear();
+      const button = screen.getByRole("button", { name: "Type it instead" });
+      fireEvent.pointerDown(button, { pointerId: 1, clientX: 200, clientY: 700 });
+      fireEvent.pointerUp(button, { pointerId: 1, clientX: 200, clientY: 700 });
+      expect(applyConstraints).not.toHaveBeenCalled();
     });
   });
 });

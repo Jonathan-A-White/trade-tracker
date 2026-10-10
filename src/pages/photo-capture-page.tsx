@@ -4,6 +4,8 @@ import { db } from "@/db/database";
 import { PendingLookupRepository } from "@/db/repositories/pending-lookup-repository";
 import { useFactory } from "@/contexts/factory-context";
 import { captureStill } from "@/scanner/capture-still";
+import { PHOTO_VIDEO_CONSTRAINTS } from "@/scanner/camera-controls";
+import { useCameraZoomFocus } from "@/hooks/use-camera-zoom-focus";
 
 const pendingLookupRepo = new PendingLookupRepository();
 
@@ -27,6 +29,7 @@ export default function PhotoCapturePage() {
   const [busy, setBusy] = useState(false);
   const [error, setError] = useState<string | null>(null);
   const savingRef = useRef(false);
+  const { attachTrack, digitalZoom, focusRing, handlers } = useCameraZoomFocus(videoRef, barcode);
 
   // The scanner has just released the camera; the permission is already granted, so this opens at once.
   useEffect(() => {
@@ -35,13 +38,13 @@ export default function PhotoCapturePage() {
 
     async function openCamera() {
       try {
-        stream = await navigator.mediaDevices.getUserMedia({
-          video: { facingMode: "environment" },
-        });
+        stream = await navigator.mediaDevices.getUserMedia(PHOTO_VIDEO_CONSTRAINTS);
         if (cancelled) {
           stream.getTracks().forEach((t) => t.stop());
           return;
         }
+        const tracks = stream.getTracks();
+        attachTrack(tracks.find((t) => t.kind === "video") ?? tracks[0] ?? null);
         const video = videoRef.current;
         if (video) {
           video.srcObject = stream;
@@ -57,7 +60,7 @@ export default function PhotoCapturePage() {
       cancelled = true;
       stream?.getTracks().forEach((t) => t.stop());
     };
-  }, []);
+  }, [attachTrack]);
 
   const save = useCallback(
     async (taken: Blob[]) => {
@@ -96,7 +99,7 @@ export default function PhotoCapturePage() {
     setBusy(true);
     setError(null);
     try {
-      const still = await captureStill(video);
+      const still = await captureStill(video, { zoom: digitalZoom });
       if (priceOnly) {
         // one shot: the tag photo goes straight into the lookup
         await save([still]);
@@ -109,7 +112,7 @@ export default function PhotoCapturePage() {
     } finally {
       setBusy(false);
     }
-  }, [busy, priceOnly, save]);
+  }, [busy, digitalZoom, priceOnly, save]);
 
   const handleTypeInstead = useCallback(() => {
     navigate(`/trips/active/add?barcode=${encodeURIComponent(barcode)}`, { replace: true });
@@ -124,13 +127,26 @@ export default function PhotoCapturePage() {
     "rounded-lg px-4 py-3 text-sm font-medium transition-colors cursor-pointer disabled:opacity-50 disabled:cursor-not-allowed";
 
   return (
-    <div className="fixed inset-0 z-50 bg-black">
+    <div
+      data-testid="photo-camera"
+      className="fixed inset-0 z-50 bg-black overflow-hidden touch-none"
+      {...handlers}
+    >
       <video
         ref={videoRef}
         className="absolute inset-0 w-full h-full object-cover"
+        style={digitalZoom > 1 ? { transform: `scale(${digitalZoom})` } : undefined}
         playsInline
         muted
       />
+      {focusRing && (
+        <div
+          key={focusRing.id}
+          data-testid="focus-ring"
+          className="pointer-events-none absolute h-16 w-16 -translate-x-1/2 -translate-y-1/2 rounded-full border-2 border-white/90"
+          style={{ left: focusRing.x, top: focusRing.y }}
+        />
+      )}
 
       <div className="absolute top-0 left-0 right-0 bg-gradient-to-b from-black/70 to-transparent p-4 pr-16">
         <h1 className="text-lg font-semibold text-white">
