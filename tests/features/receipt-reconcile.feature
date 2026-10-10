@@ -76,3 +76,22 @@ Feature: Reconcile a trip from a photo of its receipt
     Given I sent a receipt with one changed price and one unmatched line
     When I leave End Trip and open it again
     Then "What changed", "Not matched" and the Receipt Total are as I left them
+
+  Scenario: A completed trip takes a receipt too
+    Given I have a completed trip at "Trader Joe's" with "Milk" and "Bread" and no Receipt Total
+    And the receipt shows "Milk" at 4.29 and "Bread" at 2.50 and a total of 6.79
+    When I open the completed trip's page
+    And I tap "Photograph receipt" and "Take photo" and "Done"
+    And I tap "Send receipt"
+    Then the "Milk" line takes the receipt's price
+    And "What changed" lists "Milk" with its old and new price
+    And I see "Not matched: 0"
+    And the Receipt Total and the Actual Total are 6.79
+
+  Scenario: A receipt line the factory could not match on a completed trip is handled as on End Trip
+    Given the receipt shows a line "TJ SNACK MIX" at 3.29 that the factory could not match
+    When I open the completed trip's page and send the receipt photo
+    Then I see "Not matched: 1"
+    When I tap "Add as new item"
+    Then the trip has a "TJ SNACK MIX" line priced 3.29
+    And I see "Not matched: 0"
