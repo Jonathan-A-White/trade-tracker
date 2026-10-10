@@ -1,13 +1,14 @@
 import { useState, useEffect, useCallback } from "react";
 import { useLiveQuery } from "dexie-react-hooks";
 import { useNavigate, Link, Outlet } from "react-router";
-import { db } from "@/db/database";
-import type { Item, PendingLookup } from "@/contracts/types";
+import type { Item } from "@/contracts/types";
 import { TripRepository } from "@/db/repositories/trip-repository";
 import { TripItemRepository } from "@/db/repositories/trip-item-repository";
 import { PendingLookupRepository } from "@/db/repositories/pending-lookup-repository";
 import { ItemRepository } from "@/db/repositories/item-repository";
-import { countGuessedPrices, countsTowardTotal } from "@/core/pricing";
+import { countGuessedPrices } from "@/core/pricing";
+import { countsTowardTotal } from "@/core/trip-totals";
+import { useTripLines } from "@/trips/use-trip-lines";
 import { photoPricePath, priceLookupNote } from "@/core/photo-price";
 import { PageHeader } from "@/components/layout/page-header";
 import { TripItemRow } from "@/components/data-display/trip-item-row";
@@ -58,51 +59,17 @@ export default function ActiveTripPage() {
   const [fillingLookupId, setFillingLookupId] = useState<string | null>(null);
   const [fillError, setFillError] = useState<string | null>(null);
 
+  // The page is keyed by the active trip; useTripLines reads the rest by its id.
   const trip = useLiveQuery(() => tripRepo.getActive(), []);
-  const tripItems = useLiveQuery(
-    () => (trip ? tripItemRepo.getByTrip(trip.id) : []),
-    [trip?.id],
-  );
-
-  const itemsMap = useLiveQuery(async () => {
-    if (!tripItems || tripItems.length === 0) return {};
-    const itemIds = [...new Set(tripItems.map((ti) => ti.itemId))];
-    const items = await db.items.where("id").anyOf(itemIds).toArray();
-    const map: Record<string, Item> = {};
-    for (const item of items) {
-      map[item.id] = item;
-    }
-    return map;
-  }, [tripItems]);
-
-  // Pending lookups of this trip, keyed by the itemId their pending line carries.
-  const lookupsByItemId = useLiveQuery(async () => {
-    if (!trip) return {};
-    const lookups = await pendingLookupRepo.listByTrip(trip.id);
-    const map: Record<string, PendingLookup> = {};
-    for (const lookup of lookups) {
-      if (lookup.mode !== "price-only" && lookup.status !== "applied") {
-        map[lookup.itemId] = lookup;
-      }
-    }
-    return map;
-  }, [trip?.id]);
-
-  // The latest price-only lookup of each known item on this trip, keyed by the item's id.
-  const priceLookupsByItemId = useLiveQuery(async () => {
-    if (!trip) return {};
-    const map: Record<string, PendingLookup> = {};
-    for (const lookup of await pendingLookupRepo.listPriceOnlyByTrip(trip.id)) {
-      map[lookup.itemId] = lookup;
-    }
-    return map;
-  }, [trip?.id]);
-
-  const storeName = useLiveQuery(async () => {
-    if (!trip) return "";
-    const store = await db.stores.get(trip.storeId);
-    return store?.name ?? "Unknown Store";
-  }, [trip?.storeId]);
+  const {
+    store,
+    lines: items,
+    itemsById: map,
+    pendingByItemId: lookups,
+    priceLookupsByItemId: priceLookups,
+    loading,
+  } = useTripLines(trip?.id);
+  const storeName = store?.name ?? (trip && !loading ? "Unknown Store" : undefined);
 
   const elapsed = useElapsedTime(trip?.startedAt);
 
@@ -231,10 +198,6 @@ export default function ActiveTripPage() {
     );
   }
 
-  const items = tripItems ?? [];
-  const map = itemsMap ?? {};
-  const lookups = lookupsByItemId ?? {};
-  const priceLookups = priceLookupsByItemId ?? {};
   const fillingLookup = Object.values(lookups).find(
     (l) => l.id === fillingLookupId,
   );

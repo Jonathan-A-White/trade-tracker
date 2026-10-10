@@ -1,5 +1,4 @@
 import { useState, useMemo, useRef } from "react";
-import { useLiveQuery } from "dexie-react-hooks";
 import { useParams, Link, useNavigate } from "react-router";
 import { db } from "@/db/database";
 import type { Item, UnitType } from "@/contracts/types";
@@ -8,6 +7,8 @@ import { TripItemRepository } from "@/db/repositories/trip-item-repository";
 import { ItemRepository } from "@/db/repositories/item-repository";
 import { PageHeader } from "@/components/layout/page-header";
 import { formatCurrency } from "@/core/pricing";
+import { tripTotals } from "@/core/trip-totals";
+import { useTripLines } from "@/trips/use-trip-lines";
 import { getTaxModule } from "@/core/tax";
 import type { TaxEstimate } from "@/core/tax";
 import {
@@ -18,7 +19,6 @@ import {
 } from "@/services/trip-exchange-service";
 import { downloadAsFile } from "@/services/export-service";
 import { PendingLineRow } from "@/components/data-display/pending-line-row";
-import { usePendingLookupsByItemId } from "@/hooks/use-pending-lookups";
 import { ReceiptReconcileCard } from "@/components/data-display/receipt-reconcile-card";
 import { FixUnknownItemModal } from "@/components/forms/fix-unknown-item-modal";
 
@@ -40,44 +40,25 @@ export default function TripDetailPage() {
   const [reimportSuccess, setReimportSuccess] = useState<string | null>(null);
   const reimportFileRef = useRef<HTMLInputElement>(null);
 
-  const trip = useLiveQuery(
-    () => (id ? tripRepo.getById(id) : undefined),
-    [id],
-  );
-
-  const tripItems = useLiveQuery(
-    () => (id ? tripItemRepo.getByTrip(id) : []),
-    [id],
-  );
-
-  const store = useLiveQuery(async () => {
-    if (!trip) return undefined;
-    return db.stores.get(trip.storeId);
-  }, [trip?.storeId]);
+  const {
+    trip,
+    store,
+    lines: items,
+    itemsById: map,
+    pendingByItemId: lookups,
+    loading,
+  } = useTripLines(id);
 
   const storeName = store?.name ?? "Unknown Store";
 
-  const lookups = usePendingLookupsByItemId(id);
-
-  const itemsMap = useLiveQuery(async () => {
-    if (!tripItems || tripItems.length === 0) return {};
-    const itemIds = [...new Set(tripItems.map((ti) => ti.itemId))];
-    const items = await db.items.where("id").anyOf(itemIds).toArray();
-    const map: Record<string, Item> = {};
-    for (const item of items) {
-      map[item.id] = item;
-    }
-    return map;
-  }, [tripItems]);
-
   const storeState = store?.state;
   const taxEstimate = useMemo((): TaxEstimate | null => {
-    if (!storeState || !tripItems || !itemsMap) return null;
+    if (!storeState || loading) return null;
     const taxModule = getTaxModule(storeState);
     if (!taxModule) return null;
 
-    const lineItems = tripItems.map((ti) => {
-      const item = itemsMap[ti.itemId];
+    const lineItems = items.map((ti) => {
+      const item = map[ti.itemId];
       return {
         name: item?.name ?? "Unknown Item",
         lineTotal: ti.lineTotal,
@@ -87,7 +68,7 @@ export default function TripDetailPage() {
     });
 
     return taxModule.calculate(lineItems);
-  }, [storeState, tripItems, itemsMap]);
+  }, [storeState, loading, items, map]);
 
   // Build a map from tripItem index to its tax line result
   const taxLineByIndex = useMemo(() => {
@@ -162,11 +143,9 @@ export default function TripDetailPage() {
     );
   }
 
-  const items = tripItems ?? [];
-  const map = itemsMap ?? {};
   const scannedSubtotal = trip.scannedSubtotal;
   const actualTotal = trip.actualTotal;
-  const bottleDeposits = items.reduce((sum, ti) => sum + (ti.bottleDeposit ?? 0), 0);
+  const { bottleDeposits } = tripTotals(items);
   const estimatedTotal =
     (taxEstimate ? scannedSubtotal + taxEstimate.totalTax : scannedSubtotal) +
     bottleDeposits;

@@ -8,7 +8,8 @@ import { PageHeader } from "@/components/layout/page-header";
 import { PendingLineRow } from "@/components/data-display/pending-line-row";
 import { ReceiptReconcileCard } from "@/components/data-display/receipt-reconcile-card";
 import { usePendingLookupsByItemId } from "@/hooks/use-pending-lookups";
-import { countsTowardTotal, formatCurrency } from "@/core/pricing";
+import { formatCurrency } from "@/core/pricing";
+import { countsTowardTotal } from "@/core/trip-totals";
 import { getTaxModule } from "@/core/tax";
 import type { TaxEstimate } from "@/core/tax";
 
