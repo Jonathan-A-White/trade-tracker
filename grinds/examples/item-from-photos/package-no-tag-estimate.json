@@ -7,7 +7,7 @@
   },
   "photos": ["cereal-box-no-tag.jpg"],
   "expect": {
-    "name": { "contains": "Cereal" },
+    "name": { "matches": "(?i)cereal" },
     "price": { "is_null": true },
     "estimatedPrice": { "present": true },
     "estimateNote": { "present": true }

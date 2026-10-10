@@ -16,7 +16,7 @@
   ],
   "expect": {
     "store": {
-      "contains": "Trader Joe"
+      "matches": "(?i)trader joe"
     },
     "date": {
       "equals": "2026-03-14"

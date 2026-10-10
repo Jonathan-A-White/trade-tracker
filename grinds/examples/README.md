@@ -32,7 +32,7 @@ request to the real grist and checks the answer against `expect`; the app's unit
   - `equals`: the value is exactly this
   - `is_null`: `true` the value is null, `false` it is not
   - `one_of`: the value is one of these
-  - `contains`: a string field includes this text
+  - `contains`: a string field includes this text, matching case (the unit test refuses it in a scenario; for printed text write `matches` with a leading `(?i)`)
   - `matches`: a string field matches this regular expression
   - `present`: `true` the field is in the answer, `false` it is left out
 

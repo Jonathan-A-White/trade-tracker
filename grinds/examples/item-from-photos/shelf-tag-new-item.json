@@ -7,7 +7,7 @@
   },
   "photos": ["shelf-tag-butter.jpg"],
   "expect": {
-    "name": { "contains": "Butter" },
+    "name": { "matches": "(?i)butter" },
     "category": { "equals": "Dairy & Eggs" },
     "unitType": { "equals": "each" },
     "price": { "equals": 4.99 },

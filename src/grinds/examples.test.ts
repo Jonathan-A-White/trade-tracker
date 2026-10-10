@@ -103,6 +103,24 @@ describe("grind examples", () => {
 
       expect(expectProblems(example.expect, answerSchema)).toEqual([]);
     });
+
+    it.each(exampleFiles)(
+      "%s checks text the receipt or photo prints without regard to case",
+      (file) => {
+        const example = readJson(`${dir}/${file}`) as unknown as GrindExample;
+        const caseSensitive: string[] = [];
+        for (const [path, check] of Object.entries(example.expect)) {
+          if (typeof check !== "object" || check === null) continue;
+          if ("contains" in check) {
+            caseSensitive.push(`${path}: contains is case-sensitive; use {"matches": "(?i)..."}`);
+          }
+          if (typeof check.matches === "string" && !check.matches.startsWith("(?i)")) {
+            caseSensitive.push(`${path}: matches ${check.matches} needs a leading (?i)`);
+          }
+        }
+        expect(caseSensitive).toEqual([]);
+      }
+    );
   });
 });
 
@@ -153,6 +171,12 @@ describe("expectProblems", () => {
     expect(expectProblems({ confidence: { oneOf: ["low"] } }, answerSchema)).toHaveLength(1);
     expect(expectProblems({ price: "isNull" }, answerSchema)).toHaveLength(1);
     expect(expectProblems({ confidence: "oneOf" }, answerSchema)).toHaveLength(1);
+  });
+
+  it("reads a leading (?i) of a matches pattern as case-insensitive", () => {
+    expect(expectProblems({ name: { matches: "(?i)butter" } }, answerSchema)).toEqual([]);
+    expect(checkExpect({ name: { matches: "(?i)trader joe" } }, { name: "TRADER JOE'S" })).toEqual([]);
+    expect(checkExpect({ name: { matches: "trader joe" } }, { name: "TRADER JOE'S" })).toHaveLength(1);
   });
 
   it("reads a bare value as equals", () => {
