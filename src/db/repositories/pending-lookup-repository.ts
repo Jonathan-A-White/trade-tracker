@@ -127,6 +127,21 @@ export class PendingLookupRepository {
     );
   }
 
+  /**
+   * Sets the quantity of a lookup's pending line (never below 1). The factory's
+   * answer, or Fill by hand, turns the line into an ordinary one with it.
+   */
+  async setQuantity(id: string, quantity: number): Promise<void> {
+    const lookup = await db.pendingLookups.get(id);
+    if (!lookup || lookup.mode === "price-only") return;
+    const line = await db.tripItems
+      .where("[tripId+itemId]")
+      .equals([lookup.tripId, lookup.itemId])
+      .first();
+    if (!line) return;
+    await tripItemRepo.update(line.id, { quantity: Math.max(1, Math.floor(quantity)) });
+  }
+
   /** Throws a pending lookup away together with its pending line. */
   async discard(id: string): Promise<void> {
     const lookup = await db.pendingLookups.get(id);

@@ -122,4 +122,79 @@ describe("PendingLookupRepository", () => {
     expect(lookup.id).toBeDefined();
     expect((await tripRepo.getById(trip.id))?.scannedSubtotal).toBe(2);
   });
+  describe("quantity of a pending line", () => {
+    it("setQuantity saves the quantity on the pending line at once", async () => {
+      const trip = await startTrip();
+      const lookup = await lookups.create({ barcode: "0044", tripId: trip.id, photos: [] });
+
+      await lookups.setQuantity(lookup.id, 3);
+
+      const line = (await tripItemRepo.getByTrip(trip.id)).find((l) => l.pending);
+      expect(line?.quantity).toBe(3);
+      expect(line?.itemId).toBe(lookup.itemId);
+    });
+
+    it("never goes below 1", async () => {
+      const trip = await startTrip();
+      const lookup = await lookups.create({ barcode: "0044", tripId: trip.id, photos: [] });
+
+      await lookups.setQuantity(lookup.id, 0);
+
+      const line = (await tripItemRepo.getByTrip(trip.id)).find((l) => l.pending);
+      expect(line?.quantity).toBe(1);
+    });
+
+    it("does nothing for an unknown lookup", async () => {
+      await expect(lookups.setQuantity("nope", 2)).resolves.toBeUndefined();
+    });
+
+    it("the item the factory fills in keeps that quantity and counts price x quantity", async () => {
+      const trip = await startTrip();
+      const lookup = await lookups.create({ barcode: "0044", tripId: trip.id, photos: [] });
+      await lookups.setQuantity(lookup.id, 2);
+
+      await lookups.applyAnswer(lookup.id, {
+        name: "Oat Bars",
+        unitType: "each",
+        category: "other",
+        price: 4.25,
+        confidence: "high",
+      });
+
+      const lines = await tripItemRepo.getByTrip(trip.id);
+      expect(lines).toHaveLength(1);
+      expect(lines[0].pending).toBeUndefined();
+      expect(lines[0].quantity).toBe(2);
+      expect(lines[0].lineTotal).toBe(8.5);
+      expect((await tripRepo.getById(trip.id))?.scannedSubtotal).toBe(8.5);
+    });
+
+    it("fill by hand starts from that quantity", async () => {
+      const trip = await startTrip();
+      const lookup = await lookups.create({ barcode: "0777", tripId: trip.id, photos: [] });
+      await lookups.setQuantity(lookup.id, 3);
+      const item = await itemRepo.create({
+        barcode: "0777",
+        name: "Oat Bars",
+        currentPrice: 2,
+        unitType: "each",
+      });
+
+      await lookups.fillByHand(lookup.id, item);
+
+      const lines = await tripItemRepo.getByTrip(trip.id);
+      expect(lines).toHaveLength(1);
+      expect(lines[0].quantity).toBe(3);
+      expect(lines[0].lineTotal).toBe(6);
+    });
+
+    it("the quantity survives a reload (it is in the database)", async () => {
+      const trip = await startTrip();
+      const lookup = await lookups.create({ barcode: "0044", tripId: trip.id, photos: [] });
+      await lookups.setQuantity(lookup.id, 4);
+
+      const fresh = new TripItemRepository();
+      expect((await fresh.getByTrip(trip.id))[0].quantity).toBe(4);
+    });
+  });
 });
