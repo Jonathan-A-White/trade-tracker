@@ -32,6 +32,8 @@ export interface Trip {
   actualTotal?: number;
   budget?: number;
   note?: string;
+  /** What the last receipt reconcile found, kept so End Trip shows the same lists when he comes back. */
+  receiptReconcile?: ReceiptReconcileRecord;
   createdAt: number;
   updatedAt: number;
 }
@@ -140,6 +142,38 @@ export interface ReceiptReconcileAnswer {
   tax: number | null;
   total: number | null;
   lines: ReceiptReconcileAnswerLine[];
+  unreadable: string | null;
+}
+
+/** One trip line the receipt changed: the unit price (and count or weight) before and after. */
+export interface ReceiptChange {
+  tripItemId: string;
+  name: string;
+  oldPrice: number;
+  newPrice: number;
+  oldQuantity: number;
+  newQuantity: number;
+  oldWeightLbs: number | null;
+  newWeightLbs: number | null;
+}
+
+/** A receipt line he placed as a new item: the trip line it became. */
+export interface ReceiptAddedLine {
+  tripItemId: string;
+  name: string;
+  price: number;
+}
+
+/** A trip's receipt reconcile, as applied: kept on the trip (no index) so End Trip can be left and reopened. */
+export interface ReceiptReconcileRecord {
+  changes: ReceiptChange[];
+  /** Receipt lines not (yet) placed on a trip line; he matches each to a line or adds it as a new item. */
+  unmatched: ReceiptReconcileAnswerLine[];
+  /** Receipt lines he added as new items. */
+  added: ReceiptAddedLine[];
+  /** The trip lines a receipt line is, so the others are 'Not on receipt'. */
+  matchedTripItemIds: string[];
+  total: number | null;
   unreadable: string | null;
 }
 
