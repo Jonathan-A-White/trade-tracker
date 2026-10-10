@@ -113,8 +113,8 @@ describe("expectProblems", () => {
     expect(
       expectProblems(
         {
-          price: { isNull: true },
-          confidence: { oneOf: ["low", "medium"] },
+          price: { is_null: true },
+          confidence: { one_of: ["low", "medium"] },
           name: { contains: "Butter", matches: "^K" },
           notes: { present: true },
           size: { present: false },
@@ -134,7 +134,7 @@ describe("expectProblems", () => {
   it("names a value the answer schema would never allow", () => {
     expect(expectProblems({ confidence: { equals: "certain" } }, answerSchema))
       .toHaveLength(1);
-    expect(expectProblems({ category: { oneOf: ["Gadgets"] } }, answerSchema))
+    expect(expectProblems({ category: { one_of: ["Gadgets"] } }, answerSchema))
       .toHaveLength(1);
     expect(expectProblems({ price: { equals: "4.99" } }, answerSchema))
       .toHaveLength(1);
@@ -144,6 +144,20 @@ describe("expectProblems", () => {
     expect(expectProblems({ price: { around: 4 } }, answerSchema)).toHaveLength(1);
     expect(expectProblems({ name: { matches: "(" } }, answerSchema)).toHaveLength(1);
     expect(expectProblems({ price: { contains: "4" } }, answerSchema)).toHaveLength(1);
+  });
+
+  it("names the camelCase spelling of a check, as a key or as a bare string", () => {
+    const problems = expectProblems({ price: { isNull: true } }, answerSchema);
+    expect(problems).toHaveLength(1);
+    expect(problems[0]).toContain('unknown check "isNull"');
+    expect(expectProblems({ confidence: { oneOf: ["low"] } }, answerSchema)).toHaveLength(1);
+    expect(expectProblems({ price: "isNull" }, answerSchema)).toHaveLength(1);
+    expect(expectProblems({ confidence: "oneOf" }, answerSchema)).toHaveLength(1);
+  });
+
+  it("reads a bare value as equals", () => {
+    expect(expectProblems({ confidence: "low", price: null }, answerSchema)).toEqual([]);
+    expect(expectProblems({ confidence: "certain" }, answerSchema)).toHaveLength(1);
   });
 
   it("names an empty expect block and an empty check", () => {
@@ -167,7 +181,7 @@ describe("checkExpect", () => {
       checkExpect(
         {
           price: { equals: 4.99 },
-          unitType: { oneOf: ["each", "per_lb"] },
+          unitType: { one_of: ["each", "per_lb"] },
           name: { contains: "Butter", matches: "^Kerrygold" },
           size: { present: true },
           notes: { present: false },
@@ -181,10 +195,10 @@ describe("checkExpect", () => {
     expect(
       checkExpect(
         {
-          price: { isNull: true },
+          price: { is_null: true },
           confidence: { equals: "low" },
           notes: { present: true },
-          category: { oneOf: ["Produce"] },
+          category: { one_of: ["Produce"] },
           name: { contains: "Milk" },
           size: { matches: "^1 gal$" },
         },
@@ -193,11 +207,16 @@ describe("checkExpect", () => {
     ).toHaveLength(6);
   });
 
+  it("reads a bare value as equals", () => {
+    expect(checkExpect({ confidence: "high" }, answer)).toEqual([]);
+    expect(checkExpect({ confidence: "low" }, answer)).toHaveLength(1);
+  });
+
   it("treats a null price as present and null", () => {
     const noPrice = { ...answer, price: null };
     expect(
-      checkExpect({ price: { isNull: true, present: true } }, noPrice)
+      checkExpect({ price: { is_null: true, present: true } }, noPrice)
     ).toEqual([]);
-    expect(checkExpect({ price: { isNull: false } }, noPrice)).toHaveLength(1);
+    expect(checkExpect({ price: { is_null: false } }, noPrice)).toHaveLength(1);
   });
 });

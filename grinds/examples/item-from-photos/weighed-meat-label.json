@@ -12,6 +12,6 @@
     "unitType": { "equals": "per_lb" },
     "price": { "equals": 4.99 },
     "weightLbs": { "equals": 2.03 },
-    "confidence": { "oneOf": ["high", "medium"] }
+    "confidence": { "one_of": ["high", "medium"] }
   }
 }
