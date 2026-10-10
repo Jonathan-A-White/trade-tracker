@@ -430,6 +430,68 @@ describe("PendingLookupRepository", () => {
       expect(line.priceFlag).toBe("check");
     });
 
+    it("a tag price of 0 means unknown: the line gets the best guess, not $0.00", async () => {
+      const trip = await startTrip();
+      const lookup = await lookups.create({ barcode: "0066", tripId: trip.id, photos: [] });
+
+      await lookups.applyAnswer(lookup.id, { ...noTag, price: 0, estimatedPrice: 3.49 });
+
+      const [line] = await tripItemRepo.getByTrip(trip.id);
+      expect(line.price).toBe(3.49);
+      expect(line.guess).toBeDefined();
+      expect(line.priceFlag).toBeUndefined();
+      expect(await db.priceHistory.count()).toBe(0);
+    });
+
+    it("a tag price of 0 with no guess to be had is flagged 'Add price'", async () => {
+      const trip = await startTrip();
+      const lookup = await lookups.create({ barcode: "0066", tripId: trip.id, photos: [] });
+
+      await lookups.applyAnswer(lookup.id, { ...noTag, price: 0 });
+
+      const [line] = await tripItemRepo.getByTrip(trip.id);
+      expect(line.price).toBe(0);
+      expect(line.guess).toBeUndefined();
+      expect(line.priceFlag).toBe("add");
+      expect(await db.priceHistory.count()).toBe(0);
+    });
+
+    it("a price-only answer of 0 changes no price and remembers that none was read", async () => {
+      const trip = await startTrip();
+      const item = await itemRepo.create({
+        barcode: "0066",
+        name: "Oat Bars",
+        currentPrice: 4.19,
+        unitType: "each",
+      });
+      const lookup = await lookups.create({
+        barcode: "0066",
+        tripId: trip.id,
+        photos: [],
+        mode: "price-only",
+        itemId: item.id,
+      });
+
+      await lookups.applyAnswer(lookup.id, { ...noTag, price: 0 });
+
+      expect((await db.items.get(item.id))?.currentPrice).toBe(4.19);
+      expect(await db.priceHistory.count()).toBe(0);
+      expect((await db.pendingLookups.get(lookup.id))?.noPrice).toBe(true);
+    });
+
+    it("a price of 0 typed by hand is kept as 0 and not marked as a guess", async () => {
+      const trip = await startTrip();
+      const lookup = await lookups.create({ barcode: "0066", tripId: trip.id, photos: [] });
+      await lookups.applyAnswer(lookup.id, { ...noTag, estimatedPrice: 3.49 });
+      const [line] = await tripItemRepo.getByTrip(trip.id);
+
+      await tripItemRepo.update(line.id, { price: 0 });
+
+      const saved = await db.tripItems.get(line.id);
+      expect(saved?.price).toBe(0);
+      expect(saved?.guess).toBeUndefined();
+    });
+
     it("a hand edit of the price clears the mark; a quantity edit keeps it", async () => {
       const trip = await startTrip();
       const lookup = await lookups.create({ barcode: "0066", tripId: trip.id, photos: [] });

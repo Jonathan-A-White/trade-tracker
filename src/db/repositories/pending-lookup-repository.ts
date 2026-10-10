@@ -59,6 +59,14 @@ async function bestGuess(
   return null;
 }
 
+/**
+ * The price read off the tag, or null when there is none. The factory answers
+ * 0 for "could not read a price", so 0 counts as unknown, never as $0.00.
+ */
+function tagPrice(answer: ItemFromPhotosAnswer): number | null {
+  return answer.price === null || answer.price === 0 ? null : answer.price;
+}
+
 export class PendingLookupRepository {
   /**
    * Records a pending lookup and puts its pending line in the trip. The line
@@ -254,7 +262,7 @@ export class PendingLookupRepository {
       "rw",
       [db.pendingLookups, db.items, db.tripItems, db.priceHistory, db.trips, db.stores],
       async () => {
-        const price = answer.price;
+        const price = tagPrice(answer);
         const now = Date.now();
         let item = await db.items.where("barcode").equals(lookup.barcode).first();
         if (!item) {
@@ -318,7 +326,7 @@ export class PendingLookupRepository {
       "rw",
       [db.pendingLookups, db.items, db.tripItems, db.priceHistory, db.trips],
       async () => {
-        const price = answer.price;
+        const price = tagPrice(answer);
         const item = await db.items.get(lookup.itemId);
         const trip = await db.trips.get(lookup.tripId);
         if (price !== null && item) {
