@@ -2,7 +2,8 @@
 // (components/feedback/update-banner.tsx) shows while a worker is waiting, the tap
 // posts {type:"SKIP_WAITING"} to it (the generated worker skips waiting) and
 // the page reloads ONCE when the controller changes, only if he asked: a first install claiming the
-// page, or another tab's update, never reloads this one. The app also asks the browser whether there is
+// page, or another tab's update, never reloads this one. If the new worker has not taken over a few
+// seconds after the tap, the page reloads anyway, so the banner never sits on 'Updating…'. The app also asks the browser whether there is
 // a new build on start, on return to the foreground and every 30 minutes, so a phone that keeps
 // TradeTracker open for days still finds out.
 import { useSyncExternalStore } from "react";
@@ -10,8 +11,8 @@ import { useSyncExternalStore } from "react";
 /** How often a running app asks whether a newer build is up. */
 export const UPDATE_CHECK_EVERY_MS = 30 * 60_000;
 
-/** How long a tap waits for the new worker to take over before the banner lets him tap again. */
-export const TAKE_OVER_PATIENCE_MS = 10_000;
+/** How long a tap waits for the new worker to take over before the page reloads anyway. */
+export const TAKE_OVER_PATIENCE_MS = 3_000;
 
 export type UpdateState = "none" | "ready" | "updating";
 
@@ -91,7 +92,8 @@ export function startAppUpdates(deps: { container: UpdateContainer; registration
     });
   };
 
-  const onControllerChange = () => {
+  // Reloads at most once per tap: on the controller change, or when the patience runs out first.
+  const reloadOnce = () => {
     if (!asked) return;
     asked = false;
     clearTimeout(patience);
@@ -107,7 +109,7 @@ export function startAppUpdates(deps: { container: UpdateContainer; registration
   };
 
   registration.addEventListener("updatefound", onFound);
-  container.addEventListener("controllerchange", onControllerChange);
+  container.addEventListener("controllerchange", reloadOnce);
   document.addEventListener("visibilitychange", onVisible);
   const every = setInterval(checkNow, UPDATE_CHECK_EVERY_MS);
   onFound();
@@ -122,15 +124,12 @@ export function startAppUpdates(deps: { container: UpdateContainer; registration
       setState("updating");
       worker.postMessage({ type: "SKIP_WAITING" });
       clearTimeout(patience);
-      patience = setTimeout(() => {
-        asked = false;
-        setState(registration.waiting ? "ready" : "none");
-      }, TAKE_OVER_PATIENCE_MS);
+      patience = setTimeout(reloadOnce, TAKE_OVER_PATIENCE_MS);
     },
     checkNow,
     stop() {
       registration.removeEventListener("updatefound", onFound);
-      container.removeEventListener("controllerchange", onControllerChange);
+      container.removeEventListener("controllerchange", reloadOnce);
       document.removeEventListener("visibilitychange", onVisible);
       clearInterval(every);
       clearTimeout(patience);

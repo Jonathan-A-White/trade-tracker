@@ -2,7 +2,7 @@
 // tells it to take over (SKIP_WAITING) and the page reloads once when it has; the app looks for an
 // update on start, on return to the foreground and every 30 minutes.
 import { act, cleanup, fireEvent, render, screen } from '@testing-library/react';
-import { startAppUpdates, UPDATE_CHECK_EVERY_MS } from './app-update';
+import { startAppUpdates, TAKE_OVER_PATIENCE_MS, UPDATE_CHECK_EVERY_MS } from './app-update';
 import { UpdateBanner } from '@/components/feedback/update-banner';
 import { fakeSetup, fakeWorker, type FakeSetup } from '@/test/fake-registration';
 
@@ -85,15 +85,44 @@ describe('the update banner', () => {
     expect(setup.reload).not.toHaveBeenCalled();
   });
 
-  it('lets him tap again when the worker has not taken over after a while', () => {
-    const waiting = fakeWorker();
-    const setup = fakeSetup({ waiting });
+  it('reloads anyway when the new worker has not taken over within the patience, and the banner reads Updating… meanwhile', () => {
+    const setup = fakeSetup({ waiting: fakeWorker() });
     start(setup);
     render(<UpdateBanner />);
     fireEvent.click(screen.getByRole('button', { name: 'Update ready, tap to reload' }));
-    act(() => void vi.advanceTimersByTime(15_000));
+    expect(TAKE_OVER_PATIENCE_MS).toBe(3_000);
+    act(() => void vi.advanceTimersByTime(TAKE_OVER_PATIENCE_MS - 1));
+    expect(setup.reload).not.toHaveBeenCalled();
+    expect(screen.getByRole('button', { name: 'Updating…' })).toBeDisabled();
+    act(() => void vi.advanceTimersByTime(1));
+    expect(setup.reload).toHaveBeenCalledTimes(1);
+    expect(screen.getByRole('button', { name: 'Updating…' })).toBeDisabled();
+    act(() => void vi.advanceTimersByTime(60_000));
+    expect(setup.reload).toHaveBeenCalledTimes(1);
+  });
+
+  it('still reloads, and only once, when the controller changes after the patience has run out', () => {
+    const setup = fakeSetup({ waiting: fakeWorker() });
+    start(setup);
+    render(<UpdateBanner />);
     fireEvent.click(screen.getByRole('button', { name: 'Update ready, tap to reload' }));
-    expect(waiting.postMessage).toHaveBeenCalledTimes(2);
+    act(() => void vi.advanceTimersByTime(TAKE_OVER_PATIENCE_MS));
+    expect(setup.reload).toHaveBeenCalledTimes(1);
+    act(() => {
+      setup.controllerChanges();
+      setup.controllerChanges();
+    });
+    expect(setup.reload).toHaveBeenCalledTimes(1);
+  });
+
+  it('does not reload a second time on the patience when the controller already changed in time', () => {
+    const setup = fakeSetup({ waiting: fakeWorker() });
+    start(setup);
+    render(<UpdateBanner />);
+    fireEvent.click(screen.getByRole('button', { name: 'Update ready, tap to reload' }));
+    act(() => void setup.controllerChanges());
+    act(() => void vi.advanceTimersByTime(60_000));
+    expect(setup.reload).toHaveBeenCalledTimes(1);
   });
 });
 
