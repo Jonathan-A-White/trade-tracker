@@ -1,3 +1,5 @@
+import { digitalCrop } from "./camera-controls";
+
 /** The long side of a captured still, in pixels, at most. */
 export const MAX_LONG_SIDE = 1600;
 /** The size of a captured still, in bytes, stays under this. */
@@ -44,6 +46,8 @@ export const RECEIPT_STILL: StillOptions = { maxLongSide: 2400, maxBytes: 3_000_
 export interface StillOptions {
   maxLongSide?: number;
   maxBytes?: number;
+  /** A digital zoom: only the middle 1/zoom of a video frame is drawn, as the screen showed it. */
+  zoom?: number;
 }
 
 /** Encodes a drawable as a JPEG that fits the options, trying smaller encodings until it does. */
@@ -53,7 +57,12 @@ async function encodeJpeg(
   height: number,
   options: StillOptions,
 ): Promise<Blob> {
-  const frame = fitWithin(width, height, options.maxLongSide ?? MAX_LONG_SIDE);
+  const crop = digitalCrop(width, height, options.zoom ?? 1);
+  const frame = fitWithin(
+    Math.round(crop.sw),
+    Math.round(crop.sh),
+    options.maxLongSide ?? MAX_LONG_SIDE,
+  );
   if (frame.width === 0 || frame.height === 0) {
     throw new Error("The picture is empty");
   }
@@ -64,7 +73,17 @@ async function encodeJpeg(
     canvas.height = Math.round(frame.height * scale);
     const context = canvas.getContext("2d");
     if (!context) return Promise.resolve(null);
-    context.drawImage(source, 0, 0, canvas.width, canvas.height);
+    context.drawImage(
+      source,
+      crop.sx,
+      crop.sy,
+      crop.sw,
+      crop.sh,
+      0,
+      0,
+      canvas.width,
+      canvas.height,
+    );
     return new Promise<Blob | null>((resolve) =>
       canvas.toBlob(resolve, "image/jpeg", quality),
     );
