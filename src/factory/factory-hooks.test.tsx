@@ -63,8 +63,8 @@ describe("useFactoryLicence", () => {
     );
     expect(result.current).toBeNull();
     rerender({ publicKeyHex: "aa" });
-    expect(result.current).toBe("checking");
-    await waitFor(() => expect(result.current).toBe("held"));
+    expect(result.current?.licence).toBe("checking");
+    await waitFor(() => expect(result.current?.licence).toBe("held"));
   });
 
   it("asks the door when the key is given, and the door's word wins", async () => {
@@ -80,7 +80,7 @@ describe("useFactoryLicence", () => {
         askDoor,
       }),
     );
-    await waitFor(() => expect(result.current).toBe("none"));
+    await waitFor(() => expect(result.current?.licence).toBe("none"));
     expect(askDoor).toHaveBeenCalledTimes(1);
   });
 });

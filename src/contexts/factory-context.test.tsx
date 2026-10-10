@@ -49,7 +49,7 @@ function renderSettings(
   return render(
     <MemoryRouter>
       <ThemeProvider>
-        <FactoryProvider checkLicence={checkLicence} passkeyPort={port} askDoor={askDoor}>
+        <FactoryProvider checkLicence={checkLicence} passkeyPort={port} askDoor={askDoor} licenceRetryMs={[1, 1]}>
           <DoorProbe />
           <SettingsPage />
         </FactoryProvider>

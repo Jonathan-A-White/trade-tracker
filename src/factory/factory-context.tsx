@@ -24,6 +24,8 @@ interface FactoryContextValue {
   publicKeyHex: string | null;
   /** Licence in the collection trade-tracker; null while there is no key. */
   licence: FactoryLicence | null;
+  /** Reads the chain again, after the licence showed "unknown". */
+  recheckLicence: () => void;
   backendUrl: string;
   setBackendUrl: (url: string) => void;
   /**
@@ -51,6 +53,8 @@ interface FactoryContextValue {
   removeFingerprint: () => Promise<void>;
 }
 
+const noRecheck = () => {};
+
 const FactoryContext = createContext<FactoryContextValue | null>(null);
 
 interface FactoryProviderProps {
@@ -60,6 +64,8 @@ interface FactoryProviderProps {
   passkeyPort?: PasskeyPort;
   /** Asks the Postern door whether the unlocked key is licensed; the real door by default, a fake in tests. */
   askDoor?: DoorLicenceAsker;
+  /** Waits (ms) before each retry of a failed chain read; about 30 seconds in all by default. */
+  licenceRetryMs?: readonly number[];
 }
 
 export function FactoryProvider({
@@ -67,20 +73,23 @@ export function FactoryProvider({
   checkLicence = chainCheck,
   passkeyPort = browserPasskeyPort,
   askDoor = askDoorLicence,
+  licenceRetryMs,
 }: FactoryProviderProps) {
   const storage = useMemo(() => browserStorage(), []);
   const keySession = useKeySession({ storage, passkeyPort });
   const { publicKeyHex } = keySession;
   const [backendUrl, setBackendUrlState] = useState(readBackendUrl);
   const key = keySession.getKey();
-  const licenceState = useFactoryLicence({
+  const reading = useFactoryLicence({
     publicKeyHex,
     key,
     backendUrl,
     collection: FACTORY_COLLECTION,
     checkLicence,
     askDoor,
+    retryDelaysMs: licenceRetryMs,
   });
+  const licenceState = reading?.licence ?? null;
   useLookupRunning({ licence: licenceState, key, backendUrl });
 
   const setBackendUrl = useCallback((url: string) => {
@@ -97,6 +106,7 @@ export function FactoryProvider({
         door,
         publicKeyHex,
         licence: licenceState,
+        recheckLicence: reading?.recheck ?? noRecheck,
         backendUrl,
         setBackendUrl,
         makeKey: keySession.makeKey,

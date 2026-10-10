@@ -1,7 +1,8 @@
-import { useEffect, useRef, useState } from "react";
+import { useCallback, useEffect, useRef, useState } from "react";
 import { licence } from "bsv-kit/bsv";
 import type { FactoryLicence } from "@/contracts/types";
 import { askDoorLicence } from "@/services/door-licence";
+import { POSTERN_ISSUER } from "@/services/factory-service";
 import type { DoorLicenceAnswer, DoorLicenceAsker } from "@/services/door-licence";
 
 /** Reads a key's licence in a collection; the chain by default, a fake in tests. */
@@ -10,8 +11,28 @@ export type FactoryLicenceChecker = (
   collection: string,
 ) => Promise<licence.LicenceStatus>;
 
-export const chainCheck: FactoryLicenceChecker = (publicKeyHex, collection) =>
-  licence.licenceStatus(publicKeyHex, collection);
+/**
+ * The chain check. It names the Postern issuer, so a licence Postern minted to the key (funded and
+ * signed by the issuer, listed only in the issuer's history) reads as held even while the key is
+ * locked. `reader` is for tests.
+ */
+export function makeChainCheck(
+  options: { reader?: licence.ChainReader; issuer?: string } = {},
+): FactoryLicenceChecker {
+  const { reader, issuer = POSTERN_ISSUER } = options;
+  return (publicKeyHex, collection) => licence.licenceStatus(publicKeyHex, collection, { reader, issuer });
+}
+
+export const chainCheck: FactoryLicenceChecker = makeChainCheck();
+
+/** Waits before the 2nd and 3rd tries: three tries over about 30 seconds. */
+export const CHAIN_RETRY_DELAYS_MS: readonly number[] = [10_000, 20_000];
+
+/** The licence on show, and a way to read the chain again after it showed "unknown". */
+export interface FactoryLicenceReading {
+  licence: FactoryLicence;
+  recheck: () => void;
+}
 
 /**
  * The licence to show: the door's word wins while the key is unlocked ("held" opens the door; "none"
@@ -26,7 +47,8 @@ function mergeLicence(chain: FactoryLicence | null, doorAnswer: DoorLicenceAnswe
 /**
  * The licence for a key: the chain check, then (with the key unlocked) the door check, merged.
  * Null while there is no key. Nothing touches the network until a key exists; a failed check never
- * blocks the app.
+ * blocks the app. A failed chain read is tried again after each of `retryDelaysMs` before the
+ * licence reads "unknown"; `recheck` starts the reads over.
  */
 export function useFactoryLicence(opts: {
   publicKeyHex: string | null;
@@ -35,8 +57,22 @@ export function useFactoryLicence(opts: {
   collection: string;
   checkLicence?: FactoryLicenceChecker;
   askDoor?: DoorLicenceAsker;
-}): FactoryLicence | null {
-  const { publicKeyHex, key, backendUrl, collection, checkLicence = chainCheck, askDoor = askDoorLicence } = opts;
+  retryDelaysMs?: readonly number[];
+}): FactoryLicenceReading | null {
+  const {
+    publicKeyHex,
+    key,
+    backendUrl,
+    collection,
+    checkLicence = chainCheck,
+    askDoor = askDoorLicence,
+    retryDelaysMs = CHAIN_RETRY_DELAYS_MS,
+  } = opts;
+  const delaysRef = useRef(retryDelaysMs);
+  useEffect(() => {
+    delaysRef.current = retryDelaysMs;
+  });
+  const [rechecks, setRechecks] = useState(0);
   const unlocked = key !== null;
   // The door is asked when the key unlocks, not each time the same session hands back its key.
   const keyRef = useRef(key);
@@ -56,18 +92,43 @@ export function useFactoryLicence(opts: {
   useEffect(() => {
     if (!publicKeyHex) return;
     let cancelled = false;
-    checkLicence(publicKeyHex, collection).then(
-      (status) => {
-        if (!cancelled) setChecked({ publicKeyHex, licence: status.state });
-      },
-      () => {
-        if (!cancelled) setChecked({ publicKeyHex, licence: "unknown" });
-      },
-    );
+    let wake: (() => void) | null = null;
+    const pause = (ms: number) =>
+      new Promise<void>((resolve) => {
+        const timer = setTimeout(resolve, ms);
+        wake = () => {
+          clearTimeout(timer);
+          resolve();
+        };
+      });
+    (async () => {
+      const delays = delaysRef.current;
+      for (let attempt = 0; ; attempt++) {
+        try {
+          const status = await checkLicence(publicKeyHex, collection);
+          if (!cancelled) setChecked({ publicKeyHex, licence: status.state });
+          return;
+        } catch {
+          if (cancelled) return;
+          if (attempt >= delays.length) {
+            setChecked({ publicKeyHex, licence: "unknown" });
+            return;
+          }
+          await pause(delays[attempt]);
+          if (cancelled) return;
+        }
+      }
+    })();
     return () => {
       cancelled = true;
+      wake?.();
     };
-  }, [publicKeyHex, collection, checkLicence]);
+  }, [publicKeyHex, collection, checkLicence, rechecks]);
+
+  const recheck = useCallback(() => {
+    setChecked(null);
+    setRechecks((n) => n + 1);
+  }, []);
 
   // Unlocked, the door is asked (at unlock and when the backend URL changes; no polling). It never
   // blocks anything: offline or failing, the chain's answer stands.
@@ -92,5 +153,5 @@ export function useFactoryLicence(opts: {
     unlocked && doorChecked?.publicKeyHex === publicKeyHex && doorChecked.backendUrl === backendUrl
       ? doorChecked.answer
       : null;
-  return mergeLicence(chainLicence, doorAnswer);
+  return { licence: mergeLicence(chainLicence, doorAnswer), recheck };
 }

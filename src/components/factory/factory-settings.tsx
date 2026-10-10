@@ -21,6 +21,7 @@ export function FactorySettings() {
     door,
     publicKeyHex,
     licence,
+    recheckLicence,
     backendUrl,
     setBackendUrl,
     makeKey,
@@ -211,6 +212,14 @@ export function FactorySettings() {
               {licence ? LICENCE_TEXT[licence] : ""}
             </span>
           </div>
+          {licence === "unknown" && (
+            <div className="space-y-2">
+              <p className="text-xs text-gray-500 dark:text-gray-400">The chain could not be reached.</p>
+              <button type="button" onClick={recheckLicence} className={buttonClass}>
+                Check again
+              </button>
+            </div>
+          )}
           <p className="text-xs text-gray-500 dark:text-gray-400">
             In the collection trade-tracker.
           </p>

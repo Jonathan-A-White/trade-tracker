@@ -7,6 +7,13 @@ import {
 
 /** The Postern collection whose licence opens the factory door for this app. */
 export const FACTORY_COLLECTION = "trade-tracker";
+
+/**
+ * The public key (hex) of the issuer Postern's backend counts licences from: the Governor's own key,
+ * public by design. A licence Postern mints is funded and signed by it, so it sits in the issuer's
+ * address history and is found only when the chain check names this key.
+ */
+export const POSTERN_ISSUER = "035666d4ea414a65801ac092a4e28be6515065adcc7ac58d9cc76db8d5597f44c4";
 export const DEFAULT_BACKEND_URL = "https://postern.allmymind.org";
 
 // Device-only settings: never exported, never in IndexedDB.
