@@ -6,6 +6,7 @@ import { TripRepository } from "@/db/repositories/trip-repository";
 import { TripItemRepository } from "@/db/repositories/trip-item-repository";
 import { PageHeader } from "@/components/layout/page-header";
 import { PendingLineRow } from "@/components/data-display/pending-line-row";
+import { ReceiptReconcileCard } from "@/components/data-display/receipt-reconcile-card";
 import { usePendingLookupsByItemId } from "@/hooks/use-pending-lookups";
 import { countsTowardTotal, formatCurrency } from "@/core/pricing";
 import { getTaxModule } from "@/core/tax";
@@ -208,6 +209,12 @@ export default function EndTripPage() {
             </div>
           </div>
         )}
+
+        {/* Photograph the receipt: the factory updates the lines' prices and the total */}
+        <ReceiptReconcileCard
+          tripId={trip.id}
+          onTotal={(total) => setReceiptTotal(total.toFixed(2))}
+        />
 
         {/* Receipt total input */}
         <div className="bg-white dark:bg-gray-800 rounded-lg border dark:border-gray-700 p-4 space-y-3">

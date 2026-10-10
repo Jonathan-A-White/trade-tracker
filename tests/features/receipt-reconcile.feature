@@ -1,0 +1,54 @@
+Feature: Reconcile a trip from a photo of its receipt
+  As a grocery shopper ending a trip
+  I want to photograph the receipt and have the app fix each line's price and the total
+  So that my prices, and the next trip's prices, match what the store charged
+
+  Background:
+    Given the app is loaded
+    And I have an active trip at "Trader Joe's" with "Milk", "Bread" and "Eggs"
+    And the factory is licensed
+    And I am on the End Trip page
+
+  Scenario: A receipt with two changed prices updates those two lines
+    Given the receipt shows "Milk" at 4.29 and "Eggs" at 5.49 and a total of 14.78
+    When I tap "Photograph receipt" and "Take photo" and "Done"
+    And I tap "Send receipt"
+    Then the page says it is waiting for the factory
+    And the "Milk" and "Eggs" lines take the receipt's prices
+    And the items' current prices and price history carry them
+    And the Receipt Total is 14.78
+    And "What changed" lists "Milk" and "Eggs" with their old and new prices
+    And every item's barcode is unchanged
+
+  Scenario: A receipt line with no trip line is listed as not matched
+    Given the receipt shows a line "MYSTERY" that the factory could not match
+    When I send the receipt photo
+    Then I see "Not matched: 1"
+    And no trip line changes for it
+
+  Scenario: A refused receipt leaves the trip as it was
+    Given the factory refuses the receipt saying "The photo is too dark."
+    When I send the receipt photo
+    Then I see "The photo is too dark."
+    And every price is as it was
+    And the Receipt Total is empty
+
+  Scenario: A photo chosen from the gallery counts like a camera photo
+    When I tap "Choose a photo" and pick a picture
+    Then "1 photo ready" is shown
+
+  Scenario: A long receipt takes up to three photos
+    When I take three photos of the receipt
+    Then "3 photos ready" is shown
+    And I cannot add another photo
+
+  Scenario: The factory is not licensed
+    Given the factory is not licensed
+    Then the Photograph receipt button is disabled
+    And I am told to set the factory up under Settings
+
+  Scenario: A new trip scanning a matched barcode gets the receipt's price
+    Given a receipt reconcile changed "Milk" to 4.29
+    When a new trip scans the barcode of "Milk"
+    Then its line is priced 4.29
+    And the price history of "Milk" carries 4.29

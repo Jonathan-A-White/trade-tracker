@@ -4,6 +4,7 @@ import { MemoryRouter, Route, Routes } from "react-router";
 import TripDetailPage from "./trip-detail-page";
 import TripEditPage from "./trip-edit-page";
 import EndTripPage from "./end-trip-page";
+import { FactoryProvider } from "@/contexts/factory-context";
 import { db } from "@/db/database";
 import { PendingLookupRepository } from "@/db/repositories/pending-lookup-repository";
 import { TripRepository } from "@/db/repositories/trip-repository";
@@ -90,9 +91,14 @@ describe("a pending line on the other trip pages", () => {
     await seedTripWithMilkAndPending();
     render(
       <MemoryRouter initialEntries={["/trips/end"]}>
-        <Routes>
-          <Route path="/trips/end" element={<EndTripPage />} />
-        </Routes>
+        <FactoryProvider
+          checkLicence={async () => ({ state: "none", checkedAt: "x" })}
+          askDoor={async () => "unreachable"}
+        >
+          <Routes>
+            <Route path="/trips/end" element={<EndTripPage />} />
+          </Routes>
+        </FactoryProvider>
       </MemoryRouter>,
     );
     await screen.findByText("Waiting on the factory");
