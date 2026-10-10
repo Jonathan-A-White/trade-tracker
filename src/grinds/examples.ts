@@ -11,15 +11,18 @@ export const EXAMPLE_PHOTO_MAX_BYTES = 200 * 1024;
 /** What one answer field must show. Every key given must hold. */
 export interface FieldCheck {
   equals?: unknown;
-  isNull?: boolean;
-  oneOf?: unknown[];
+  is_null?: boolean;
+  one_of?: unknown[];
   contains?: string;
   matches?: string;
   present?: boolean;
 }
 
-/** Answer path (a field name, dots for nested fields) to what it must show. */
-export type ExpectBlock = Record<string, FieldCheck>;
+/**
+ * Answer path (a field name, dots for nested fields) to what it must show: an
+ * object of checks, or a bare value, which means the field equals it.
+ */
+export type ExpectBlock = Record<string, FieldCheck | string | number | boolean | null>;
 
 export interface GrindExample {
   description: string;
@@ -30,7 +33,23 @@ export interface GrindExample {
   expect: ExpectBlock;
 }
 
-const CHECKS = ["equals", "isNull", "oneOf", "contains", "matches", "present"];
+/** The check names `mw grist smoke` knows; any other key in a check object is refused. */
+const CHECKS = ["equals", "is_null", "one_of", "contains", "matches", "present"];
+
+/** A bare string that is a check name in some spelling (isNull, oneOf, is-null) is a misplaced check, not a value. */
+function looksLikeCheckName(text: string): boolean {
+  const squashed = text.toLowerCase().replace(/[_\-\s]/g, "");
+  return CHECKS.some((name) => name.replace("_", "") === squashed);
+}
+
+function isCheckObject(check: unknown): check is Record<string, unknown> {
+  return typeof check === "object" && check !== null && !Array.isArray(check);
+}
+
+/** A check as an object of checks: a bare value means the field equals it. */
+function asChecks(check: unknown): FieldCheck {
+  return isCheckObject(check) ? (check as FieldCheck) : { equals: check };
+}
 
 type Schema = Record<string, unknown>;
 
@@ -65,34 +84,40 @@ export function expectProblems(expectBlock: unknown, answerSchema: Schema): stri
       problems.push(`${path}: not a field of the answer schema`);
       continue;
     }
-    if (typeof check !== "object" || check === null || Array.isArray(check)) {
-      problems.push(`${path}: must be an object of checks`);
+    if (typeof check === "string" && looksLikeCheckName(check)) {
+      problems.push(
+        `${path}: the bare text "${check}" would be read as a value to equal, not a check; write {"is_null": true} or another of ${CHECKS.join(", ")}`
+      );
       continue;
     }
-    const keys = Object.keys(check);
-    if (keys.length === 0) problems.push(`${path}: has no checks`);
-    for (const key of keys) {
-      if (!CHECKS.includes(key)) problems.push(`${path}: unknown check "${key}"`);
+    if (isCheckObject(check)) {
+      const keys = Object.keys(check);
+      if (keys.length === 0) problems.push(`${path}: has no checks`);
+      for (const key of keys) {
+        if (!CHECKS.includes(key)) {
+          problems.push(`${path}: unknown check "${key}" (the checks are ${CHECKS.join(", ")})`);
+        }
+      }
     }
-    const c = check as FieldCheck;
+    const c = asChecks(check);
     const valid = ajv.compile(schema);
     if ("equals" in c && !valid(c.equals)) {
       problems.push(`${path}: equals ${JSON.stringify(c.equals)} is never a valid answer`);
     }
-    if ("oneOf" in c) {
-      if (!Array.isArray(c.oneOf) || c.oneOf.length === 0) {
-        problems.push(`${path}: oneOf must be a non-empty list`);
+    if ("one_of" in c) {
+      if (!Array.isArray(c.one_of) || c.one_of.length === 0) {
+        problems.push(`${path}: one_of must be a non-empty list`);
       } else {
-        for (const value of c.oneOf) {
+        for (const value of c.one_of) {
           if (!valid(value)) {
-            problems.push(`${path}: oneOf ${JSON.stringify(value)} is never a valid answer`);
+            problems.push(`${path}: one_of ${JSON.stringify(value)} is never a valid answer`);
           }
         }
       }
     }
-    if ("isNull" in c) {
-      if (typeof c.isNull !== "boolean") problems.push(`${path}: isNull must be true or false`);
-      else if (c.isNull && !allowsType(schema, "null")) {
+    if ("is_null" in c) {
+      if (typeof c.is_null !== "boolean") problems.push(`${path}: is_null must be true or false`);
+      else if (c.is_null && !allowsType(schema, "null")) {
         problems.push(`${path}: is never null in the answer schema`);
       }
     }
@@ -127,17 +152,18 @@ function valueAt(answer: unknown, path: string): unknown {
 /** What an answer fails to show of an expect block; empty when every check holds. */
 export function checkExpect(expectBlock: ExpectBlock, answer: unknown): string[] {
   const failures: string[] = [];
-  for (const [path, c] of Object.entries(expectBlock)) {
+  for (const [path, check] of Object.entries(expectBlock)) {
+    const c = asChecks(check);
     const value = valueAt(answer, path);
     const shown = JSON.stringify(value) ?? "absent";
     if ("equals" in c && JSON.stringify(value) !== JSON.stringify(c.equals)) {
       failures.push(`${path}: expected ${JSON.stringify(c.equals)}, got ${shown}`);
     }
-    if (c.isNull !== undefined && (value === null) !== c.isNull) {
-      failures.push(`${path}: expected ${c.isNull ? "null" : "not null"}, got ${shown}`);
+    if (c.is_null !== undefined && (value === null) !== c.is_null) {
+      failures.push(`${path}: expected ${c.is_null ? "null" : "not null"}, got ${shown}`);
     }
-    if (c.oneOf && !c.oneOf.some((o) => JSON.stringify(o) === JSON.stringify(value))) {
-      failures.push(`${path}: expected one of ${JSON.stringify(c.oneOf)}, got ${shown}`);
+    if (c.one_of && !c.one_of.some((o) => JSON.stringify(o) === JSON.stringify(value))) {
+      failures.push(`${path}: expected one of ${JSON.stringify(c.one_of)}, got ${shown}`);
     }
     if (c.contains !== undefined && !(typeof value === "string" && value.includes(c.contains))) {
       failures.push(`${path}: expected to contain ${JSON.stringify(c.contains)}, got ${shown}`);
