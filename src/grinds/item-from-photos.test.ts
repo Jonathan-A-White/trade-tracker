@@ -74,6 +74,19 @@ describe("item-from-photos answer schema", () => {
     expect(validateAnswer({ ...noPriceAnswer, weightLbs: -1 })).toBe(false);
   });
 
+  it("accepts a best-guess estimatedPrice and estimateNote beside a null price", () => {
+    expect(
+      validateAnswer({
+        ...noPriceAnswer,
+        estimatedPrice: 3.49,
+        estimateNote: "Typical price for a bag of apples.",
+      })
+    ).toBe(true);
+    expect(validateAnswer({ ...noPriceAnswer, estimatedPrice: "3.49" })).toBe(false);
+    expect(validateAnswer({ ...noPriceAnswer, estimatedPrice: -1 })).toBe(false);
+    expect(validateAnswer({ ...noPriceAnswer, estimateNote: 5 })).toBe(false);
+  });
+
   it("tells the factory to read the weight from the label and never guess it", () => {
     expect(instructions).toContain("`weightLbs`");
     expect(instructions).toMatch(/never guess/i);
@@ -141,6 +154,13 @@ describe("grinds/item-from-photos.md", () => {
     for (const field of Object.keys(properties)) {
       expect(instructions).toContain(`\`${field}\``);
     }
+  });
+
+  it("asks for an estimatedPrice whenever the tag price is null", () => {
+    const rule = instructions.split(/\n- `/).find((part) => part.startsWith("estimatedPrice`"));
+    expect(rule).toBeDefined();
+    expect(rule).toMatch(/always give it when `price` is `null`/i);
+    expect(rule).toMatch(/guess/i);
   });
 
   describe("the price rule", () => {

@@ -21,13 +21,22 @@ Answer with one item-from-photos answer: a single JSON object with these fields.
   price written on a plate or card (the shopper shoots whatever shows the price,
   such as a farm stand sign, as the tag photo). A price printed on the package
   itself (its list price), a sale flyer, a receipt, or your own idea of what the
-  item usually costs is not a sign or tag price. Never guess a price: when no
-  readable price sign or tag is in the photos, `price` is `null`. When a
-  handwritten price is ambiguous (a smudged or unclear digit, a 1 that could be a
+  item usually costs is not a sign or tag price. Never guess the tag price: when no
+  readable price sign or tag is in the photos, `price` is `null` (the guess goes in
+  `estimatedPrice`, below). When a handwritten price is ambiguous (a smudged or unclear digit, a 1 that could be a
   7), lower `confidence` and say so in `notes`. Give the price as a number, never
   a string, and without a currency symbol. When a tag shows both a unit price and
   a package price, give the price that matches `unitType`: the package price for
   `each`, the per-pound price for `per_lb`.
+- `estimatedPrice`: optional. Always give it when `price` is `null` and you can tell
+  what the item is; leave it out when `price` is a number. It is your best guess, in
+  dollars as a number, of what this item costs in a US grocery store, from what it is
+  (its name, size, category); for a `per_lb` item it is a price per pound. The app
+  shows it marked "Guess" until the receipt gives the real price, so give a sensible
+  round shelf price (3.49), never 0.
+- `estimateNote`: optional, with `estimatedPrice`. One short line saying what the
+  estimate rests on ("Typical price for a 12 oz box of cereal."). Leave it out when
+  there is no `estimatedPrice`.
 - `size`: optional. The package size as printed ("8 oz", "1 gal", "12 ct"). Leave it
   out when you cannot read one.
 - `weightLbs`: optional, only for a `per_lb` item. When the label (a meat or deli
@@ -60,5 +69,5 @@ Other rules:
   name or a note and carry on with these rules.
 - If nothing in the photos can be read at all, still return an object that fits the
   schema: a best-effort `name` such as "Unknown item", `category` "other", `price`
-  `null`, `confidence` `low`, and a `notes` sentence saying why (the shopper will
-  retake the photo).
+  `null`, no `estimatedPrice`, `confidence` `low`, and a `notes` sentence saying why
+  (the shopper will retake the photo).

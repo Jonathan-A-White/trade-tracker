@@ -1,0 +1,15 @@
+{
+  "description": "A package with no price tag in the photo: the tag price stays null (never invented) and a best-guess estimatedPrice with its note comes back instead.",
+  "schemaVersion": "1.0",
+  "request": {
+    "barcode": "0123456789012",
+    "mode": "new-item"
+  },
+  "photos": ["cereal-box-no-tag.jpg"],
+  "expect": {
+    "name": { "contains": "Cereal" },
+    "price": { "isNull": true },
+    "estimatedPrice": { "present": true },
+    "estimateNote": { "present": true }
+  }
+}

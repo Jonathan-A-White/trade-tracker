@@ -204,6 +204,36 @@ describe("applyReceiptAnswer", () => {
     expect(saved?.price).toBe(3.5);
   });
 
+  it("replaces a guessed price with the receipt's, clears the mark and lists the change as a guess", async () => {
+    const trip = await seedTrip();
+    const { item, line } = await addLine(trip.id, "0006", "Oat Bars", 3.49, 1);
+    await db.items.update(item.id, { currentPrice: 0 });
+    await tripItemRepo.update(line.id, { guess: { basis: "Typical price." } });
+
+    const result = await applyReceiptAnswer(trip.id, answer([receiptLine(line.id, 3.99)]));
+
+    expect(result.changes).toHaveLength(1);
+    expect(result.changes[0]).toMatchObject({ oldPrice: 3.49, newPrice: 3.99, wasGuess: true });
+    const saved = await db.tripItems.get(line.id);
+    expect(saved?.price).toBe(3.99);
+    expect(saved?.guess).toBeUndefined();
+    expect((await db.items.get(item.id))?.currentPrice).toBe(3.99);
+    expect((await db.trips.get(trip.id))?.receiptReconcile?.changes[0].wasGuess).toBe(true);
+  });
+
+  it("clears the mark when the receipt agrees with the guess", async () => {
+    const trip = await seedTrip();
+    const { item, line } = await addLine(trip.id, "0006", "Oat Bars", 3.49, 1);
+    await db.items.update(item.id, { currentPrice: 0 });
+    await tripItemRepo.update(line.id, { guess: { basis: "Typical price." } });
+
+    const result = await applyReceiptAnswer(trip.id, answer([receiptLine(line.id, 3.49)]));
+
+    expect(result.changes).toHaveLength(0);
+    expect((await db.tripItems.get(line.id))?.guess).toBeUndefined();
+    expect((await db.items.get(item.id))?.currentPrice).toBe(3.49);
+  });
+
   it("lists receipt lines with no trip line as not matched and leaves the trip alone", async () => {
     const trip = await seedTrip();
     const { line } = await addLine(trip.id, "0042", "Milk", 3.99, 1);

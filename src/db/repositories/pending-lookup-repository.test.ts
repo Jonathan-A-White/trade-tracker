@@ -311,4 +311,139 @@ describe("PendingLookupRepository", () => {
       expect(line.lineTotal).toBe(9.98);
     });
   });
+
+  describe("a best guess when the tag gave no price", () => {
+    beforeEach(async () => {
+      await Promise.all(db.tables.map((table) => table.clear()));
+    });
+
+    const noTag = {
+      name: "Oat Bars",
+      category: "Snacks & Candy",
+      unitType: "each" as const,
+      price: null,
+      confidence: "medium" as const,
+    };
+
+    it("fills the line with the factory's estimate, marked as a guess, and counts it", async () => {
+      const trip = await startTrip();
+      const lookup = await lookups.create({ barcode: "0066", tripId: trip.id, photos: [] });
+
+      await lookups.applyAnswer(lookup.id, {
+        ...noTag,
+        estimatedPrice: 3.49,
+        estimateNote: "Typical price for a box of granola bars.",
+      });
+
+      const [line] = await tripItemRepo.getByTrip(trip.id);
+      expect(line.pending).toBeUndefined();
+      expect(line.price).toBe(3.49);
+      expect(line.lineTotal).toBe(3.49);
+      expect(line.guess).toEqual({ basis: "Typical price for a box of granola bars." });
+      expect(line.priceFlag).toBeUndefined();
+      expect((await tripRepo.getById(trip.id))?.scannedSubtotal).toBe(3.49);
+    });
+
+    it("leaves the item's stored price alone and writes no price history", async () => {
+      const trip = await startTrip();
+      const lookup = await lookups.create({ barcode: "0066", tripId: trip.id, photos: [] });
+
+      await lookups.applyAnswer(lookup.id, { ...noTag, estimatedPrice: 3.49 });
+
+      const item = await db.items.where("barcode").equals("0066").first();
+      expect(item?.currentPrice).toBe(0);
+      expect(await db.priceHistory.count()).toBe(0);
+    });
+
+    it("prefers the item's past price to the factory's estimate", async () => {
+      const trip = await startTrip();
+      await itemRepo.create({
+        barcode: "0066",
+        name: "Oat Bars",
+        currentPrice: 4.19,
+        unitType: "each",
+      });
+      const lookup = await lookups.create({ barcode: "0066", tripId: trip.id, photos: [] });
+
+      await lookups.applyAnswer(lookup.id, { ...noTag, estimatedPrice: 3.49 });
+
+      const [line] = await tripItemRepo.getByTrip(trip.id);
+      expect(line.price).toBe(4.19);
+      expect(line.guess?.basis).toMatch(/last price/i);
+      expect((await db.items.where("barcode").equals("0066").first())?.currentPrice).toBe(4.19);
+    });
+
+    it("prefers the item's last price at this store to its current price", async () => {
+      const trip = await startTrip();
+      const item = await itemRepo.create({
+        barcode: "0066",
+        name: "Oat Bars",
+        currentPrice: 4.19,
+        unitType: "each",
+      });
+      await db.priceHistory.put({
+        id: "h1",
+        itemId: item.id,
+        storeId: "s1",
+        tripItemId: "old",
+        price: 3.99,
+        recordedAt: 1000,
+      });
+      await db.priceHistory.put({
+        id: "h2",
+        itemId: item.id,
+        storeId: "other",
+        tripItemId: "old2",
+        price: 5.5,
+        recordedAt: 2000,
+      });
+      const lookup = await lookups.create({ barcode: "0066", tripId: trip.id, photos: [] });
+
+      await lookups.applyAnswer(lookup.id, { ...noTag, estimatedPrice: 3.49 });
+
+      const [line] = await tripItemRepo.getByTrip(trip.id);
+      expect(line.price).toBe(3.99);
+      expect(line.guess?.basis).toMatch(/Shop/);
+    });
+
+    it("keeps 'Add price' when there is no past price and no estimate", async () => {
+      const trip = await startTrip();
+      const lookup = await lookups.create({ barcode: "0066", tripId: trip.id, photos: [] });
+
+      await lookups.applyAnswer(lookup.id, noTag);
+
+      const [line] = await tripItemRepo.getByTrip(trip.id);
+      expect(line.price).toBe(0);
+      expect(line.guess).toBeUndefined();
+      expect(line.priceFlag).toBe("add");
+    });
+
+    it("a tag price beats any guess and is not marked", async () => {
+      const trip = await startTrip();
+      const lookup = await lookups.create({ barcode: "0066", tripId: trip.id, photos: [] });
+
+      await lookups.applyAnswer(lookup.id, { ...noTag, price: 4.25, estimatedPrice: 3.49 });
+
+      const [line] = await tripItemRepo.getByTrip(trip.id);
+      expect(line.price).toBe(4.25);
+      expect(line.guess).toBeUndefined();
+      expect(line.priceFlag).toBe("check");
+    });
+
+    it("a hand edit of the price clears the mark; a quantity edit keeps it", async () => {
+      const trip = await startTrip();
+      const lookup = await lookups.create({ barcode: "0066", tripId: trip.id, photos: [] });
+      await lookups.applyAnswer(lookup.id, { ...noTag, estimatedPrice: 3.49 });
+      const [line] = await tripItemRepo.getByTrip(trip.id);
+
+      await tripItemRepo.update(line.id, { quantity: 2 });
+      expect((await db.tripItems.get(line.id))?.guess).toBeDefined();
+
+      await tripItemRepo.update(line.id, { price: 3.75 });
+      const saved = await db.tripItems.get(line.id);
+      expect(saved?.guess).toBeUndefined();
+      expect(saved?.price).toBe(3.75);
+      expect((await db.items.where("barcode").equals("0066").first())?.currentPrice).toBe(0);
+    });
+  });
 });

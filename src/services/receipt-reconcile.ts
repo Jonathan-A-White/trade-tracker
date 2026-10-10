@@ -172,14 +172,25 @@ async function applyToLine(
   const priceChanged = newPrice !== round2(line.price);
   const quantityChanged = newQuantity !== line.quantity;
   const weightChanged = receiptWeight !== null && receiptWeight !== line.weightLbs;
-  if (!priceChanged && !quantityChanged && !weightChanged) return null;
+  const wasGuess = line.guess !== undefined;
+  if (!priceChanged && !quantityChanged && !weightChanged) {
+    // the receipt agrees with a guess: the price is real now, though nothing changed
+    if (wasGuess) {
+      await tripItemRepo.update(line.id, { guess: undefined });
+      if (item.currentPrice !== newPrice) {
+        await db.items.update(item.id, { currentPrice: newPrice, updatedAt: now });
+      }
+    }
+    return null;
+  }
 
   await tripItemRepo.update(line.id, {
     price: newPrice,
+    ...(wasGuess ? { guess: undefined } : {}),
     ...(quantityChanged ? { quantity: newQuantity } : {}),
     ...(weightChanged && receiptWeight !== null ? { weightLbs: receiptWeight } : {}),
   });
-  if (priceChanged) {
+  if (priceChanged || (wasGuess && item.currentPrice !== newPrice)) {
     await db.items.update(item.id, { currentPrice: newPrice, updatedAt: now });
     if (trip) {
       await db.priceHistory.put({
@@ -201,6 +212,7 @@ async function applyToLine(
     newQuantity,
     oldWeightLbs: line.weightLbs ?? null,
     newWeightLbs: newWeight ?? null,
+    ...(wasGuess ? { wasGuess: true as const } : {}),
   };
 }
 

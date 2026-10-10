@@ -32,6 +32,8 @@ export class TripItemRepository {
           price: newPrice,
           lineTotal,
           onSale: input.onSale,
+          // a price from a fresh scan is not a guess
+          guess: undefined,
         });
 
         const trip = await db.trips.get(input.tripId);
@@ -120,10 +122,14 @@ export class TripItemRepository {
       (existing.priceFlag === "check" ||
         (existing.priceFlag === "add" && updated.price > 0));
 
+    // A hand-set price is no longer a guess (a count or weight edit leaves the guess in place).
+    const clearsGuess = !("guess" in changes) && "price" in changes && existing.guess !== undefined;
+
     await db.transaction("rw", [db.tripItems, db.trips], async () => {
       await db.tripItems.update(id, {
         ...changes,
         ...(clearsFlag ? { priceFlag: undefined } : {}),
+        ...(clearsGuess ? { guess: undefined } : {}),
         lineTotal,
       });
       await this.recalcTripSubtotal(existing.tripId);

@@ -24,6 +24,41 @@ function weightChange(unitType: Item["unitType"], answer: ItemFromPhotosAnswer):
     : {};
 }
 
+/**
+ * The best guess for a line whose tag gave no price: the item's own last price
+ * at this store, else its stored price, else the factory's estimate; null when
+ * there is none. A guess is never written to the item.
+ */
+async function bestGuess(
+  item: Item,
+  storeId: string | undefined,
+  storeName: string | undefined,
+  answer: ItemFromPhotosAnswer,
+): Promise<{ price: number; basis: string } | null> {
+  if (storeId) {
+    const history = await db.priceHistory.where("itemId").equals(item.id).toArray();
+    const last = history
+      .filter((entry) => entry.storeId === storeId && entry.price > 0)
+      .sort((a, b) => b.recordedAt - a.recordedAt)[0];
+    if (last) {
+      return {
+        price: last.price,
+        basis: `Last price here${storeName ? ` at ${storeName}` : ""}.`,
+      };
+    }
+  }
+  if (item.currentPrice > 0) {
+    return { price: item.currentPrice, basis: "Last price you paid." };
+  }
+  if (answer.estimatedPrice !== undefined && answer.estimatedPrice > 0) {
+    return {
+      price: answer.estimatedPrice,
+      basis: answer.estimateNote?.trim() || "The factory's estimate.",
+    };
+  }
+  return null;
+}
+
 export class PendingLookupRepository {
   /**
    * Records a pending lookup and puts its pending line in the trip. The line
@@ -205,8 +240,10 @@ export class PendingLookupRepository {
    * Fills a lookup from a checked answer, in one transaction: a new item (or the
    * one already holding the barcode), its pending line turned into an ordinary
    * one, and, only when the tag gave a price, that price and one priceHistory
-   * entry. The line carries a 'check' flag with a price and an 'add' flag
-   * without; photos are dropped.
+   * entry. The line carries a 'check' flag with a price. Without a tag price it
+   * is filled with a best guess marked as such (the item's last price, else the
+   * factory's estimate; never stored on the item), or flagged 'add' when there
+   * is none. Photos are dropped.
    */
   async applyAnswer(id: string, answer: ItemFromPhotosAnswer): Promise<void> {
     const lookup = await db.pendingLookups.get(id);
@@ -215,7 +252,7 @@ export class PendingLookupRepository {
 
     await db.transaction(
       "rw",
-      [db.pendingLookups, db.items, db.tripItems, db.priceHistory, db.trips],
+      [db.pendingLookups, db.items, db.tripItems, db.priceHistory, db.trips, db.stores],
       async () => {
         const price = answer.price;
         const now = Date.now();
@@ -239,15 +276,17 @@ export class PendingLookupRepository {
           .equals([lookup.tripId, lookup.itemId])
           .first();
         if (line) {
-          const linePrice = price ?? item.currentPrice;
+          const trip = await db.trips.get(lookup.tripId);
+          const store = trip ? await db.stores.get(trip.storeId) : undefined;
+          const guess = price === null ? await bestGuess(item, trip?.storeId, store?.name, answer) : null;
           await tripItemRepo.update(line.id, {
             itemId: item.id,
-            price: linePrice,
+            price: price ?? guess?.price ?? item.currentPrice,
             pending: undefined,
-            priceFlag: price === null ? "add" : "check",
+            priceFlag: price !== null ? "check" : guess ? undefined : "add",
+            guess: guess ? { basis: guess.basis } : undefined,
             ...weightChange(item.unitType, answer),
           });
-          const trip = await db.trips.get(lookup.tripId);
           if (price !== null && trip) {
             await db.priceHistory.put({
               id: crypto.randomUUID(),

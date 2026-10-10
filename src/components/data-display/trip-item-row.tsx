@@ -10,6 +10,7 @@ interface TripItem {
   lineTotal: number;
   onSale: boolean;
   priceFlag?: "check" | "add";
+  guess?: { basis: string };
 }
 
 interface TripItemRowProps {
@@ -253,6 +254,11 @@ export function TripItemRow({
                   {tripItem.priceFlag === "add" ? "Add price" : "Check price"}
                 </button>
               )}
+              {tripItem.guess && (
+                <span className="inline-flex items-center rounded-full bg-sky-100 dark:bg-sky-900 px-1.5 py-0.5 text-xs font-medium text-sky-800 dark:text-sky-200">
+                  Guess
+                </span>
+              )}
               {tripItem.onSale && (
                 <span className="inline-flex items-center rounded-full bg-orange-100 dark:bg-orange-900 px-1.5 py-0.5 text-xs font-medium text-orange-700 dark:text-orange-300">
                   SALE
@@ -273,6 +279,11 @@ export function TripItemRow({
                 </span>
               )}
             </p>
+            {tripItem.guess && (
+              <p className="text-xs text-sky-700 dark:text-sky-300 mt-0.5">
+                {tripItem.guess.basis} Edit the price when you know it.
+              </p>
+            )}
             {(onPhotoPrice || priceLookupNote) && (
               <div className="mt-1 flex gap-3">
                 {priceLookupNote?.kind === "failed" && onRetryPriceLookup && (

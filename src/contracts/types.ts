@@ -58,6 +58,12 @@ export interface TripItem {
    * the shopper should look at, "add" when it gave none. Cleared by a tap or an edit.
    */
   priceFlag?: "check" | "add";
+  /**
+   * Set when the line's price is a best guess (the item's past price, or the factory's
+   * estimate) because no tag price came; it counts in totals. `basis` says what it rests on.
+   * Cleared when a receipt or a hand edit gives the real price.
+   */
+  guess?: { basis: string };
   addedAt: number;
 }
 
@@ -95,7 +101,12 @@ export interface ItemFromPhotosAnswer {
   name: string;
   category: string;
   unitType: UnitType;
+  /** The tag price only; null when no readable tag. */
   price: number | null;
+  /** Best guess in dollars (per unitType) from what the item is; given whenever price is null. */
+  estimatedPrice?: number;
+  /** One short line: what estimatedPrice is based on. */
+  estimateNote?: string;
   size?: string;
   /** Net weight in lb read from a per-pound label; only for a per_lb item whose label shows it. */
   weightLbs?: number;
@@ -155,6 +166,8 @@ export interface ReceiptChange {
   newQuantity: number;
   oldWeightLbs: number | null;
   newWeightLbs: number | null;
+  /** True when the old price was a best guess, not a tag or earlier receipt price. */
+  wasGuess?: true;
 }
 
 /** A receipt line he placed as a new item: the trip line it became. */

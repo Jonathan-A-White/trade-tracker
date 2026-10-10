@@ -30,7 +30,9 @@ async function toPhoto(blob: Blob): Promise<grist.Photo> {
 }
 
 function describeChange(change: ReceiptChange): string {
-  const parts = [`${formatCurrency(change.oldPrice)} → ${formatCurrency(change.newPrice)}`];
+  const parts = [
+    `${change.wasGuess ? "Guess " : ""}${formatCurrency(change.oldPrice)} → ${formatCurrency(change.newPrice)}`,
+  ];
   if (change.newQuantity !== change.oldQuantity) {
     parts.push(`${change.oldQuantity} → ${change.newQuantity} bought`);
   }
