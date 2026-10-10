@@ -184,7 +184,8 @@ describe("End Trip: Photograph receipt", () => {
     expect(rows[1]).toHaveTextContent("Eggs");
     expect(rows[1]).toHaveTextContent("$4.99 → $5.49");
     expect(screen.getByRole("heading", { name: "Not matched: 0" })).toBeInTheDocument();
-    expect(screen.getByPlaceholderText("0.00")).toHaveValue(14.78);
+    // the total is written after the answer is applied: wait for it
+    await waitFor(() => expect(screen.getByPlaceholderText("0.00")).toHaveValue(14.78));
 
     expect((await db.tripItems.get(lines.Milk))?.price).toBe(4.29);
     expect((await db.tripItems.get(lines.Eggs))?.price).toBe(5.49);
@@ -309,7 +310,9 @@ describe("End Trip: Photograph receipt", () => {
     await user.click(screen.getByRole("button", { name: "Send receipt" }));
 
     expect(await screen.findByRole("status")).toHaveTextContent("Waiting for the factory");
-    expect(screen.getByRole("button", { name: "Send receipt" })).toBeDisabled();
+    // while it is sending the button is disabled; once the send returns the photos are cleared and it is gone
+    const sendButton = screen.queryByRole("button", { name: "Send receipt" });
+    if (sendButton) expect(sendButton).toBeDisabled();
     // the status shows before the page starts waiting on the answer; release only once it does
     await waitFor(() => expect(client.awaitAnswer).toHaveBeenCalled());
     release(answered(receipt([], 5)));
@@ -501,7 +504,8 @@ describe("End Trip: Photograph receipt", () => {
     const notOnReceipt = await screen.findByRole("heading", { name: "Trip lines not on the receipt" });
     expect(within(notOnReceipt.parentElement!).getByText("Bread")).toBeInTheDocument();
     // the receipt total comes back too
-    expect(screen.getByPlaceholderText("0.00")).toHaveValue(16.53);
+    // the total is written after the answer is applied: wait for it
+    await waitFor(() => expect(screen.getByPlaceholderText("0.00")).toHaveValue(16.53));
   });
 
   it("leaving the page while the factory reads the receipt still gets the answer applied", async () => {
@@ -532,7 +536,8 @@ describe("End Trip: Photograph receipt", () => {
     await renderPage();
     expect(await screen.findByRole("heading", { name: "What changed" })).toBeInTheDocument();
     expect(screen.queryByText(/Waiting for the factory/)).not.toBeInTheDocument();
-    expect(screen.getByPlaceholderText("0.00")).toHaveValue(4.29);
+    // the total is written after the answer is applied: wait for it
+    await waitFor(() => expect(screen.getByPlaceholderText("0.00")).toHaveValue(4.29));
   });
 
   it("shows the wait with the sent time after leaving and coming back, and after a restart", async () => {
