@@ -12,6 +12,7 @@ import {
 import { db } from "@/db/database";
 import { formatCurrency } from "@/core/pricing";
 import { getTaxModule } from "@/core/tax";
+import { loadItemsById } from "@/trips/use-trip-lines";
 import { PageHeader } from "@/components/layout/page-header";
 import { StatCard } from "@/components/data-display/stat-card";
 
@@ -49,12 +50,10 @@ export default function TripComparisonPage() {
       }
 
       const tripItems = await db.tripItems.where("tripId").equals(trip.id).toArray();
-      const itemIds = tripItems.map((ti) => ti.itemId);
-      const items = await db.items.where("id").anyOf(itemIds).toArray();
-      const itemMap = new Map(items.map((item) => [item.id, item]));
+      const itemsById = await loadItemsById(tripItems.map((ti) => ti.itemId));
 
       const lineItems = tripItems.map((ti) => {
-        const item = itemMap.get(ti.itemId);
+        const item = itemsById[ti.itemId];
         return {
           name: item?.name ?? "Unknown Item",
           lineTotal: ti.lineTotal,

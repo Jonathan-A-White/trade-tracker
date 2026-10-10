@@ -39,6 +39,18 @@ export async function loadPendingByItemId(
   return map;
 }
 
+/** The items with these ids, keyed by id. Ids with no item are left out. */
+export async function loadItemsById(
+  itemIds: readonly string[],
+): Promise<Record<string, Item>> {
+  const map: Record<string, Item> = {};
+  if (itemIds.length === 0) return map;
+  for (const item of await db.items.where("id").anyOf([...new Set(itemIds)]).toArray()) {
+    map[item.id] = item;
+  }
+  return map;
+}
+
 /**
  * A trip with its store, lines, the items on them and its open lookups, live.
  * Each part is read on its own, so `loading` stays true until every one has
@@ -64,14 +76,7 @@ export function useTripLines(tripId: string | undefined): TripLines {
 
   const itemsRead = useLiveQuery(async () => {
     if (!lines) return undefined;
-    const map: Record<string, Item> = {};
-    if (lines.length > 0) {
-      const itemIds = [...new Set(lines.map((ti) => ti.itemId))];
-      for (const item of await db.items.where("id").anyOf(itemIds).toArray()) {
-        map[item.id] = item;
-      }
-    }
-    return { itemsById: map };
+    return { itemsById: await loadItemsById(lines.map((ti) => ti.itemId)) };
   }, [lines]);
 
   const pendingRead = useLiveQuery(
