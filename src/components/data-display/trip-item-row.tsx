@@ -331,7 +331,7 @@ export function TripItemRow({
               }}
               className="w-full text-left px-4 py-2.5 text-sm text-gray-900 dark:text-gray-100 hover:bg-gray-100 dark:hover:bg-gray-600 cursor-pointer border-t border-gray-100 dark:border-gray-600"
             >
-              Edit Quantity
+              {unitType === "per_lb" ? "Edit Weight" : "Edit Quantity"}
             </button>
           )}
         </div>,
