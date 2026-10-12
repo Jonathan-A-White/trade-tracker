@@ -1,5 +1,7 @@
 # CLAUDE.md
 
+VISION.md is the Governor's vision for this app: a change that would cross one of its lines stops and says so.
+
 ## Quick Reference
 
 ```bash
