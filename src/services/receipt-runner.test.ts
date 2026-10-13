@@ -133,22 +133,132 @@ describe("ReceiptRunner", () => {
     expect((await db.tripItems.get(line.id))?.price).toBe(3.99);
   });
 
-  it("waits for nothing without a client, and does not wait on a receipt that has timed out", async () => {
+  it("waits for nothing without a client", async () => {
     const { trip } = await seed();
     const { client } = fakeClient();
     await sendReceipt(client, trip.id, []);
-    const runner = makeRunner(null);
+    makeRunner(null);
+    await new Promise((resolve) => setTimeout(resolve, 30));
+    expect(client.awaitAnswer).not.toHaveBeenCalled();
+  });
+
+  it("an answer that waited hours while the page was hidden is fetched and applied when the page is seen again", async () => {
+    // his Trader Joe's receipt (mw-iy99ci.30): the mill answered in 41 s, the app was in the
+    // background, and the deadline had passed by the time it was opened again
+    const now = Date.now();
+    await db.stores.put({ id: "s1", name: "Trader Joe's", createdAt: now, updatedAt: now });
+    const trip = await tripRepo.create({ storeId: "s1", startedAt: now });
+    const lineIds: string[] = [];
+    for (let i = 0; i < 42; i++) {
+      const item = await itemRepo.create({
+        barcode: `00${i}`,
+        name: `Item ${i}`,
+        currentPrice: 1,
+        unitType: "each",
+      });
+      const line = await tripItemRepo.addToTrip({
+        tripId: trip.id,
+        itemId: item.id,
+        price: 1,
+        quantity: 1,
+        onSale: false,
+      });
+      lineIds.push(line.id);
+    }
+    // 46 receipt lines: 39 matched to a trip line, 7 not on the trip
+    const answer: ReceiptReconcileAnswer = {
+      store: "Trader Joe's",
+      date: "2026-10-09",
+      subtotal: null,
+      tax: 2.84,
+      total: 197.34,
+      lines: Array.from({ length: 46 }, (_, i) => ({
+        text: `RECEIPT LINE ${i}`,
+        price: 2 + i / 100,
+        quantity: 1,
+        weightLbs: null,
+        tripItemId: i < 39 ? lineIds[i] : null,
+        confidence: "low" as const,
+      })),
+      unreadable: "The top part of the receipt is blurry.",
+    };
+    const client: ReceiptClient = {
+      send: vi.fn(async () => "direct:tx1"),
+      // like bsv-kit's awaitAnswer, which pages the backend from the start: an answer already
+      // there comes back at once
+      awaitAnswer: vi.fn(async (txid: string) => ({
+        re: txid,
+        status: "answered" as const,
+        answer,
+        grind,
+      })),
+    };
+    await sendReceipt(client, trip.id, []);
+    await db.trips.update(trip.id, {
+      receiptPending: {
+        ...(await db.trips.get(trip.id))!.receiptPending!,
+        sentAt: Date.now() - 4 * 60 * 60_000,
+      },
+    });
+    const runner = new ReceiptRunner({ backoffBaseMs: 1 });
+    runners.push(runner);
+    runner.setVisible(false);
+    runner.setClient(client);
+    runner.start();
     await new Promise((resolve) => setTimeout(resolve, 30));
     expect(client.awaitAnswer).not.toHaveBeenCalled();
 
+    runner.setVisible(true);
+
+    await waitFor(async () => expect((await db.tripItems.get(lineIds[0]))?.price).toBe(2));
+    const saved = await db.trips.get(trip.id);
+    expect(saved?.receiptPending).toBeUndefined();
+    expect(saved?.receiptReconcile?.total).toBe(197.34);
+    expect(saved?.receiptReconcile?.matchedTripItemIds).toHaveLength(39);
+    expect(saved?.receiptReconcile?.unmatched).toHaveLength(7);
+  });
+
+  it("a receipt past its deadline gets one last look, then is left alone", async () => {
+    const { trip } = await seed();
+    const { client } = fakeClient();
+    await sendReceipt(client, trip.id, []);
     await db.trips.update(trip.id, {
       receiptPending: {
         ...(await db.trips.get(trip.id))!.receiptPending!,
         sentAt: Date.now() - RECEIPT_TIMEOUT_MS - 1,
       },
     });
+    const runner = new ReceiptRunner({ backoffBaseMs: 1, finalLookMs: 20 });
+    runners.push(runner);
     runner.setClient(client);
+    runner.start();
+    await waitFor(() => expect(client.awaitAnswer).toHaveBeenCalledTimes(1));
+    const signal = vi.mocked(client.awaitAnswer).mock.calls[0][1];
+    await waitFor(() => expect(signal.aborted).toBe(true));
+
+    runner.kick();
     await new Promise((resolve) => setTimeout(resolve, 30));
-    expect(client.awaitAnswer).not.toHaveBeenCalled();
+    expect(client.awaitAnswer).toHaveBeenCalledTimes(1);
+    expect((await db.trips.get(trip.id))?.receiptPending?.error).toBeUndefined();
+  });
+
+  it("an answer out of shape says the factory answered and why it was not used", async () => {
+    const { trip, line } = await seed();
+    const { client, waiting } = fakeClient();
+    await sendReceipt(client, trip.id, []);
+    makeRunner(client);
+    await waitFor(() => expect(waiting.has("direct:tx1")).toBe(true));
+
+    waiting.get("direct:tx1")!({
+      re: "direct:tx1",
+      status: "answered",
+      answer: { total: 4 },
+      grind,
+    });
+
+    await waitFor(async () =>
+      expect((await db.trips.get(trip.id))?.receiptPending?.error).toMatch(/^The factory answered/),
+    );
+    expect((await db.tripItems.get(line.id))?.price).toBe(3.99);
   });
 });

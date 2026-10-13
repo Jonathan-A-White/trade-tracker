@@ -12,6 +12,8 @@ export interface ReceiptRunnerOptions {
   /** First wait after a network error, doubled for each failure in a row. */
   backoffBaseMs?: number;
   backoffMaxMs?: number;
+  /** How long the one last look at a receipt past its deadline may take. */
+  finalLookMs?: number;
 }
 
 function isAbort(err: unknown): boolean {
@@ -29,11 +31,14 @@ interface Waiter {
  * Fetches the factory's answer to every receipt a trip is waiting on and applies it, whether or not
  * the trip's page is open. The wait lives on the trip (receiptPending), so a reload resumes it. It
  * waits only while it has a client (the door is licensed), the device is online and the page is
- * visible, and gives up on a receipt RECEIPT_TIMEOUT_MS after it was sent.
+ * visible, and stops polling a receipt RECEIPT_TIMEOUT_MS after it was sent. The factory keeps its
+ * answers, so a receipt past that deadline (the page was hidden or the device off for hours) still
+ * gets one last look the next time the runner can look, before the card says the factory did not answer.
  */
 export class ReceiptRunner {
   private readonly backoffBaseMs: number;
   private readonly backoffMaxMs: number;
+  private readonly finalLookMs: number;
   private client: ReceiptClient | null = null;
   private online = true;
   private visible = true;
@@ -45,10 +50,13 @@ export class ReceiptRunner {
   private retryAt = 0;
   private timer: ReturnType<typeof setTimeout> | null = null;
   private readonly waiters = new Map<string, Waiter>();
+  /** txids of receipts whose wait ran out: they are not looked at again. */
+  private readonly looked = new Set<string>();
 
   constructor(options: ReceiptRunnerOptions = {}) {
     this.backoffBaseMs = options.backoffBaseMs ?? 5_000;
     this.backoffMaxMs = options.backoffMaxMs ?? 5 * 60_000;
+    this.finalLookMs = options.finalLookMs ?? 15_000;
   }
 
   start(): void {
@@ -137,7 +145,7 @@ export class ReceiptRunner {
     if (now < this.retryAt) next = this.retryAt - now;
     for (const trip of trips) {
       const pending = trip.receiptPending!;
-      if (receiptTimedOut(pending, now)) continue;
+      if (receiptTimedOut(pending, now) && this.looked.has(pending.txid)) continue;
       if (this.waiters.has(trip.id)) continue;
       if (now >= this.retryAt) this.wait(client, trip.id, pending.txid, pending.sentAt);
     }
@@ -147,11 +155,13 @@ export class ReceiptRunner {
   private wait(client: ReceiptClient, tripId: string, txid: string, sentAt: number): void {
     const controller = new AbortController();
     this.waiters.set(tripId, { txid, controller });
-    // the factory has RECEIPT_TIMEOUT_MS from the send; the card then says it did not answer
-    const giveUp = setTimeout(
-      () => controller.abort(),
-      Math.max(0, sentAt + RECEIPT_TIMEOUT_MS - Date.now()),
-    );
+    // the factory has RECEIPT_TIMEOUT_MS from the send; past that, one short last look; the card
+    // then says it did not answer
+    const left = sentAt + RECEIPT_TIMEOUT_MS - Date.now();
+    const giveUp = setTimeout(() => {
+      this.looked.add(txid);
+      controller.abort();
+    }, left > 0 ? left : this.finalLookMs);
     const forget = () => {
       clearTimeout(giveUp);
       if (this.waiters.get(tripId)?.controller === controller) this.waiters.delete(tripId);

@@ -260,7 +260,7 @@ export async function settleReceipt(
     await failPending(
       tripId,
       txid,
-      "The receipt could not be used, and your trip is as it was. Please try again.",
+      "The factory answered, but its answer could not be applied to your trip, so your trip is as it was. Please send the receipt again.",
     );
   }
 }

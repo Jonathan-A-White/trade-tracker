@@ -7,7 +7,7 @@ const validate = new Ajv({ allErrors: true, strict: true }).compile<ReceiptRecon
 );
 
 export const RECEIPT_ANSWER_NOT_IN_SHAPE =
-  "The factory's receipt answer was not in the expected shape, so it was not used.";
+  "The factory answered, but its answer was not in the shape this app expects, so it was not used. Your trip is as it was.";
 
 export type ParsedReceiptAnswer =
   | { ok: true; answer: ReceiptReconcileAnswer }
