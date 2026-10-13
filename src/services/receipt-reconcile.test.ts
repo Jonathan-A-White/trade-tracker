@@ -5,6 +5,7 @@ import { TripRepository } from "@/db/repositories/trip-repository";
 import type { ReceiptReconcileAnswer, ReceiptReconcileAnswerLine } from "@/contracts/types";
 import type { grist } from "bsv-kit/grist";
 import {
+  addReceiptLineAsItem,
   applyReceiptAnswer,
   buildReceiptRequest,
   reconcileReceipt,
@@ -74,6 +75,13 @@ function answer(
   total: number | null = null,
 ): ReceiptReconcileAnswer {
   return { store: "Trader Joe's", date: null, subtotal: null, tax: null, total, lines, unreadable: null };
+}
+
+async function addUnmatchedAsItems(tripId: string, count: number): Promise<boolean> {
+  for (let i = 0; i < count; i++) {
+    if (!(await addReceiptLineAsItem(tripId, 0))) return false;
+  }
+  return true;
 }
 
 describe("buildReceiptRequest", () => {
@@ -254,6 +262,84 @@ describe("applyReceiptAnswer", () => {
     expect(result.unmatched.map((entry) => entry.text)).toEqual(["MYSTERY", "LINE"]);
     expect(result.changes).toEqual([]);
     expect((await db.tripItems.get(line.id))?.price).toBe(3.99);
+  });
+
+  it("folds a second receipt line of the same product into the matched trip line's quantity", async () => {
+    const trip = await seedTrip();
+    const { line } = await addLine(trip.id, "0007", "Crustless peanut butter and strawberry", 3.79, 1);
+    const printed = "CRUSTLESS SANDWICH PB &";
+
+    const result = await applyReceiptAnswer(
+      trip.id,
+      answer([
+        receiptLine(line.id, 3.79, { text: printed }),
+        receiptLine(null, 3.79, { text: printed }),
+      ]),
+    );
+
+    expect(result.unmatched).toEqual([]);
+    expect(result.changes).toHaveLength(1);
+    expect(result.changes[0]).toMatchObject({ oldQuantity: 1, newQuantity: 2, newPrice: 3.79 });
+    const saved = await db.tripItems.get(line.id);
+    expect(saved?.quantity).toBe(2);
+    expect(saved?.price).toBe(3.79);
+    expect(saved?.lineTotal).toBeCloseTo(7.58, 2);
+    expect(await db.tripItems.where("tripId").equals(trip.id).count()).toBe(1);
+    const record = (await db.trips.get(trip.id))?.receiptReconcile;
+    expect(record?.unmatched).toEqual([]);
+    expect(record?.matchedTripItemIds).toEqual([line.id]);
+  });
+
+  it("folds a repeat the grind pointed at an already matched line too", async () => {
+    const trip = await seedTrip();
+    const { line } = await addLine(trip.id, "0007", "Crustless PBJ", 3.79, 1);
+
+    const result = await applyReceiptAnswer(
+      trip.id,
+      answer([
+        receiptLine(line.id, 3.79, { text: "Crustless Sandwich PB &" }),
+        receiptLine(line.id, 3.79, { text: "CRUSTLESS SANDWICH PB &" }),
+      ]),
+    );
+
+    expect(result.unmatched).toEqual([]);
+    expect((await db.tripItems.get(line.id))?.quantity).toBe(2);
+  });
+
+  it("does not fold unmatched lines of other products or other unit prices into a matched line", async () => {
+    const trip = await seedTrip();
+    const { line } = await addLine(trip.id, "0007", "Crustless PBJ", 3.79, 1);
+
+    const result = await applyReceiptAnswer(
+      trip.id,
+      answer([
+        receiptLine(line.id, 3.79, { text: "CRUSTLESS SANDWICH PB &" }),
+        receiptLine(null, 3.99, { text: "CRUSTLESS SANDWICH PB &" }),
+        receiptLine(null, 3.79, { text: "ORG BNNA" }),
+      ]),
+    );
+
+    expect(result.unmatched).toHaveLength(2);
+    expect((await db.tripItems.get(line.id))?.quantity).toBe(1);
+  });
+
+  it("still leaves two different unmatched products at different prices as two lines to add", async () => {
+    const trip = await seedTrip();
+    const { line } = await addLine(trip.id, "0007", "Crustless PBJ", 3.79, 1);
+
+    const result = await applyReceiptAnswer(
+      trip.id,
+      answer([
+        receiptLine(line.id, 3.79, { text: "CRUSTLESS SANDWICH PB &" }),
+        receiptLine(null, 2.49, { text: "ORG BNNA" }),
+        receiptLine(null, 5.99, { text: "TJ MNDRN OR CHKN" }),
+      ]),
+    );
+
+    expect(result.unmatched.map((entry) => entry.text)).toEqual(["ORG BNNA", "TJ MNDRN OR CHKN"]);
+    expect(result.changes).toEqual([]);
+    expect(await addUnmatchedAsItems(trip.id, 2)).toBe(true);
+    expect(await db.tripItems.where("tripId").equals(trip.id).count()).toBe(3);
   });
 
   it("does not touch a line of another trip", async () => {

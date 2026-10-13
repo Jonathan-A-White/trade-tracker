@@ -61,6 +61,10 @@ type Schema = Record<string, unknown>;
 function schemaAt(root: Schema, path: string): Schema | undefined {
   let node: Schema | undefined = root;
   for (const part of path.split(".")) {
+    if (/^\d+$/.test(part) && node?.items) {
+      node = node.items as Schema;
+      continue;
+    }
     const properties = node?.properties as Record<string, Schema> | undefined;
     node = properties?.[part];
     if (!node) return undefined;

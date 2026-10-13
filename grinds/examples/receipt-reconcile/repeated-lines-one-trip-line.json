@@ -1,0 +1,30 @@
+{
+  "description": "A receipt that prints the same sandwich on two lines at $3.79, against one scanned trip line: the two lines fold into one answer entry matched to that trip line with quantity 2 and price 7.58, not a second unmatched entry.",
+  "schemaVersion": "2.0",
+  "request": {
+    "store": "Trader Joe's",
+    "lines": [
+      ["ti-pbj", "Crustless peanut butter and strawberry", 3.79, 1, null]
+    ]
+  },
+  "photos": [
+    "repeated-lines-receipt.jpg"
+  ],
+  "expect": {
+    "total": {
+      "equals": 7.58
+    },
+    "lines.0.tripItemId": {
+      "equals": "ti-pbj"
+    },
+    "lines.0.quantity": {
+      "equals": 2
+    },
+    "lines.0.price": {
+      "equals": 7.58
+    },
+    "lines.1": {
+      "present": false
+    }
+  }
+}

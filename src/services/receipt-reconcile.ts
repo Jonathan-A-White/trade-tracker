@@ -341,6 +341,67 @@ async function applyToLine(
   };
 }
 
+function printedName(text: string): string {
+  return text.trim().replace(/\s+/g, " ").toLowerCase();
+}
+
+function unitPrice(line: ReceiptReconcileAnswerLine): number {
+  const count = Number.isInteger(line.quantity) && line.quantity >= 1 ? line.quantity : 1;
+  return round2(line.price / count);
+}
+
+/**
+ * A store that prints each unit of a product on its own line (Trader Joe's) gives
+ * the grind one matched line and the rest unmatched. As a guard, an unmatched
+ * receipt line that prints the same text at the same unit price as a line matched
+ * to an each-priced trip line is folded into it: the matched line takes the
+ * summed count and price, so the trip line gets the right quantity and no new
+ * line is added. Anything else stays as the grind answered. Must be called inside
+ * a read transaction over tripItems and items.
+ */
+async function foldRepeatedLines(
+  tripId: string,
+  lines: ReceiptReconcileAnswerLine[],
+): Promise<ReceiptReconcileAnswerLine[]> {
+  const hosts = new Map<number, ReceiptReconcileAnswerLine>();
+  const claimed = new Set<string>();
+  const strays: number[] = [];
+  for (const [index, receiptLine] of lines.entries()) {
+    const line = receiptLine.tripItemId
+      ? await db.tripItems.get(receiptLine.tripItemId)
+      : undefined;
+    const item = line && !claimed.has(line.id) ? await db.items.get(line.itemId) : undefined;
+    if (line && item && line.tripId === tripId && !line.pending) {
+      claimed.add(line.id);
+      if (item.unitType !== "per_lb") hosts.set(index, { ...receiptLine });
+    } else {
+      strays.push(index);
+    }
+  }
+
+  const folded = new Set<number>();
+  for (const index of strays) {
+    const stray = lines[index];
+    if (!(stray.price > 0) || !Number.isFinite(stray.price)) continue;
+    const host = [...hosts.values()].find(
+      (candidate) =>
+        candidate.price > 0 &&
+        printedName(candidate.text) === printedName(stray.text) &&
+        unitPrice(candidate) === unitPrice(stray),
+    );
+    if (!host) continue;
+    const hostCount = Number.isInteger(host.quantity) && host.quantity >= 1 ? host.quantity : 1;
+    const strayCount = Number.isInteger(stray.quantity) && stray.quantity >= 1 ? stray.quantity : 1;
+    host.price = round2(host.price + stray.price);
+    host.quantity = hostCount + strayCount;
+    folded.add(index);
+  }
+
+  return lines.flatMap((receiptLine, index) =>
+    folded.has(index) ? [] : [hosts.get(index) ?? receiptLine],
+  );
+}
+
 /**
  * Applies a checked receipt answer to the trip, in one transaction. For each
  * receipt line matched to one of the trip's lines whose price (or count, or a
@@ -362,7 +423,8 @@ export async function applyReceiptAnswer(
     const now = Date.now();
     const claimed = new Set<string>();
 
-    for (const receiptLine of answer.lines) {
+    const lines = await foldRepeatedLines(tripId, answer.lines);
+    for (const receiptLine of lines) {
       const line = receiptLine.tripItemId
         ? await db.tripItems.get(receiptLine.tripItemId)
         : undefined;

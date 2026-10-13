@@ -39,6 +39,12 @@ How to match a receipt line to the trip:
 - Match each receipt line to at most one request line, and each request line to at most
   one receipt line. Use the name first, then the price, then the quantity or weight to
   tell two close candidates apart.
+- Some stores print each unit of a product on its own line (two of the same sandwich are
+  two lines at the same price). Fold repeated receipt lines of the same product into
+  ONE entry: its `quantity` is how many lines there were, its `price` is their sum, and
+  it carries the `tripItemId` of the request line it is. Do not return the repeats as
+  further entries with `tripItemId` `null`. Fold only lines that print the same product
+  at the same unit price; different products or different prices stay separate entries.
 - Give `tripItemId` as `null` whenever you are unsure. A wrong match is worse than no
   match; a request line left unmatched is how the shopper finds what the store missed.
 - A receipt line with no counterpart in the request (something the shopper did not

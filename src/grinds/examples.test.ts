@@ -143,6 +143,19 @@ describe("expectProblems", () => {
     ).toEqual([]);
   });
 
+  it("accepts a path through a list by position", () => {
+    const receiptSchema = readJson("schemas/receipt-reconcile-answer-1.0.schema.json");
+    expect(
+      expectProblems(
+        { "lines.0.quantity": { equals: 2 }, "lines.1": { present: false } },
+        receiptSchema
+      )
+    ).toEqual([]);
+    expect(expectProblems({ "lines.0.cost": { equals: 2 } }, receiptSchema)).toEqual([
+      "lines.0.cost: not a field of the answer schema",
+    ]);
+  });
+
   it("names a path that is not in the answer schema", () => {
     expect(expectProblems({ cost: { equals: 1 } }, answerSchema)).toEqual([
       "cost: not a field of the answer schema",
