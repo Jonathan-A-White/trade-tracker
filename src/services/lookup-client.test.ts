@@ -95,7 +95,7 @@ describe("the receipt-reconcile grist for a real-sized trip (mw-31qug1.7)", () =
   }, 20_000);
 
   it("says plainly how many lines a trip too large to send can take, never the byte count", async () => {
-    const trip = await seedTrip(160);
+    const trip = await seedTrip(300);
     const { posted } = stubBackend();
     makeLookupClient("https://example.test", new Uint8Array(32).fill(1));
     const request = await buildReceiptRequest(trip.id);
@@ -108,9 +108,40 @@ describe("the receipt-reconcile grist for a real-sized trip (mw-31qug1.7)", () =
 
     expect(outcome.ok).toBe(false);
     const error = !outcome.ok ? outcome.error : "";
-    expect(error).toMatch(/160 lines/);
+    expect(error).toMatch(/300 lines/);
     expect(error).toMatch(/can check \d+ lines/);
     expect(error).not.toMatch(/bytes|cap|payload|too large/i);
     expect(posted).toEqual([]);
+  }, 20_000);
+
+  it("measures a 40-line trip and one receipt photo under bsv-kit's 20480-byte cap (mw-31qug1.8)", async () => {
+    const trip = await seedTrip(40);
+    makeLookupClient("https://example.test", new Uint8Array(32).fill(1));
+    const request = await buildReceiptRequest(trip.id);
+
+    const { bytes, cap } = currentReceiptClient()!.measure!(request, 1);
+
+    expect(cap).toBe(20480);
+    expect(bytes).toBeLessThan(20480);
+  }, 20_000);
+
+  it("sends an 80-line trip that the old 10240-byte cap refused (mw-31qug1.8)", async () => {
+    const trip = await seedTrip(80);
+    const { posted } = stubBackend();
+    makeLookupClient("https://example.test", new Uint8Array(32).fill(1));
+    const request = await buildReceiptRequest(trip.id);
+    const client = currentReceiptClient()!;
+    const measured = client.measure!(request, 1);
+    expect(measured.bytes).toBeGreaterThan(10240);
+    expect(measured.bytes).toBeLessThan(20480);
+
+    const txid = await client.send({
+      input: request,
+      photos: [{ bytes: new Uint8Array([1, 2, 3]), mime: "image/jpeg" }],
+      clientId: "client-2",
+    });
+
+    expect(txid).toBe("direct:tx1");
+    expect(posted).toHaveLength(1);
   }, 20_000);
 });
