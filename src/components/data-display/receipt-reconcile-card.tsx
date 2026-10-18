@@ -7,6 +7,7 @@ import { db } from "@/db/database";
 import { ReceiptCamera } from "@/components/scanner/receipt-camera";
 import { formatCurrency } from "@/core/pricing";
 import { doorWords } from "@/factory/door-words";
+import { receiptHoldText, useReceiptHold } from "@/factory/send-hold";
 import { useReceiptClient } from "@/hooks/use-receipt-client";
 import { RECEIPT_STILL, stillFromFile } from "@/scanner/capture-still";
 import {
@@ -56,6 +57,7 @@ function describeChange(change: ReceiptChange): string {
  */
 export function ReceiptReconcileCard({ tripId, onTotal }: ReceiptReconcileCardProps) {
   const { ready, door, licence, unlock, getClient } = useReceiptClient();
+  const hold = useReceiptHold();
   const [photos, setPhotos] = useState<Blob[]>([]);
   const [cameraOpen, setCameraOpen] = useState(false);
   const [sending, setSending] = useState(false);
@@ -298,6 +300,12 @@ export function ReceiptReconcileCard({ tripId, onTotal }: ReceiptReconcileCardPr
         <p role="status" className="text-sm text-gray-600 dark:text-gray-300">
           Waiting for the factory to read your receipt…
           {pending ? ` Sent at ${formatSentTime(pending.sentAt)}.` : ""} This can take a minute or two.
+        </p>
+      )}
+
+      {pending && !pending.error && !timedOut && hold && (
+        <p role="status" className="text-sm text-amber-600 dark:text-amber-400">
+          {receiptHoldText(hold)}
         </p>
       )}
 

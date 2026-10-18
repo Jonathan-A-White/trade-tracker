@@ -70,7 +70,7 @@ describe("ItemDetailPage Photo price", () => {
     });
   });
 
-  it("shows 'Waiting on the factory' while the price lookup is out, and hides the button", async () => {
+  it("shows 'Sending to the factory' while the price lookup is out, and hides the button", async () => {
     const milk = await seedItem();
     const trip = await startTrip();
     await lookups.create({
@@ -82,7 +82,7 @@ describe("ItemDetailPage Photo price", () => {
     });
     renderPage(milk.id);
 
-    expect(await screen.findByText("Waiting on the factory")).toBeInTheDocument();
+    expect(await screen.findByText("Sending to the factory")).toBeInTheDocument();
     expect(screen.queryByRole("button", { name: "Photo price" })).not.toBeInTheDocument();
   });
 

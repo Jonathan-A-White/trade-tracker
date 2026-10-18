@@ -143,8 +143,11 @@ describe("the factory flow, start to finish", () => {
     await user.click(await screen.findByRole("button", { name: "Use photo" }));
     await user.click(await screen.findByRole("button", { name: "Done" }));
 
-    // 2. the pending line is in the trip at once and counts for nothing
-    expect(await screen.findByText("Waiting on the factory")).toBeInTheDocument();
+    // 2. the pending line is in the trip at once and counts for nothing; with no key the phone says
+    // it has not sent, rather than blaming the factory
+    expect(
+      await screen.findByText("Not sent: no factory key. Settings > Factory"),
+    ).toBeInTheDocument();
     expect(screen.getByText("0099887766")).toBeInTheDocument();
     expect(screen.getByText(/1 item\b/)).toBeInTheDocument();
     const [lookup] = await db.pendingLookups.toArray();
@@ -161,7 +164,7 @@ describe("the factory flow, start to finish", () => {
       clientId: lookup.id,
     });
     expect(factory.sent[0].photos).toHaveLength(2);
-    expect(await screen.findByText("At the factory")).toBeInTheDocument();
+    expect(await screen.findByText("Waiting on the factory")).toBeInTheDocument();
 
     // 4. the answer fills the line in: name, price, 'Check price'
     await waitFor(() => expect(factory.isWaiting("direct:tx1")).toBe(true));
@@ -174,7 +177,7 @@ describe("the factory flow, start to finish", () => {
       confidence: "high",
     });
     expect(await screen.findByText("Oat Bars")).toBeInTheDocument();
-    expect(screen.queryByText("At the factory")).not.toBeInTheDocument();
+    expect(screen.queryByText("Waiting on the factory")).not.toBeInTheDocument();
     const badge = await screen.findByRole("button", { name: "Check price" });
     const oats = await itemRepo.findByBarcode("0099887766");
     expect(oats).toMatchObject({ name: "Oat Bars", category: "Snacks & Candy", currentPrice: 4.25 });

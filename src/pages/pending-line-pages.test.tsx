@@ -42,7 +42,7 @@ async function seedTripWithMilkAndPending() {
 }
 
 function expectPendingLineShown() {
-  expect(screen.getByText("Waiting on the factory")).toBeInTheDocument();
+  expect(screen.getByText("Sending to the factory")).toBeInTheDocument();
   expect(screen.getByText("0099887766")).toBeInTheDocument();
   expect(screen.getByAltText("Photo of 0099887766")).toBeInTheDocument();
   expect(screen.queryByText("Unknown Item")).not.toBeInTheDocument();
@@ -66,7 +66,7 @@ describe("a pending line on the other trip pages", () => {
         </Routes>
       </MemoryRouter>,
     );
-    await screen.findByText("Waiting on the factory");
+    await screen.findByText("Sending to the factory");
     await screen.findByAltText("Photo of 0099887766");
     await screen.findByText("Milk"); // the item names load after the lines
     expectPendingLineShown();
@@ -81,7 +81,7 @@ describe("a pending line on the other trip pages", () => {
         </Routes>
       </MemoryRouter>,
     );
-    await screen.findByText("Waiting on the factory");
+    await screen.findByText("Sending to the factory");
     await screen.findByAltText("Photo of 0099887766");
     await screen.findByText("Milk"); // the item names load after the lines
     expectPendingLineShown();
@@ -101,7 +101,7 @@ describe("a pending line on the other trip pages", () => {
         </FactoryProvider>
       </MemoryRouter>,
     );
-    await screen.findByText("Waiting on the factory");
+    await screen.findByText("Not sent: no factory key. Settings > Factory");
     await screen.findByAltText("Photo of 0099887766");
     expect(screen.getByText("0099887766")).toBeInTheDocument();
     expect(screen.queryByText("Unknown Item")).not.toBeInTheDocument();

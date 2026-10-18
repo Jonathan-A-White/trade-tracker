@@ -49,7 +49,12 @@ async function seedLockedKey(port: PasskeyPort) {
 function renderCard(port: PasskeyPort, checkLicence: () => Promise<licence.LicenceStatus>) {
   return render(
     <MemoryRouter initialEntries={["/trips/t1"]}>
-      <FactoryProvider checkLicence={checkLicence} passkeyPort={port} askDoor={async () => "unreachable"}>
+      <FactoryProvider
+        checkLicence={checkLicence}
+        passkeyPort={port}
+        askDoor={async () => "unreachable"}
+        licenceRetryMs={[]}
+      >
         <Routes>
           <Route path="/trips/:id" element={<ReceiptReconcileCard tripId="t1" onTotal={() => {}} />} />
           <Route path="/settings" element={<h1>Settings screen</h1>} />
@@ -145,5 +150,33 @@ describe("Check against the receipt: the factory notice", () => {
     expect(screen.getByRole("button", { name: "Photograph receipt" })).toBeDisabled();
     await user.click(screen.getByRole("link", { name: "Open Settings" }));
     expect(await screen.findByRole("heading", { name: "Settings screen" })).toBeInTheDocument();
+  });
+
+  it("a receipt already sent, with the licence unchecked: says it is not checking for the answer, and why", async () => {
+    await db.trips.put({
+      id: "t1",
+      storeId: "s1",
+      status: "active",
+      startedAt: 1,
+      createdAt: 1,
+      updatedAt: 1,
+      receiptPending: {
+        txid: "direct:tx9",
+        sentAt: Date.now(),
+        request: { store: "Trader Joe's", lines: [] },
+      },
+    } as never);
+    await seedLockedKey(fakePort());
+    const user = userEvent.setup();
+    renderCard(fakePort(), async () => {
+      throw new Error("Failed to fetch");
+    });
+    await user.click(screen.getByRole("button", { name: "Unlock" }));
+
+    expect(
+      await screen.findByText(
+        "Not checking for the answer: licence not checked. Settings > Factory > Check again",
+      ),
+    ).toBeInTheDocument();
   });
 });

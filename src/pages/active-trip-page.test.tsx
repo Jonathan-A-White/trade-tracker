@@ -55,11 +55,11 @@ describe("ActiveTripPage pending lines", () => {
     URL.revokeObjectURL = vi.fn();
   });
 
-  it("renders a pending line with its barcode, thumbnail and 'Waiting on the factory'", async () => {
+  it("renders a pending line with its barcode, thumbnail and 'Sending to the factory'", async () => {
     await seedTripWithMilkAndPending();
     renderPage();
 
-    expect(await screen.findByText("Waiting on the factory")).toBeInTheDocument();
+    expect(await screen.findByText("Sending to the factory")).toBeInTheDocument();
     expect(screen.getByText("0099887766")).toBeInTheDocument();
     expect(await screen.findByRole("img", { name: /photo of 0099887766/i })).toHaveAttribute(
       "src",
@@ -71,7 +71,7 @@ describe("ActiveTripPage pending lines", () => {
     await seedTripWithMilkAndPending();
     renderPage();
 
-    await screen.findByText("Waiting on the factory");
+    await screen.findByText("Sending to the factory");
     // the Milk row and the subtotal bar both read $3.00; the pending line adds nothing
     expect(screen.getAllByText("$3.00")).toHaveLength(2);
     expect(screen.getByText(/1 item\b/)).toBeInTheDocument();
@@ -93,7 +93,7 @@ describe("ActiveTripPage pending lines", () => {
     await user.click(screen.getByRole("button", { name: /save item/i }));
 
     await waitFor(() => {
-      expect(screen.queryByText("Waiting on the factory")).not.toBeInTheDocument();
+      expect(screen.queryByText("Sending to the factory")).not.toBeInTheDocument();
     });
     const row = await screen.findByText("Oat Bars");
     expect(row).toBeInTheDocument();
@@ -134,7 +134,7 @@ describe("ActiveTripPage pending lines", () => {
     await user.click(await screen.findByRole("button", { name: /discard/i }));
 
     await waitFor(() => {
-      expect(screen.queryByText("Waiting on the factory")).not.toBeInTheDocument();
+      expect(screen.queryByText("Sending to the factory")).not.toBeInTheDocument();
     });
     expect(await lookups.getById(lookup.id)).toBeUndefined();
   });
@@ -147,12 +147,13 @@ describe("ActiveTripPage factory answers", () => {
     URL.revokeObjectURL = vi.fn();
   });
 
-  it("shows 'At the factory' once the lookup has been sent", async () => {
+  it("shows 'Waiting on the factory' once the lookup has been sent", async () => {
     const { lookup } = await seedTripWithMilkAndPending();
     await lookups.markSent(lookup.id, "direct:tx1");
     renderPage();
 
-    expect(await screen.findByText("At the factory")).toBeInTheDocument();
+    expect(await screen.findByText("Waiting on the factory")).toBeInTheDocument();
+    expect(screen.queryByText("Sending to the factory")).not.toBeInTheDocument();
     expect(screen.queryByRole("button", { name: "Retry" })).not.toBeInTheDocument();
   });
 
@@ -165,7 +166,7 @@ describe("ActiveTripPage factory answers", () => {
     expect(await screen.findByText("The photos are too dark to read.")).toBeInTheDocument();
     await user.click(screen.getByRole("button", { name: "Retry" }));
 
-    expect(await screen.findByText("Waiting on the factory")).toBeInTheDocument();
+    expect(await screen.findByText("Sending to the factory")).toBeInTheDocument();
     expect((await lookups.getById(lookup.id))?.status).toBe("waiting-to-send");
     expect(screen.queryByText("The photos are too dark to read.")).not.toBeInTheDocument();
   });
@@ -286,12 +287,12 @@ describe("ActiveTripPage Photo price", () => {
     );
   });
 
-  it("shows 'Waiting on the factory' beside the old price and hides Photo price until the answer lands", async () => {
+  it("shows 'Sending to the factory' beside the old price and hides Photo price until the answer lands", async () => {
     const { trip, milk } = await seedKnown();
     await priceLookup(trip.id, milk.id);
     renderPage();
 
-    expect(await screen.findByText("Waiting on the factory")).toBeInTheDocument();
+    expect(await screen.findByText("Sending to the factory")).toBeInTheDocument();
     expect(screen.getByText(/\$3\.00 \/ each/)).toBeInTheDocument();
     expect(screen.queryByRole("button", { name: "Photo price" })).not.toBeInTheDocument();
     // it is still one ordinary row, not a pending line
@@ -302,7 +303,7 @@ describe("ActiveTripPage Photo price", () => {
     const { trip, milk } = await seedKnown();
     const lookup = await priceLookup(trip.id, milk.id);
     renderPage();
-    await screen.findByText("Waiting on the factory");
+    await screen.findByText("Sending to the factory");
 
     await lookups.applyAnswer(lookup.id, {
       name: "Whatever",
@@ -313,7 +314,7 @@ describe("ActiveTripPage Photo price", () => {
     });
 
     expect(await screen.findByRole("button", { name: "Check price" })).toBeInTheDocument();
-    expect(screen.queryByText("Waiting on the factory")).not.toBeInTheDocument();
+    expect(screen.queryByText("Sending to the factory")).not.toBeInTheDocument();
     expect(await screen.findByText(/\$3\.49 \/ each/)).toBeInTheDocument();
     expect(screen.getByText("Milk")).toBeInTheDocument();
   });
@@ -345,7 +346,7 @@ describe("ActiveTripPage Photo price", () => {
 
     expect(await screen.findByText("The tag is blurry.")).toBeInTheDocument();
     await user.click(screen.getByRole("button", { name: "Retry" }));
-    expect(await screen.findByText("Waiting on the factory")).toBeInTheDocument();
+    expect(await screen.findByText("Sending to the factory")).toBeInTheDocument();
     expect((await lookups.getById(lookup.id))?.status).toBe("waiting-to-send");
   });
 
