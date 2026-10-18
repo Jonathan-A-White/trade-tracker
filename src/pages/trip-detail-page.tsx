@@ -177,6 +177,21 @@ export default function TripDetailPage() {
       />
 
       <main className="flex-1 p-4 space-y-4">
+        {/* The live trip reached by its address: say so, and lead back to it */}
+        {trip.status === "active" && (
+          <div className="rounded-lg border border-blue-200 dark:border-blue-800 bg-blue-50 dark:bg-blue-900/30 p-4 space-y-3">
+            <p className="text-sm font-semibold text-blue-800 dark:text-blue-200">
+              In progress: this trip has not ended
+            </p>
+            <Link
+              to="/trips/active"
+              className="block w-full rounded-lg bg-blue-600 px-4 py-3 text-center text-sm font-medium text-white hover:bg-blue-700 transition-colors"
+            >
+              Back to the trip
+            </Link>
+          </div>
+        )}
+
         {/* Summary */}
         <div className="bg-white dark:bg-gray-800 rounded-lg border dark:border-gray-700 p-4 space-y-3">
           <p className="text-sm text-gray-500 dark:text-gray-400">{tripDate}</p>

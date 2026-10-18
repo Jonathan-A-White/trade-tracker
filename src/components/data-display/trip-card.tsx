@@ -48,7 +48,7 @@ export function TripCard({ trip, storeName, onPress }: TripCardProps) {
         <span
           className={`inline-flex items-center rounded-full px-2.5 py-0.5 text-xs font-medium capitalize ${statusBadgeClass(trip.status)}`}
         >
-          {trip.status}
+          {trip.status === "active" ? "In progress" : trip.status}
         </span>
       </div>
       <div className="mt-3 flex items-center gap-4 text-sm">

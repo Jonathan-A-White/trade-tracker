@@ -65,8 +65,9 @@ export default function TripHistoryPage() {
   }, [stores]);
 
   const handleTripPress = useCallback(
-    (trip: { id: string }) => {
-      navigate(`/trips/${trip.id}`);
+    (trip: { id: string; status: string }) => {
+      // the live trip opens as the live trip (Scan, End Trip), not as a summary that looks ended
+      navigate(trip.status === "active" ? "/trips/active" : `/trips/${trip.id}`);
     },
     [navigate],
   );
