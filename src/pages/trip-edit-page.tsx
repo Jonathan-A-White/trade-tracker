@@ -1,5 +1,5 @@
 import { useState, useCallback } from "react";
-import { useParams, useNavigate } from "react-router";
+import { useParams, useNavigate, Outlet } from "react-router";
 import { TripRepository } from "@/db/repositories/trip-repository";
 import { TripItemRepository } from "@/db/repositories/trip-item-repository";
 import { PendingLookupRepository } from "@/db/repositories/pending-lookup-repository";
@@ -176,11 +176,18 @@ export default function TripEditPage() {
         )}
 
         {/* Add item button */}
-        <div className="p-4">
+        <div className="flex gap-3 p-4">
+          <button
+            type="button"
+            onClick={() => navigate(`/trips/${id}/edit/scan`)}
+            className="flex-1 rounded-lg bg-blue-600 px-4 py-3 text-sm font-medium text-white hover:bg-blue-700 transition-colors cursor-pointer"
+          >
+            Scan
+          </button>
           <button
             type="button"
             onClick={() => navigate(`/trips/${id}/edit/add`)}
-            className="w-full rounded-lg border-2 border-dashed border-gray-300 dark:border-gray-600 px-4 py-3 text-sm font-medium text-blue-600 dark:text-blue-400 hover:border-blue-400 hover:bg-blue-50 transition-colors cursor-pointer"
+            className="flex-1 rounded-lg border-2 border-dashed border-gray-300 dark:border-gray-600 px-4 py-3 text-sm font-medium text-blue-600 dark:text-blue-400 hover:border-blue-400 hover:bg-blue-50 transition-colors cursor-pointer"
           >
             + Add Item
           </button>
@@ -198,6 +205,9 @@ export default function TripEditPage() {
           {saving ? "Saving..." : "Save Changes"}
         </button>
       </div>
+
+      {/* the scanner and its photo screen open over this page */}
+      <Outlet />
 
       {/* Confirm remove dialog */}
       {confirmRemoveId && (

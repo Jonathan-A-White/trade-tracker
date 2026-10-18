@@ -1,5 +1,5 @@
 import { useState, useCallback, useRef } from "react";
-import { useNavigate } from "react-router";
+import { useNavigate, useParams } from "react-router";
 import { db } from "@/db/database";
 import type { Item } from "@/contracts/types";
 import { TripItemRepository } from "@/db/repositories/trip-item-repository";
@@ -10,6 +10,9 @@ const tripItemRepo = new TripItemRepository();
 
 export default function ScannerPage() {
   const navigate = useNavigate();
+  // on an ended trip's Edit page the route names the trip; on the live trip it does not
+  const { id: tripIdParam } = useParams<{ id: string }>();
+  const basePath = tripIdParam ? `/trips/${tripIdParam}/edit` : "/trips/active";
   const [scannerActive, setScannerActive] = useState(true);
   const [foundItem, setFoundItem] = useState<Item | null>(null);
   const [quantity, setQuantity] = useState(1);
@@ -26,10 +29,10 @@ export default function ScannerPage() {
       if (item) {
         setFoundItem(item);
       } else {
-        navigate(`/trips/active/photo?barcode=${encodeURIComponent(barcode)}`);
+        navigate(`${basePath}/photo?barcode=${encodeURIComponent(barcode)}`);
       }
     },
-    [foundItem, navigate],
+    [foundItem, navigate, basePath],
   );
 
   const handleAddToTrip = useCallback(async () => {
@@ -38,8 +41,10 @@ export default function ScannerPage() {
     setAdding(true);
 
     try {
-      const trip = await db.trips.where("status").equals("active").first();
-      if (!trip) throw new Error("No active trip");
+      const trip = tripIdParam
+        ? await db.trips.get(tripIdParam)
+        : await db.trips.where("status").equals("active").first();
+      if (!trip) throw new Error(tripIdParam ? "Trip not found" : "No active trip");
 
       await tripItemRepo.addToTrip({
         tripId: trip.id,
@@ -64,11 +69,11 @@ export default function ScannerPage() {
       savingRef.current = false;
       setAdding(false);
     }
-  }, [foundItem, quantity, weightLbs, adding, navigate]);
+  }, [foundItem, quantity, weightLbs, adding, tripIdParam]);
 
   const handleClose = useCallback(() => {
-    navigate("/trips/active");
-  }, [navigate]);
+    navigate(basePath);
+  }, [navigate, basePath]);
 
   const handleScanAgain = useCallback(() => {
     setFoundItem(null);

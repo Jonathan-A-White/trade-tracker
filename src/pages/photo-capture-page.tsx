@@ -1,5 +1,5 @@
 import { useCallback, useEffect, useRef, useState } from "react";
-import { useNavigate, useSearchParams } from "react-router";
+import { useNavigate, useParams, useSearchParams } from "react-router";
 import { db } from "@/db/database";
 import { PendingLookupRepository } from "@/db/repositories/pending-lookup-repository";
 import { useFactory } from "@/contexts/factory-context";
@@ -12,6 +12,9 @@ const pendingLookupRepo = new PendingLookupRepository();
 export default function PhotoCapturePage() {
   const navigate = useNavigate();
   const [searchParams] = useSearchParams();
+  // on an ended trip's Edit page the route names the trip; on the live trip it does not
+  const { id: tripIdParam } = useParams<{ id: string }>();
+  const basePath = tripIdParam ? `/trips/${tripIdParam}/edit` : "/trips/active";
   const barcode = searchParams.get("barcode") ?? "";
   const priceOnlyItemId =
     searchParams.get("mode") === "price-only" ? searchParams.get("itemId") : null;
@@ -21,7 +24,7 @@ export default function PhotoCapturePage() {
   const backTo =
     fromParam && fromParam.startsWith("/") && !fromParam.startsWith("//")
       ? fromParam
-      : "/trips/active";
+      : basePath;
   const { door } = useFactory();
 
   const videoRef = useRef<HTMLVideoElement>(null);
@@ -81,8 +84,10 @@ export default function PhotoCapturePage() {
       savingRef.current = true;
       setBusy(true);
       try {
-        const trip = await db.trips.where("status").equals("active").first();
-        if (!trip) throw new Error("No active trip");
+        const trip = tripIdParam
+          ? await db.trips.get(tripIdParam)
+          : await db.trips.where("status").equals("active").first();
+        if (!trip) throw new Error(tripIdParam ? "Trip not found" : "No active trip");
         if (priceOnlyItemId) {
           await pendingLookupRepo.create({
             barcode,
@@ -94,7 +99,7 @@ export default function PhotoCapturePage() {
           navigate(backTo, { replace: true });
         } else {
           await pendingLookupRepo.create({ barcode, tripId: trip.id, photos: taken });
-          navigate("/trips/active/scan", { replace: true });
+          navigate(`${basePath}/scan`, { replace: true });
         }
       } catch (err) {
         console.error("Failed to save the photos:", err);
@@ -103,7 +108,7 @@ export default function PhotoCapturePage() {
         setBusy(false);
       }
     },
-    [barcode, navigate, priceOnlyItemId, backTo],
+    [barcode, navigate, priceOnlyItemId, backTo, tripIdParam, basePath],
   );
 
   const handleTake = useCallback(async () => {
@@ -135,12 +140,12 @@ export default function PhotoCapturePage() {
   }, [preview, busy, priceOnly, save]);
 
   const handleTypeInstead = useCallback(() => {
-    navigate(`/trips/active/add?barcode=${encodeURIComponent(barcode)}`, { replace: true });
-  }, [barcode, navigate]);
+    navigate(`${basePath}/add?barcode=${encodeURIComponent(barcode)}`, { replace: true });
+  }, [barcode, navigate, basePath]);
 
   const handleCancel = useCallback(() => {
-    navigate(priceOnly ? backTo : "/trips/active/scan", { replace: true });
-  }, [navigate, priceOnly, backTo]);
+    navigate(priceOnly ? backTo : `${basePath}/scan`, { replace: true });
+  }, [navigate, priceOnly, backTo, basePath]);
 
   const step = photos.length === 0 ? "package" : "tag";
   // the camera wants the package first, then (optionally) the shelf tag; a known item's price wants the tag only
