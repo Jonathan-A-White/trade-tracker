@@ -1,4 +1,5 @@
 import { useState, useCallback, useRef, useEffect } from "react";
+import { BARCODE_VIDEO_CONSTRAINTS, openCameraStream } from "@/scanner/camera-controls";
 import { initScanner, detectFromVideoFrame, isCameraAvailable } from "@/scanner/camera-scanner";
 
 type ScannerStatus = "idle" | "requesting" | "active" | "denied" | "unavailable" | "error";
@@ -22,9 +23,7 @@ export function useBarcodeScanner() {
 
     try {
       await initScanner();
-      const stream = await navigator.mediaDevices.getUserMedia({
-        video: { facingMode: "environment" },
-      });
+      const stream = await openCameraStream(BARCODE_VIDEO_CONSTRAINTS);
       streamRef.current = stream;
       videoElement.srcObject = stream;
       await videoElement.play();

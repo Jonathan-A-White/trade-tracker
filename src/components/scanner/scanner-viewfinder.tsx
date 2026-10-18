@@ -1,4 +1,5 @@
 import { useEffect, useRef } from "react";
+import { BARCODE_VIDEO_CONSTRAINTS, openCameraStream } from "@/scanner/camera-controls";
 
 interface ScannerViewfinderProps {
   onBarcodeDetected: (barcode: string) => void;
@@ -26,9 +27,7 @@ export function ScannerViewfinder({
           "@/scanner/camera-scanner"
         );
 
-        const stream = await navigator.mediaDevices.getUserMedia({
-          video: { facingMode: "environment" },
-        });
+        const stream = await openCameraStream(BARCODE_VIDEO_CONSTRAINTS);
 
         if (cancelled) {
           stream.getTracks().forEach((t) => t.stop());

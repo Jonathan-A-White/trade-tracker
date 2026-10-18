@@ -4,7 +4,7 @@
  * it does nothing and says so, and never throws.
  */
 
-/** The photo page asks for the camera's high resolution as ideals; a phone that cannot give it still opens. */
+/** The photo and receipt cameras ask for the camera's high resolution as ideals; a phone that cannot give it still opens. */
 export const PHOTO_VIDEO_CONSTRAINTS: MediaStreamConstraints = {
   video: {
     facingMode: "environment",
@@ -12,6 +12,19 @@ export const PHOTO_VIDEO_CONSTRAINTS: MediaStreamConstraints = {
     height: { ideal: 1080 },
   },
 };
+
+/** The barcode scanners read a bar pattern; they ask only for the rear camera. */
+export const BARCODE_VIDEO_CONSTRAINTS: MediaStreamConstraints = {
+  video: { facingMode: "environment" },
+};
+
+/**
+ * The one place the app opens a camera (a test forbids getUserMedia anywhere else in src/ outside src/scanner/),
+ * so every screen asks the same way. Pass PHOTO_VIDEO_CONSTRAINTS for a picture to be read, BARCODE_VIDEO_CONSTRAINTS to scan.
+ */
+export function openCameraStream(constraints: MediaStreamConstraints): Promise<MediaStream> {
+  return navigator.mediaDevices.getUserMedia(constraints);
+}
 
 /** How far the picture is cropped in when the camera has no zoom of its own. */
 export const MAX_DIGITAL_ZOOM = 4;

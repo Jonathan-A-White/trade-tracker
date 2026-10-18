@@ -4,7 +4,7 @@ import { db } from "@/db/database";
 import { PendingLookupRepository } from "@/db/repositories/pending-lookup-repository";
 import { useFactory } from "@/contexts/factory-context";
 import { captureStill } from "@/scanner/capture-still";
-import { PHOTO_VIDEO_CONSTRAINTS } from "@/scanner/camera-controls";
+import { useCameraStream } from "@/hooks/use-camera-stream";
 import { useCameraZoomFocus } from "@/hooks/use-camera-zoom-focus";
 
 const pendingLookupRepo = new PendingLookupRepository();
@@ -38,35 +38,11 @@ export default function PhotoCapturePage() {
   const { attachTrack, digitalZoom, focusRing, handlers } = useCameraZoomFocus(videoRef, barcode);
 
   // The scanner has just released the camera; the permission is already granted, so this opens at once.
-  useEffect(() => {
-    let cancelled = false;
-    let stream: MediaStream | null = null;
-
-    async function openCamera() {
-      try {
-        stream = await navigator.mediaDevices.getUserMedia(PHOTO_VIDEO_CONSTRAINTS);
-        if (cancelled) {
-          stream.getTracks().forEach((t) => t.stop());
-          return;
-        }
-        const tracks = stream.getTracks();
-        attachTrack(tracks.find((t) => t.kind === "video") ?? tracks[0] ?? null);
-        const video = videoRef.current;
-        if (video) {
-          video.srcObject = stream;
-          await video.play();
-        }
-      } catch {
-        if (!cancelled) setError("The camera would not open. You can type it instead.");
-      }
-    }
-
-    openCamera();
-    return () => {
-      cancelled = true;
-      stream?.getTracks().forEach((t) => t.stop());
-    };
-  }, [attachTrack]);
+  const onCameraFailed = useCallback(
+    () => setError("The camera would not open. You can type it instead."),
+    [],
+  );
+  useCameraStream(videoRef, attachTrack, onCameraFailed);
 
   useEffect(() => {
     if (!preview) {
