@@ -52,6 +52,8 @@ export class ReceiptRunner {
   private readonly waiters = new Map<string, Waiter>();
   /** txids of receipts whose wait ran out: they are not looked at again. */
   private readonly looked = new Set<string>();
+  private backingOff = false;
+  private onBackoffChange: ((backingOff: boolean) => void) | null = null;
 
   constructor(options: ReceiptRunnerOptions = {}) {
     this.backoffBaseMs = options.backoffBaseMs ?? 5_000;
@@ -82,6 +84,12 @@ export class ReceiptRunner {
     if (client === this.client) return;
     this.client = client;
     this.kick();
+  }
+
+  /** Tells `listener` whenever the runner starts or stops waiting out a failed poll (it is told the current state at once). */
+  watchBackoff(listener: ((backingOff: boolean) => void) | null): void {
+    this.onBackoffChange = listener;
+    listener?.(this.backingOff);
   }
 
   setOnline(online: boolean): void {
@@ -170,6 +178,7 @@ export class ReceiptRunner {
       async (record: grist.GristAnswer) => {
         forget();
         this.failures = 0;
+        this.setBackingOff(false);
         try {
           await settleReceipt(tripId, txid, record);
         } catch (err) {
@@ -194,13 +203,21 @@ export class ReceiptRunner {
     this.failures++;
     const delay = Math.min(this.backoffBaseMs * 2 ** (this.failures - 1), this.backoffMaxMs);
     this.retryAt = Date.now() + delay;
+    this.setBackingOff(true);
     this.armTimer(delay);
+  }
+
+  private setBackingOff(backingOff: boolean): void {
+    if (backingOff === this.backingOff) return;
+    this.backingOff = backingOff;
+    this.onBackoffChange?.(backingOff);
   }
 
   private armTimer(delay: number): void {
     if (this.timer) clearTimeout(this.timer);
     this.timer = setTimeout(() => {
       this.timer = null;
+      if (Date.now() >= this.retryAt) this.setBackingOff(false);
       this.kick();
     }, Math.max(0, delay));
   }

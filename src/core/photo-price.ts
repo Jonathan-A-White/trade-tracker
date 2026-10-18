@@ -17,13 +17,24 @@ export type PriceLookupNote =
   | { kind: "failed"; text: string }
   | { kind: "no-price"; text: string };
 
-export function priceLookupNote(lookup: PendingLookup | undefined): PriceLookupNote | null {
+/**
+ * `notSent` is why the phone is not sending (the text from sendHoldText), or null when nothing holds
+ * it back: a lookup not yet sent says so instead of 'Waiting on the factory', which is only for one
+ * the factory has.
+ */
+export function priceLookupNote(
+  lookup: PendingLookup | undefined,
+  notSent: string | null = null,
+): PriceLookupNote | null {
   if (!lookup) return null;
   if (lookup.status === "failed") {
     return { kind: "failed", text: lookup.error || "The factory could not read this tag." };
   }
   if (lookup.status === "applied") {
     return lookup.noPrice ? { kind: "no-price", text: "No price found on that photo" } : null;
+  }
+  if (lookup.status === "waiting-to-send") {
+    return { kind: "waiting", text: notSent ?? "Sending to the factory" };
   }
   return { kind: "waiting", text: "Waiting on the factory" };
 }

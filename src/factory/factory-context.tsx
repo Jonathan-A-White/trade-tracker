@@ -1,4 +1,4 @@
-import { createContext, useCallback, useContext, useMemo, useState } from "react";
+import { createContext, useCallback, useContext, useEffect, useMemo, useRef, useState } from "react";
 import type { ReactNode } from "react";
 import type { FactoryDoorState, FactoryLicence } from "@/contracts/types";
 import {
@@ -17,6 +17,7 @@ import type { MadeKeyResult } from "./key-session";
 import { chainCheck, useFactoryLicence } from "./licence";
 import type { FactoryLicenceChecker } from "./licence";
 import { useLookupRunning } from "./lookups";
+import { SendHoldContext, sendHold } from "./send-hold";
 
 interface FactoryContextValue {
   door: FactoryDoorState;
@@ -90,7 +91,37 @@ export function FactoryProvider({
     retryDelaysMs: licenceRetryMs,
   });
   const licenceState = reading?.licence ?? null;
-  useLookupRunning({ licence: licenceState, key, backendUrl });
+  const runnerState = useLookupRunning({ licence: licenceState, key, backendUrl });
+  const recheckLicence = reading?.recheck ?? noRecheck;
+
+  // A licence that could not be read (a passing chain outage) is read again when the device comes
+  // back online and when the app returns to the screen, so it never strands the queue.
+  const unknownRef = useRef({ unknown: false, recheck: recheckLicence });
+  useEffect(() => {
+    unknownRef.current = { unknown: licenceState === "unknown", recheck: recheckLicence };
+  });
+  useEffect(() => {
+    const recheckIfUnknown = () => {
+      if (unknownRef.current.unknown) unknownRef.current.recheck();
+    };
+    const onVisible = () => {
+      if (document.visibilityState !== "hidden") recheckIfUnknown();
+    };
+    window.addEventListener("online", recheckIfUnknown);
+    document.addEventListener("visibilitychange", onVisible);
+    return () => {
+      window.removeEventListener("online", recheckIfUnknown);
+      document.removeEventListener("visibilitychange", onVisible);
+    };
+  }, []);
+
+  const holds = useMemo(() => {
+    const base = { publicKeyHex, key, online: runnerState.online, licence: licenceState };
+    return {
+      lookup: sendHold({ ...base, backingOff: runnerState.lookupBackingOff }),
+      receipt: sendHold({ ...base, backingOff: runnerState.receiptBackingOff }),
+    };
+  }, [publicKeyHex, key, runnerState, licenceState]);
 
   const setBackendUrl = useCallback((url: string) => {
     writeBackendUrl(url);
@@ -106,7 +137,7 @@ export function FactoryProvider({
         door,
         publicKeyHex,
         licence: licenceState,
-        recheckLicence: reading?.recheck ?? noRecheck,
+        recheckLicence,
         backendUrl,
         setBackendUrl,
         makeKey: keySession.makeKey,
@@ -119,7 +150,7 @@ export function FactoryProvider({
         removeFingerprint: keySession.removeFingerprint,
       }}
     >
-      {children}
+      <SendHoldContext value={holds}>{children}</SendHoldContext>
     </FactoryContext>
   );
 }

@@ -4,6 +4,13 @@ import { currentReceiptClient, makeLookupClient } from "@/services/lookup-client
 import { LookupRunner } from "@/services/lookup-runner";
 import { ReceiptRunner } from "@/services/receipt-runner";
 
+/** What the runners are doing that the lines need to tell: the connection, and a queue waiting out a failure. */
+export interface RunnerState {
+  online: boolean;
+  lookupBackingOff: boolean;
+  receiptBackingOff: boolean;
+}
+
 /**
  * The lookup queue runs while the app is open: sending and polling only when the door is licensed
  * (a held licence and an unlocked key) and the device is online; polling only while the page is visible.
@@ -14,12 +21,16 @@ export function useLookupRunning(opts: {
   licence: FactoryLicence | null;
   key: Uint8Array | null;
   backendUrl: string;
-}): void {
+}): RunnerState {
   const { licence, key, backendUrl } = opts;
   const [runner] = useState(() => new LookupRunner());
   const [receiptRunner] = useState(() => new ReceiptRunner());
+  const [online, setOnlineState] = useState(() => navigator.onLine);
+  const [lookupBackingOff, setLookupBackingOff] = useState(false);
+  const [receiptBackingOff, setReceiptBackingOff] = useState(false);
   useEffect(() => {
     const setOnline = (online: boolean) => {
+      setOnlineState(online);
       runner.setOnline(online);
       receiptRunner.setOnline(online);
     };
@@ -35,9 +46,13 @@ export function useLookupRunning(opts: {
     window.addEventListener("online", goOnline);
     window.addEventListener("offline", goOffline);
     document.addEventListener("visibilitychange", changeVisibility);
+    runner.watchBackoff(setLookupBackingOff);
+    receiptRunner.watchBackoff(setReceiptBackingOff);
     runner.start();
     receiptRunner.start();
     return () => {
+      runner.watchBackoff(null);
+      receiptRunner.watchBackoff(null);
       window.removeEventListener("online", goOnline);
       window.removeEventListener("offline", goOffline);
       document.removeEventListener("visibilitychange", changeVisibility);
@@ -57,4 +72,5 @@ export function useLookupRunning(opts: {
     // makeLookupClient has just handed the key to the receipt client
     receiptRunner.setClient(licensed && clientKey ? currentReceiptClient() : null);
   }, [runner, receiptRunner, licensed, backendUrl]);
+  return { online, lookupBackingOff, receiptBackingOff };
 }

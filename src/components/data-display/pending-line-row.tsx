@@ -1,5 +1,6 @@
 import { useEffect, useState } from "react";
 import type { PendingLookup } from "@/contracts/types";
+import { sendHoldText, useSendHold } from "@/factory/send-hold";
 
 interface PendingLineRowProps {
   lookup: PendingLookup;
@@ -12,10 +13,13 @@ interface PendingLineRowProps {
   onQuantityChange?: (lookupId: string, quantity: number) => void;
 }
 
-/** What the line says of each state of its lookup. */
+/**
+ * What the line says of each state of its lookup. 'Waiting on the factory' is only for a lookup the
+ * factory really has; one not yet sent says so (see sendHoldText for why it is held back).
+ */
 const STATE_TEXT: Record<PendingLookup["status"], string> = {
-  "waiting-to-send": "Waiting on the factory",
-  "at-the-factory": "At the factory",
+  "waiting-to-send": "Sending to the factory",
+  "at-the-factory": "Waiting on the factory",
   ready: "Answer ready",
   applied: "Filled in",
   failed: "The factory could not fill this in",
@@ -50,6 +54,9 @@ export function PendingLineRow({
   onQuantityChange,
 }: PendingLineRowProps) {
   const thumbnail = useThumbnailUrl(lookup.photos[0]);
+  const hold = useSendHold();
+  const stateText =
+    lookup.status === "waiting-to-send" && hold ? sendHoldText(hold) : STATE_TEXT[lookup.status];
 
   return (
     <div className="border-b dark:border-gray-700 bg-white dark:bg-gray-800 px-4 py-3">
@@ -73,7 +80,7 @@ export function PendingLineRow({
             </p>
           ) : (
             <p className="text-sm text-amber-600 dark:text-amber-400 mt-0.5">
-              {STATE_TEXT[lookup.status]}
+              {stateText}
             </p>
           )}
         </div>

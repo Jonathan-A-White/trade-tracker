@@ -65,6 +65,8 @@ export class LookupRunner {
   private retryAt = 0;
   private retryTimer: ReturnType<typeof setTimeout> | null = null;
   private readonly waiters = new Map<string, AbortController>();
+  private backingOff = false;
+  private onBackoffChange: ((backingOff: boolean) => void) | null = null;
 
   constructor(options: LookupRunnerOptions = {}) {
     this.backoffBaseMs = options.backoffBaseMs ?? 5_000;
@@ -96,6 +98,12 @@ export class LookupRunner {
     if (client === this.client) return;
     this.client = client;
     this.kick();
+  }
+
+  /** Tells `listener` whenever the queue starts or stops waiting out a failed send (it is told the current state at once). */
+  watchBackoff(listener: ((backingOff: boolean) => void) | null): void {
+    this.onBackoffChange = listener;
+    listener?.(this.backingOff);
   }
 
   setOnline(online: boolean): void {
@@ -186,6 +194,7 @@ export class LookupRunner {
       });
       await this.repo.markSent(lookup.id, txid);
       this.failures = 0;
+      this.setBackingOff(false);
       return true;
     } catch (err) {
       if (err instanceof grist.GristInputError || door.isPermanentRefusal(err)) {
@@ -205,6 +214,7 @@ export class LookupRunner {
       async (record) => {
         if (this.waiters.get(id) === controller) this.waiters.delete(id);
         this.failures = 0;
+        this.setBackingOff(false);
         await this.settle(id, record);
       },
       (err: unknown) => {
@@ -248,7 +258,14 @@ export class LookupRunner {
       this.backoffMaxMs,
     );
     this.retryAt = Date.now() + delay;
+    this.setBackingOff(true);
     this.armRetryTimer();
+  }
+
+  private setBackingOff(backingOff: boolean): void {
+    if (backingOff === this.backingOff) return;
+    this.backingOff = backingOff;
+    this.onBackoffChange?.(backingOff);
   }
 
   /** (Re)starts the timer that looks at the queue again when the backoff ends. */
@@ -256,6 +273,7 @@ export class LookupRunner {
     if (this.retryTimer) clearTimeout(this.retryTimer);
     this.retryTimer = setTimeout(() => {
       this.retryTimer = null;
+      if (Date.now() >= this.retryAt) this.setBackingOff(false);
       this.kick();
     }, Math.max(0, this.retryAt - Date.now()));
   }

@@ -10,6 +10,7 @@ import { ItemRepository } from "@/db/repositories/item-repository";
 import { PendingLookupRepository } from "@/db/repositories/pending-lookup-repository";
 import { photoPricePath, priceLookupNote } from "@/core/photo-price";
 import type { UnitType } from "@/contracts/types";
+import { sendHoldText, useSendHold } from "@/factory/send-hold";
 
 const pendingLookupRepo = new PendingLookupRepository();
 
@@ -45,7 +46,8 @@ export function ItemDetailPage() {
     const lookups = await pendingLookupRepo.listPriceOnlyByTrip(activeTripId);
     return lookups.filter((l) => l.itemId === id).at(-1);
   }, [id, activeTripId]);
-  const note = priceLookupNote(priceLookup);
+  const hold = useSendHold();
+  const note = priceLookupNote(priceLookup, hold ? sendHoldText(hold) : null);
 
   const storeMap = new Map(stores?.map((s) => [s.id, s.name]) ?? []);
 
