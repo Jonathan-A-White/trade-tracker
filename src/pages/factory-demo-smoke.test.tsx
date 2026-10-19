@@ -132,7 +132,7 @@ describe("the factory flow, start to finish", () => {
     renderApp();
     await screen.findByText("Milk");
 
-    // 1. an unknown scan opens the photo screen: Package, then Shelf tag, then Done
+    // 1. an unknown scan opens the photo screen: Package, then Shelf tag, whose Use photo sends at once
     await user.click(screen.getByRole("link", { name: "Scan" }));
     await user.click(await screen.findByText("read unknown"));
     expect(await screen.findByText("Photo of the PACKAGE (front, name showing)")).toBeInTheDocument();
@@ -141,7 +141,6 @@ describe("the factory flow, start to finish", () => {
     expect(await screen.findByText("Photo of the PRICE TAG (on the shelf)")).toBeInTheDocument();
     await user.click(screen.getByRole("button", { name: "Take photo" }));
     await user.click(await screen.findByRole("button", { name: "Use photo" }));
-    await user.click(await screen.findByRole("button", { name: "Done" }));
 
     // 2. the pending line is in the trip at once and counts for nothing; with no key the phone says
     // it has not sent, rather than blaming the factory

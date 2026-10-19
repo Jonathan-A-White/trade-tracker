@@ -94,14 +94,14 @@ describe("PhotoCapturePage", () => {
     await takeAndUse(user);
     expect(await screen.findByText("Photo of the PRICE TAG (on the shelf)")).toBeInTheDocument();
     expect(screen.getByRole("button", { name: "Skip" })).toBeInTheDocument();
-    expect(screen.getByRole("button", { name: "Done" })).toBeInTheDocument();
+    expect(screen.queryByRole("button", { name: "Done" })).not.toBeInTheDocument();
   });
 
-  it("Done with one photo creates a pending line and a waiting-to-send lookup with one photo", async () => {
+  it("Skip on the tag creates a pending line and a waiting-to-send lookup with the package photo only", async () => {
     const user = userEvent.setup();
     renderScreen();
     await takeAndUse(user);
-    await user.click(await screen.findByRole("button", { name: "Done" }));
+    await user.click(await screen.findByRole("button", { name: "Skip" }));
 
     await waitFor(() => expect(screen.getByTestId("where")).toHaveTextContent("/trips/active/scan"));
     const lookups = await db.pendingLookups.toArray();
@@ -115,12 +115,12 @@ describe("PhotoCapturePage", () => {
     expect(lines[0].tripId).toBe(lookups[0].tripId);
   });
 
-  it("Done with two photos stores two", async () => {
+  it("the tag's Use photo sends both photos at once, with no further tap", async () => {
     const user = userEvent.setup();
     renderScreen();
     await takeAndUse(user);
+    await screen.findByText("Photo of the PRICE TAG (on the shelf)");
     await takeAndUse(user);
-    await user.click(await screen.findByRole("button", { name: "Done" }));
 
     await waitFor(() => expect(screen.getByTestId("where")).toHaveTextContent("/trips/active/scan"));
     const lookups = await db.pendingLookups.toArray();
@@ -138,6 +138,22 @@ describe("PhotoCapturePage", () => {
     const lookups = await db.pendingLookups.toArray();
     expect(lookups).toHaveLength(1);
     expect(lookups[0].photos).toHaveLength(1);
+  });
+
+  it("the tag step has no Done, and its Retake returns to the camera without saving", async () => {
+    const user = userEvent.setup();
+    renderScreen();
+    await takeAndUse(user);
+    await screen.findByText("Photo of the PRICE TAG (on the shelf)");
+    await user.click(screen.getByRole("button", { name: "Take photo" }));
+    await user.click(await screen.findByRole("button", { name: "Retake" }));
+
+    expect(screen.queryByRole("img", { name: "The photo you just took" })).not.toBeInTheDocument();
+    expect(screen.queryByRole("button", { name: "Done" })).not.toBeInTheDocument();
+    expect(screen.getByText("Photo of the PRICE TAG (on the shelf)")).toBeInTheDocument();
+    expect(screen.getByRole("button", { name: "Skip" })).toBeInTheDocument();
+    expect(screen.queryByTestId("where")).not.toBeInTheDocument();
+    expect(await db.pendingLookups.count()).toBe(0);
   });
 
   it("says the lookup waits for a licence when the factory door is not open", async () => {
@@ -265,7 +281,7 @@ describe("PhotoCapturePage", () => {
       await user.click(screen.getByRole("button", { name: "Take photo" }));
       await user.click(await screen.findByRole("button", { name: "Retake" }));
       await takeAndUse(user);
-      await user.click(await screen.findByRole("button", { name: "Done" }));
+      await user.click(await screen.findByRole("button", { name: "Skip" }));
       await waitFor(() => expect(screen.getByTestId("where")).toHaveTextContent("/trips/active/scan"));
       const lookups = await db.pendingLookups.toArray();
       expect(lookups[0].photos).toHaveLength(1);

@@ -247,8 +247,8 @@ describe("the Trips list and an ended trip's Edit page", () => {
 
       await user.click(await screen.findByRole("button", { name: "Take photo" }));
       await user.click(await screen.findByRole("button", { name: "Use photo" }));
-      await user.click(await screen.findByRole("button", { name: "Done" }));
-      // Done with a photo of the package comes back to the scanner of the same trip
+      await user.click(await screen.findByRole("button", { name: "Skip" }));
+      // Skipping the tag after a photo of the package comes back to the scanner of the same trip
       await waitFor(() => expect(router.state.location.pathname).toBe(`/trips/${ended.id}/edit/scan`));
 
       const [lookup] = await db.pendingLookups.toArray();

@@ -111,9 +111,14 @@ export default function PhotoCapturePage() {
       await save([preview]);
       return;
     }
-    setPhotos((prev) => [...prev, preview]);
+    if (photos.length >= 1) {
+      // the tag is the last shot allowed: both photos go at once, with no Done to tap
+      await save([...photos, preview]);
+      return;
+    }
+    setPhotos([preview]);
     setPreview(null);
-  }, [preview, busy, priceOnly, save]);
+  }, [preview, busy, priceOnly, photos, save]);
 
   const handleTypeInstead = useCallback(() => {
     navigate(`${basePath}/add?barcode=${encodeURIComponent(barcode)}`, { replace: true });
@@ -215,7 +220,7 @@ export default function PhotoCapturePage() {
             </p>
           )}
           <div className="flex gap-3">
-            {!priceOnly && step === "tag" && photos.length < 2 && (
+            {!priceOnly && step === "tag" && (
               <button
                 type="button"
                 onClick={() => save(photos)}
@@ -228,23 +233,13 @@ export default function PhotoCapturePage() {
             <button
               type="button"
               onClick={handleTake}
-              disabled={busy || photos.length >= 2}
+              disabled={busy}
               className={`${button} flex-1 text-white ${
                 wantsTag ? "bg-amber-600 hover:bg-amber-700" : "bg-blue-600 hover:bg-blue-700"
               }`}
             >
               Take photo
             </button>
-            {!priceOnly && step === "tag" && (
-              <button
-                type="button"
-                onClick={() => save(photos)}
-                disabled={busy}
-                className={`${button} flex-1 bg-green-600 text-white hover:bg-green-700`}
-              >
-                Done
-              </button>
-            )}
           </div>
           {!priceOnly && (
             <button
