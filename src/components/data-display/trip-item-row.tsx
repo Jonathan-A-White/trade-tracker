@@ -79,6 +79,9 @@ export function TripItemRow({
     }
   }, []);
 
+  // a row that goes (a swipe-away, a test ending) takes a pending long press with it
+  useEffect(() => clearLongPress, [clearLongPress]);
+
   // Close menu on outside click
   const menuRef = useRef<HTMLDivElement | null>(null);
   useEffect(() => {

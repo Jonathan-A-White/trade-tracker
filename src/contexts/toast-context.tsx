@@ -28,6 +28,16 @@ const variantStyles: Record<ToastVariant, string> = {
 export function ToastProvider({ children }: { children: ReactNode }) {
   const [toasts, setToasts] = useState<Toast[]>([]);
   const nextId = useRef(0);
+  // the 3 s dismissals still pending; a provider that goes (a test ends) clears them
+  const timers = useRef(new Set<ReturnType<typeof setTimeout>>());
+
+  useEffect(() => {
+    const pending = timers.current;
+    return () => {
+      pending.forEach(clearTimeout);
+      pending.clear();
+    };
+  }, []);
 
   const removeToast = useCallback((id: number) => {
     setToasts((prev) => prev.filter((t) => t.id !== id));
@@ -44,9 +54,11 @@ export function ToastProvider({ children }: { children: ReactNode }) {
         return updated;
       });
 
-      setTimeout(() => {
+      const timer = setTimeout(() => {
+        timers.current.delete(timer);
         removeToast(id);
       }, AUTO_DISMISS_MS);
+      timers.current.add(timer);
     },
     [removeToast],
   );
