@@ -43,6 +43,7 @@
     "fake-indexeddb": "^6.2.5",
     "globals": "^17.4.0",
     "jsdom": "^26.1.0",
+    "pwa-kit": "github:Jonathan-A-White/pwa-kit#1bcc9e9f14b4c3e28d7e3221080b9b29672c6fff",
     "typescript": "~5.9.3",
     "typescript-eslint": "^8.56.1",
     "vite": "^7.0.0",
