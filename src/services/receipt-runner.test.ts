@@ -137,9 +137,13 @@ describe("ReceiptRunner", () => {
     const { trip } = await seed();
     const { client } = fakeClient();
     await sendReceipt(client, trip.id, []);
-    makeRunner(null);
-    await new Promise((resolve) => setTimeout(resolve, 30));
+    const runner = makeRunner(null);
+    // start() pumps once, synchronously, and a pump with no client asks nothing
     expect(client.awaitAnswer).not.toHaveBeenCalled();
+
+    // the same runner given a client asks at once: the empty wait above was the missing client, not a dead runner
+    runner.setClient(client);
+    await waitFor(() => expect(client.awaitAnswer).toHaveBeenCalledTimes(1));
   });
 
   it("an answer that waited hours while the page was hidden is fetched and applied when the page is seen again", async () => {
@@ -182,16 +186,16 @@ describe("ReceiptRunner", () => {
       })),
       unreadable: "The top part of the receipt is blurry.",
     };
+    let pageVisible = false;
+    const askedWhileHidden: string[] = [];
     const client: ReceiptClient = {
       send: vi.fn(async () => "direct:tx1"),
       // like bsv-kit's awaitAnswer, which pages the backend from the start: an answer already
       // there comes back at once
-      awaitAnswer: vi.fn(async (txid: string) => ({
-        re: txid,
-        status: "answered" as const,
-        answer,
-        grind,
-      })),
+      awaitAnswer: vi.fn(async (txid: string) => {
+        if (!pageVisible) askedWhileHidden.push(txid);
+        return { re: txid, status: "answered" as const, answer, grind };
+      }),
     };
     await sendReceipt(client, trip.id, []);
     await db.trips.update(trip.id, {
@@ -205,12 +209,13 @@ describe("ReceiptRunner", () => {
     runner.setVisible(false);
     runner.setClient(client);
     runner.start();
-    await new Promise((resolve) => setTimeout(resolve, 30));
-    expect(client.awaitAnswer).not.toHaveBeenCalled();
 
+    pageVisible = true;
     runner.setVisible(true);
 
     await waitFor(async () => expect((await db.tripItems.get(lineIds[0]))?.price).toBe(2));
+    // the factory was asked only once the page was seen, never while it was hidden
+    expect(askedWhileHidden).toEqual([]);
     const saved = await db.trips.get(trip.id);
     expect(saved?.receiptPending).toBeUndefined();
     expect(saved?.receiptReconcile?.total).toBe(197.34);
@@ -236,9 +241,16 @@ describe("ReceiptRunner", () => {
     const signal = vi.mocked(client.awaitAnswer).mock.calls[0][1];
     await waitFor(() => expect(signal.aborted).toBe(true));
 
+    // a second receipt, still within its deadline, is asked about in the same pass as the first
+    // is skipped: once it is asked, the pass has run and the first was not looked at again
+    const first = (await db.trips.get(trip.id))!.receiptPending!;
+    const second = await tripRepo.create({ storeId: "s1", startedAt: Date.now() });
+    await db.trips.update(second.id, {
+      receiptPending: { ...first, txid: "direct:tx2", sentAt: Date.now() },
+    });
     runner.kick();
-    await new Promise((resolve) => setTimeout(resolve, 30));
-    expect(client.awaitAnswer).toHaveBeenCalledTimes(1);
+    await waitFor(() => expect(client.awaitAnswer).toHaveBeenCalledTimes(2));
+    expect(vi.mocked(client.awaitAnswer).mock.calls.map((call) => call[0])).toEqual(["direct:tx1", "direct:tx2"]);
     expect((await db.trips.get(trip.id))?.receiptPending?.error).toBeUndefined();
   });
 
