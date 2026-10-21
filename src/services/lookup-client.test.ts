@@ -28,7 +28,11 @@ const TJ_NAMES = [
   "Greek Style Nonfat Plain Yogurt Qt",
 ];
 
-/** A Trader Joe's trip of `count` lines, names up to 40 characters, UUID line ids. */
+/**
+ * A Trader Joe's trip of `count` lines, names up to 40 characters, UUID line ids. Seeding is CPU work
+ * (about 9 to 12 s for 300 lines at host load 9 to 14), not a clock: these tests take the shared test
+ * timeout from the preset (40 s) rather than a hand-set 20 s under it, and none is a timing test.
+ */
 async function seedTrip(count: number) {
   await Promise.all(db.tables.map((table) => table.clear()));
   const now = Date.now();
@@ -92,7 +96,7 @@ describe("the receipt-reconcile grist for a real-sized trip (mw-31qug1.7)", () =
 
     expect(txid).toBe("direct:tx1");
     expect(posted).toHaveLength(1);
-  }, 20_000);
+  });
 
   it("says plainly how many lines a trip too large to send can take, never the byte count", async () => {
     const trip = await seedTrip(300);
@@ -112,7 +116,7 @@ describe("the receipt-reconcile grist for a real-sized trip (mw-31qug1.7)", () =
     expect(error).toMatch(/can check \d+ lines/);
     expect(error).not.toMatch(/bytes|cap|payload|too large/i);
     expect(posted).toEqual([]);
-  }, 20_000);
+  });
 
   it("measures a 40-line trip and one receipt photo under bsv-kit's 20480-byte cap (mw-31qug1.8)", async () => {
     const trip = await seedTrip(40);
@@ -123,7 +127,7 @@ describe("the receipt-reconcile grist for a real-sized trip (mw-31qug1.7)", () =
 
     expect(cap).toBe(20480);
     expect(bytes).toBeLessThan(20480);
-  }, 20_000);
+  });
 
   it("sends an 80-line trip that the old 10240-byte cap refused (mw-31qug1.8)", async () => {
     const trip = await seedTrip(80);
@@ -143,5 +147,5 @@ describe("the receipt-reconcile grist for a real-sized trip (mw-31qug1.7)", () =
 
     expect(txid).toBe("direct:tx1");
     expect(posted).toHaveLength(1);
-  }, 20_000);
+  });
 });
