@@ -1,4 +1,5 @@
 import { useState, useEffect } from "react";
+import { useAlive } from "pwa-kit/alive";
 import { SectionCard } from "../parts";
 import { onDataCleared } from "../data-cleared";
 
@@ -15,6 +16,7 @@ export function StorageSection() {
     used: number;
     quota: number;
   } | null>(null);
+  const alive = useAlive();
   // Bumped when Clear All Data finishes, so the meter is read again.
   const [clears, setClears] = useState(0);
 
@@ -24,6 +26,7 @@ export function StorageSection() {
     async function estimateStorage() {
       if (navigator.storage && navigator.storage.estimate) {
         const estimate = await navigator.storage.estimate();
+        if (!alive()) return;
         setStorageUsage({
           used: estimate.usage ?? 0,
           quota: estimate.quota ?? 0,
@@ -31,7 +34,7 @@ export function StorageSection() {
       }
     }
     estimateStorage();
-  }, [clears]);
+  }, [clears, alive]);
 
   const usagePercent =
     storageUsage && storageUsage.quota > 0

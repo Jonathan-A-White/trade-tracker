@@ -1,4 +1,5 @@
 import { useState } from "react";
+import { useAlive } from "pwa-kit/alive";
 import { useFactory } from "@/contexts/factory-context";
 import type { FactoryLicence } from "@/contracts/types";
 import { KeyQr } from "@/components/factory/key-qr";
@@ -34,6 +35,7 @@ export function FactorySettings() {
     unlockWithFingerprint,
     removeFingerprint,
   } = useFactory();
+  const alive = useAlive();
   const [words, setWords] = useState("");
   const [busy, setBusy] = useState(false);
   const [error, setError] = useState<string | null>(null);
@@ -46,14 +48,15 @@ export function FactorySettings() {
     setError(null);
     try {
       const made = await makeKey();
+      if (!alive()) return;
       setPhrase(made.phrase);
       if (made.fingerprintNote) {
         setError(`The key is made, but the fingerprint is not set up. ${made.fingerprintNote}`);
       }
     } catch (err) {
-      setError(err instanceof Error ? err.message : "That did not work.");
+      if (alive()) setError(err instanceof Error ? err.message : "That did not work.");
     } finally {
-      setBusy(false);
+      if (alive()) setBusy(false);
     }
   }
 
@@ -62,11 +65,11 @@ export function FactorySettings() {
     setError(null);
     try {
       await unlockWithWords(words);
-      setWords("");
+      if (alive()) setWords("");
     } catch (err) {
-      setError(err instanceof Error ? err.message : "That did not work.");
+      if (alive()) setError(err instanceof Error ? err.message : "That did not work.");
     } finally {
-      setBusy(false);
+      if (alive()) setBusy(false);
     }
   }
 
@@ -76,9 +79,9 @@ export function FactorySettings() {
     try {
       await action();
     } catch (err) {
-      setError(err instanceof Error ? err.message : "That did not work.");
+      if (alive()) setError(err instanceof Error ? err.message : "That did not work.");
     } finally {
-      setBusy(false);
+      if (alive()) setBusy(false);
     }
   }
 
@@ -88,9 +91,9 @@ export function FactorySettings() {
     if (!publicKeyHex) return;
     try {
       await navigator.clipboard.writeText(publicKeyHex);
-      setCopied(true);
+      if (alive()) setCopied(true);
     } catch {
-      setError("Could not copy. Select the public key and copy it by hand.");
+      if (alive()) setError("Could not copy. Select the public key and copy it by hand.");
     }
   }
 

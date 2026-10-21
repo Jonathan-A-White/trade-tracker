@@ -1,5 +1,6 @@
 import { useCallback, useEffect, useRef, useState } from "react";
 import { useNavigate, useParams, useSearchParams } from "react-router";
+import { useAlive } from "pwa-kit/alive";
 import { db } from "@/db/database";
 import { PendingLookupRepository } from "@/db/repositories/pending-lookup-repository";
 import { useFactory } from "@/contexts/factory-context";
@@ -11,6 +12,7 @@ const pendingLookupRepo = new PendingLookupRepository();
 
 export default function PhotoCapturePage() {
   const navigate = useNavigate();
+  const alive = useAlive();
   const [searchParams] = useSearchParams();
   // on an ended trip's Edit page the route names the trip; on the live trip it does not
   const { id: tripIdParam } = useParams<{ id: string }>();
@@ -79,12 +81,14 @@ export default function PhotoCapturePage() {
         }
       } catch (err) {
         console.error("Failed to save the photos:", err);
-        setError("Could not save the photos. Please try again.");
         savingRef.current = false;
-        setBusy(false);
+        if (alive()) {
+          setError("Could not save the photos. Please try again.");
+          setBusy(false);
+        }
       }
     },
-    [barcode, navigate, priceOnlyItemId, backTo, tripIdParam, basePath],
+    [barcode, navigate, priceOnlyItemId, backTo, tripIdParam, basePath, alive],
   );
 
   const handleTake = useCallback(async () => {
@@ -93,14 +97,15 @@ export default function PhotoCapturePage() {
     setBusy(true);
     setError(null);
     try {
-      setPreview(await captureStill(video, { zoom: digitalZoom }));
+      const still = await captureStill(video, { zoom: digitalZoom });
+      if (alive()) setPreview(still);
     } catch (err) {
       console.error("Failed to take a photo:", err);
-      setError("Could not take that photo. Try again.");
+      if (alive()) setError("Could not take that photo. Try again.");
     } finally {
-      setBusy(false);
+      if (alive()) setBusy(false);
     }
-  }, [busy, digitalZoom]);
+  }, [busy, digitalZoom, alive]);
 
   const handleRetake = useCallback(() => setPreview(null), []);
 

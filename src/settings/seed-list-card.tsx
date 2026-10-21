@@ -1,4 +1,5 @@
 import { useState } from "react";
+import { useAlive } from "pwa-kit/alive";
 import { seedItems } from "./seed-lists";
 import type { SeedList } from "./seed-lists";
 import { AddedSummary, OUTLINE_BUTTON_CLASS, SectionCard, SectionNote, SuccessNote } from "./parts";
@@ -13,17 +14,19 @@ export function SeedListCard({
   description: string;
   buttonLabel: string;
 }) {
+  const alive = useAlive();
   const [seeding, setSeeding] = useState(false);
   const [result, setResult] = useState<{ added: number; skipped: number } | null>(null);
 
   async function handleLoad() {
     setSeeding(true);
     try {
-      setResult(await seedItems(list));
+      const added = await seedItems(list);
+      if (alive()) setResult(added);
     } catch {
       // silently fail
     } finally {
-      setSeeding(false);
+      if (alive()) setSeeding(false);
     }
   }
 
