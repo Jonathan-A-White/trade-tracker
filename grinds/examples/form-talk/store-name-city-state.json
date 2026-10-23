@@ -1,0 +1,110 @@
+{
+  "description": "He says the store is a Stop & Shop in Danbury, Connecticut: the tutor fills Store Name, City and State (as the code CT) and, with the required Store Name held, says the form is ready.",
+  "schemaVersion": "1.0",
+  "request": {
+    "question": "Stop & Shop in Danbury, Connecticut",
+    "history": [
+      {
+        "q": "Help me fill this in.",
+        "a": "What is the store called?"
+      }
+    ],
+    "form": {
+      "name": "Store",
+      "command": "store-save",
+      "fields": [
+        {
+          "name": "name",
+          "label": "Store Name",
+          "required": true,
+          "kind": "text",
+          "value": ""
+        },
+        {
+          "name": "city",
+          "label": "City",
+          "required": false,
+          "kind": "text",
+          "value": ""
+        },
+        {
+          "name": "state",
+          "label": "State",
+          "hint": "The two-letter state code.",
+          "required": false,
+          "kind": "choice",
+          "value": "",
+          "options": [
+            "AL",
+            "AK",
+            "AZ",
+            "AR",
+            "CA",
+            "CO",
+            "CT",
+            "DE",
+            "FL",
+            "GA",
+            "HI",
+            "ID",
+            "IL",
+            "IN",
+            "IA",
+            "KS",
+            "KY",
+            "LA",
+            "ME",
+            "MD",
+            "MA",
+            "MI",
+            "MN",
+            "MS",
+            "MO",
+            "MT",
+            "NE",
+            "NV",
+            "NH",
+            "NJ",
+            "NM",
+            "NY",
+            "NC",
+            "ND",
+            "OH",
+            "OK",
+            "OR",
+            "PA",
+            "RI",
+            "SC",
+            "SD",
+            "TN",
+            "TX",
+            "UT",
+            "VT",
+            "VA",
+            "WA",
+            "WV",
+            "WI",
+            "WY",
+            "DC"
+          ]
+        },
+        {
+          "name": "notes",
+          "label": "Notes",
+          "required": false,
+          "kind": "text",
+          "value": ""
+        }
+      ]
+    }
+  },
+  "expect": {
+    "form_values.0.field": "name",
+    "form_values.0.value": {
+      "matches": "(?i)stop (&|and) shop"
+    },
+    "form_ask": {
+      "present": false
+    }
+  }
+}

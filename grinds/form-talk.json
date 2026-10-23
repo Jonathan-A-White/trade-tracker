@@ -1,0 +1,16 @@
+{
+  "grind": 1,
+  "app": "trade-tracker",
+  "kind": "form-talk",
+  "versions": ["1.0"],
+  "model": "sonnet",
+  "effort": "low",
+  "instructions": "grinds/form-talk.md",
+  "answerSchema": "schemas/form-talk-answer-1.0.schema.json",
+  "attachments": {
+    "min": 0,
+    "max": 0,
+    "mime": [],
+    "maxBytes": 0
+  }
+}

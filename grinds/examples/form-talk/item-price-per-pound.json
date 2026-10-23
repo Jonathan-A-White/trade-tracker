@@ -1,0 +1,78 @@
+{
+  "description": "He says the bananas are 79 cents a pound: the tutor fills Price and Unit Type (as the option Per Pound) and does not touch Name.",
+  "schemaVersion": "1.0",
+  "request": {
+    "question": "79 cents a pound",
+    "history": [
+      {
+        "q": "Help me fill this in.",
+        "a": "How much does it cost?"
+      }
+    ],
+    "form": {
+      "name": "Item",
+      "command": "item-save",
+      "fields": [
+        {
+          "name": "barcode",
+          "label": "Barcode or PLU Code",
+          "hint": "For produce, the 4-5 digit PLU from the sticker.",
+          "required": false,
+          "kind": "text",
+          "value": ""
+        },
+        {
+          "name": "name",
+          "label": "Name",
+          "required": true,
+          "kind": "text",
+          "value": "Organic Bananas"
+        },
+        {
+          "name": "price",
+          "label": "Price",
+          "hint": "In dollars, like 3.49.",
+          "required": true,
+          "kind": "text",
+          "value": ""
+        },
+        {
+          "name": "unitType",
+          "label": "Unit Type",
+          "required": false,
+          "kind": "choice",
+          "value": "Each",
+          "options": [
+            "Each",
+            "Per Pound"
+          ]
+        },
+        {
+          "name": "category",
+          "label": "Category",
+          "hint": "Usually one of the app's own, like Produce or Dairy & Eggs.",
+          "required": false,
+          "kind": "text",
+          "value": ""
+        }
+      ]
+    }
+  },
+  "expect": {
+    "form_values.0.field": {
+      "one_of": [
+        "price",
+        "unitType"
+      ]
+    },
+    "form_values.1.field": {
+      "one_of": [
+        "price",
+        "unitType"
+      ]
+    },
+    "answer": {
+      "present": true
+    }
+  }
+}

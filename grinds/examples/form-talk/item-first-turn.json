@@ -1,0 +1,70 @@
+{
+  "description": "He taps Let the tutor do it on an empty Item form: the tutor asks one question about a required field, naming the field in form_ask, and fills nothing yet.",
+  "schemaVersion": "1.0",
+  "request": {
+    "question": "Help me fill this in.",
+    "history": [],
+    "form": {
+      "name": "Item",
+      "command": "item-save",
+      "fields": [
+        {
+          "name": "barcode",
+          "label": "Barcode or PLU Code",
+          "hint": "For produce, the 4-5 digit PLU from the sticker.",
+          "required": false,
+          "kind": "text",
+          "value": "94011"
+        },
+        {
+          "name": "name",
+          "label": "Name",
+          "required": true,
+          "kind": "text",
+          "value": ""
+        },
+        {
+          "name": "price",
+          "label": "Price",
+          "hint": "In dollars, like 3.49.",
+          "required": true,
+          "kind": "text",
+          "value": ""
+        },
+        {
+          "name": "unitType",
+          "label": "Unit Type",
+          "required": false,
+          "kind": "choice",
+          "value": "Each",
+          "options": [
+            "Each",
+            "Per Pound"
+          ]
+        },
+        {
+          "name": "category",
+          "label": "Category",
+          "hint": "Usually one of the app's own, like Produce or Dairy & Eggs.",
+          "required": false,
+          "kind": "text",
+          "value": ""
+        }
+      ]
+    }
+  },
+  "expect": {
+    "answer": {
+      "matches": "(?i)\\?\\s*$"
+    },
+    "form_ask": {
+      "one_of": [
+        "name",
+        "price"
+      ]
+    },
+    "form_values": {
+      "present": false
+    }
+  }
+}
