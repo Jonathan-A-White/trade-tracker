@@ -18,6 +18,9 @@ import { chainCheck, useFactoryLicence } from "./licence";
 import type { FactoryLicenceChecker } from "./licence";
 import { useLookupRunning } from "./lookups";
 import { SendHoldContext, sendHold } from "./send-hold";
+import { FormTutorContext } from "@/tutor/tutor-context";
+import { makeFormTalkAsk } from "@/tutor/form-talk";
+import type { FormTalkAsk } from "@/tutor/form-talk";
 
 interface FactoryContextValue {
   door: FactoryDoorState;
@@ -123,6 +126,21 @@ export function FactoryProvider({
     };
   }, [publicKeyHex, key, runnerState, licenceState]);
 
+  // The forms' tutor asks the factory only while the door is licensed; the key is read when it asks, not keyed on.
+  const keyRef = useRef(key);
+  useEffect(() => {
+    keyRef.current = key;
+  });
+  const licensed = licenceState === "held" && key !== null;
+  const formAsk = useMemo<FormTalkAsk | null>(() => {
+    if (!licensed) return null;
+    return async (request, signal) => {
+      const current = keyRef.current;
+      if (!current) throw new Error("The factory is locked.");
+      return makeFormTalkAsk(backendUrl, current)(request, signal);
+    };
+  }, [licensed, backendUrl]);
+
   const setBackendUrl = useCallback((url: string) => {
     writeBackendUrl(url);
     setBackendUrlState(readBackendUrl());
@@ -150,7 +168,9 @@ export function FactoryProvider({
         removeFingerprint: keySession.removeFingerprint,
       }}
     >
-      <SendHoldContext value={holds}>{children}</SendHoldContext>
+      <FormTutorContext value={formAsk}>
+        <SendHoldContext value={holds}>{children}</SendHoldContext>
+      </FormTutorContext>
     </FactoryContext>
   );
 }

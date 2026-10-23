@@ -9,6 +9,20 @@ Currently, two official plugins are available:
 - [@vitejs/plugin-react](https://github.com/vitejs/vite-plugin-react/blob/main/packages/plugin-react) uses [Oxc](https://oxc.rs)
 - [@vitejs/plugin-react-swc](https://github.com/vitejs/vite-plugin-react/blob/main/packages/plugin-react-swc) uses [SWC](https://swc.rs/)
 
+## The forms tutor: Let the tutor do it
+
+No form without a tutor. Each of the app's three forms has a **Let the tutor do it** button at its top: the tutor asks for one field at a time in plain words, fills the field he answers, and when every required field holds something offers **Send**, which he taps himself (the tutor never sends).
+
+| Form | Fields | Pages | Command |
+| --- | --- | --- | --- |
+| `ItemForm` (`src/components/forms/item-form.tsx`) | Barcode or PLU Code, Name, Price, Unit Type (Each, Per Pound), Category | new item, item detail, add item, active trip | `item-save` |
+| `StoreForm` (`src/components/forms/store-form.tsx`) | Store Name, City, State, Notes | new store, edit store, new trip | `store-save` |
+| Identify Item (`src/components/forms/fix-unknown-item-modal.tsx`) | Name, Barcode or PLU, Unit Type, Category | the trip pages that fix an unknown item | `identify-item` |
+
+- The door is `src/tutor/form-door.tsx` (`FormDoor`); the forms and commands live in `src/tutor/form-commands.ts`, the request and the factory client in `src/tutor/form-talk.ts`. The forms come from `@voice-kit/forms` (the `voice-kit` package, pinned by commit).
+- Each command is a `confirm` command: its `send` is the page's own `onSubmit` (the modal's own save), so the form's Save and the door's Send run the same handler with the same values.
+- The tutor is the grind `grinds/form-talk.json` (instructions `grinds/form-talk.md`, schemas `schemas/form-talk-input-1.0.schema.json` and `schemas/form-talk-answer-1.0.schema.json`, examples under `grinds/examples/form-talk/`). It is reached through the factory (`FactoryProvider` gives the forms their way to ask only while the door is licensed); with no factory the button says so and the form works as it always did.
+
 ## React Compiler
 
 The React Compiler is not enabled on this template because of its impact on dev & build performances. To add it, see [this documentation](https://react.dev/learn/react-compiler/installation).
@@ -100,6 +114,7 @@ A source added or removed changes its credit in the same commit, and the test (`
 - [ZXing-C++](https://github.com/zxing-cpp/zxing-cpp): The barcode decoder that zxing-wasm is built from. Licence: [Apache-2.0](https://www.apache.org/licenses/LICENSE-2.0). Changes: None.
 - [qrcode](https://github.com/soldair/node-qrcode): Drawing this phone's key as a QR code in Settings, so Postern can scan it. Licence: [MIT](https://opensource.org/license/mit). Changes: None.
 - [bsv-kit](https://github.com/Jonathan-A-White/bsv-kit): The factory key, the licence check and the signed requests to the factory door. Licence: [MIT](https://opensource.org/license/mit). Changes: Our own library, pinned to a commit.
+- [voice-kit](https://github.com/Jonathan-A-White/voice-kit): Lets the tutor ask for a form's fields one at a time and fill them in. Licence: [MIT](https://opensource.org/license/mit). Changes: Our own library, pinned to a commit.
 
 ### Tools that build and test the app
 

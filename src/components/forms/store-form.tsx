@@ -1,13 +1,9 @@
 import { useState } from "react";
 import type { FormEvent } from "react";
 import { US_STATES } from "@/core/tax/us-states";
-
-interface StoreFormValues {
-  name: string;
-  city: string;
-  state: string;
-  notes: string;
-}
+import { FormDoor } from "@/tutor/form-door";
+import { STORE_FORM, storeSaveCommand, storeStrings } from "@/tutor/form-commands";
+import type { StoreFormValues } from "@/tutor/form-commands";
 
 interface StoreFormProps {
   initialValues?: Partial<StoreFormValues>;
@@ -26,11 +22,39 @@ export function StoreForm({ initialValues, onSubmit, onCancel }: StoreFormProps)
     onSubmit({ name, city, state, notes });
   }
 
+  /** The tutor's value for a field; false when the field cannot take it. */
+  function fill(field: string, value: string): boolean {
+    switch (field) {
+      case "name":
+        setName(value);
+        return true;
+      case "city":
+        setCity(value);
+        return true;
+      case "state":
+        if (!US_STATES.some(({ code }) => code === value)) return false;
+        setState(value);
+        return true;
+      case "notes":
+        setNotes(value);
+        return true;
+      default:
+        return false;
+    }
+  }
+
   const inputClass =
     "w-full rounded-lg border border-gray-300 dark:border-gray-600 bg-white dark:bg-gray-700 px-3 py-2 text-sm text-gray-900 dark:text-gray-100 focus:outline-none focus:ring-2 focus:ring-blue-500 focus:border-transparent";
 
   return (
     <form onSubmit={handleSubmit} className="space-y-4">
+      <FormDoor
+        form={STORE_FORM}
+        command={storeSaveCommand(onSubmit)}
+        values={storeStrings({ name, city, state, notes })}
+        onFill={fill}
+      />
+
       <div>
         <label htmlFor="store-name" className="block text-sm font-medium text-gray-700 dark:text-gray-300 mb-1">
           Store Name

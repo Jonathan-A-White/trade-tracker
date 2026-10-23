@@ -4,14 +4,15 @@ import { isPLUCode } from "../../scanner/manual-entry";
 import { BarcodeInput } from "./barcode-input";
 import { CategoryAutocomplete } from "./category-autocomplete";
 import { ScannerViewfinder } from "../scanner/scanner-viewfinder";
-
-interface ItemFormValues {
-  barcode: string;
-  name: string;
-  currentPrice: number;
-  unitType: string;
-  category: string;
-}
+import { FormDoor } from "@/tutor/form-door";
+import {
+  ITEM_FORM,
+  itemSaveCommand,
+  itemStrings,
+  parsePrice,
+  unitTypeOf,
+} from "@/tutor/form-commands";
+import type { ItemFormValues } from "@/tutor/form-commands";
 
 interface ItemFormProps {
   initialValues?: Partial<ItemFormValues>;
@@ -45,10 +46,46 @@ export function ItemForm({
     onSubmit({ barcode, name, currentPrice, unitType, category });
   }
 
+  /** The tutor's value for a field; false when the field cannot take it. */
+  function fill(field: string, value: string): boolean {
+    switch (field) {
+      case "barcode":
+        setBarcode(value);
+        return true;
+      case "name":
+        setName(value);
+        return true;
+      case "price": {
+        const price = parsePrice(value);
+        if (price === null) return false;
+        setCurrentPrice(price);
+        return true;
+      }
+      case "unitType": {
+        const unit = unitTypeOf(value);
+        if (unit === null) return false;
+        setUnitType(unit);
+        return true;
+      }
+      case "category":
+        setCategory(value);
+        return true;
+      default:
+        return false;
+    }
+  }
+
   const inputClass = "w-full rounded-lg border border-gray-300 dark:border-gray-600 bg-white dark:bg-gray-700 px-3 py-2 text-sm text-gray-900 dark:text-gray-100 focus:outline-none focus:ring-2 focus:ring-blue-500 focus:border-transparent";
 
   return (
     <form onSubmit={handleSubmit} className="space-y-4">
+      <FormDoor
+        form={ITEM_FORM}
+        command={itemSaveCommand(onSubmit)}
+        values={itemStrings({ barcode, name, currentPrice, unitType, category })}
+        onFill={fill}
+      />
+
       <div>
         <label htmlFor="item-barcode" className="block text-sm font-medium text-gray-700 dark:text-gray-300 mb-1">
           Barcode or PLU Code

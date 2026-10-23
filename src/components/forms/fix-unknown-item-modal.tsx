@@ -5,6 +5,14 @@ import { CategoryAutocomplete } from "./category-autocomplete";
 import { ScannerViewfinder } from "../scanner/scanner-viewfinder";
 import { isManualBarcode } from "@/services/trip-exchange-service";
 import { ItemRepository } from "@/db/repositories/item-repository";
+import { FormDoor } from "@/tutor/form-door";
+import {
+  IDENTIFY_FORM,
+  identifyItemCommand,
+  identifyStrings,
+  unitTypeOf,
+} from "@/tutor/form-commands";
+import type { IdentifyValues } from "@/tutor/form-commands";
 
 const itemRepo = new ItemRepository();
 
@@ -54,12 +62,15 @@ export function FixUnknownItemModal({
     setScannerOpen(false);
   }, []);
 
-  async function handleSubmit(e: FormEvent) {
-    e.preventDefault();
-    if (submitting) return;
+  /**
+   * The modal's save, which its Save button and the tutor's Send both run. Resolves with null when the
+   * item was saved, or with the sentence saying why not (also shown in the modal).
+   */
+  async function save(values: IdentifyValues): Promise<string | null> {
+    if (submitting) return "Still saving the item.";
     setError(null);
 
-    const trimmedBarcode = barcode.trim();
+    const trimmedBarcode = values.barcode.trim();
     const finalBarcode =
       trimmedBarcode || `manual-${crypto.randomUUID()}`;
 
@@ -77,29 +88,59 @@ export function FixUnknownItemModal({
       ) {
         const conflict = await itemRepo.findByBarcode(trimmedBarcode);
         if (conflict && conflict.id !== itemId) {
-          setError(
-            `Barcode already used by "${conflict.name}". Remove it from that item first or enter a different barcode.`,
-          );
+          const message = `Barcode already used by "${conflict.name}". Remove it from that item first or enter a different barcode.`;
+          setError(message);
           setSubmitting(false);
-          return;
+          return message;
         }
       }
 
       await onSave({
         itemId,
-        name,
+        name: values.name,
         barcode: finalBarcode,
         currentPrice,
-        unitType,
-        category,
+        unitType: values.unitType,
+        category: values.category,
       });
+      return null;
     } catch (err) {
-      setError(
+      const message =
         err instanceof Error
           ? err.message
-          : "Something went wrong saving this item. Please try again.",
-      );
+          : "Something went wrong saving this item. Please try again.";
+      setError(message);
       setSubmitting(false);
+      return message;
+    }
+  }
+
+  async function handleSubmit(e: FormEvent) {
+    e.preventDefault();
+    if (submitting) return;
+    await save({ name, barcode, unitType, category });
+  }
+
+  /** The tutor's value for a field; false when the field cannot take it. */
+  function fill(field: string, value: string): boolean {
+    switch (field) {
+      case "name":
+        setName(value);
+        return true;
+      case "barcode":
+        setBarcode(value);
+        return true;
+      case "unitType": {
+        const unit = unitTypeOf(value);
+        if (unit === null) return false;
+        setUnitType(unit);
+        return true;
+      }
+      case "category":
+        setCategory(value);
+        return true;
+      default:
+        return false;
     }
   }
 
@@ -119,6 +160,13 @@ export function FixUnknownItemModal({
         </h2>
 
         <form onSubmit={handleSubmit} className="space-y-4">
+          <FormDoor
+            form={IDENTIFY_FORM}
+            command={identifyItemCommand(save)}
+            values={identifyStrings({ name, barcode, unitType, category })}
+            onFill={fill}
+          />
+
           <div>
             <label
               htmlFor="fix-item-name"
