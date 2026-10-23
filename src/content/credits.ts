@@ -147,6 +147,16 @@ export const CREDIT_GROUPS: CreditGroup[] = [
         changes: "Our own library, pinned to a commit.",
         packages: ["bsv-kit"],
       },
+      {
+        name: "voice-kit",
+        kind: "package",
+        url: "https://github.com/Jonathan-A-White/voice-kit",
+        use: "Lets the tutor ask for a form's fields one at a time and fill them in.",
+        licence: "MIT",
+        licenceUrl: MIT,
+        changes: "Our own library, pinned to a commit.",
+        packages: ["voice-kit"],
+      },
     ],
   },
   {
