@@ -2,6 +2,7 @@ import { render, screen, waitFor } from "@testing-library/react";
 import userEvent from "@testing-library/user-event";
 import { MemoryRouter, Route, Routes, useLocation } from "react-router";
 import ScannerPage from "./scanner-page";
+import { resolveScanValue } from "@/scanner/scan-value";
 import { db } from "@/db/database";
 import { ItemRepository } from "@/db/repositories/item-repository";
 import { TripRepository } from "@/db/repositories/trip-repository";
@@ -19,6 +20,13 @@ vi.mock("@/components/scanner/scanner-viewfinder", () => ({
       <>
         <button onClick={() => onBarcodeDetected("111")}>read known</button>
         <button onClick={() => onBarcodeDetected("0099887766")}>read unknown</button>
+        <button
+          onClick={() =>
+            onBarcodeDetected(resolveScanValue("0100000000049597", "databar_stacked_omni"))
+          }
+        >
+          read databar
+        </button>
       </>
     ) : null,
 }));
@@ -51,6 +59,13 @@ describe("ScannerPage", () => {
       currentPrice: 3,
       unitType: "each",
     });
+    // a typed PLU is saved as the item's barcode
+    await new ItemRepository().create({
+      barcode: "4959",
+      name: "Mango",
+      currentPrice: 1.5,
+      unitType: "each",
+    });
   });
 
   it("sends an unknown barcode to the photo screen", async () => {
@@ -70,5 +85,13 @@ describe("ScannerPage", () => {
     await user.click(screen.getByText("read known"));
     expect(await screen.findByText("Milk")).toBeInTheDocument();
     expect(screen.getByRole("button", { name: "Add to Trip" })).toBeInTheDocument();
+  });
+
+  it("opens the same item for a DataBar scan of PLU 4959 as a typed 4959 does", async () => {
+    const user = userEvent.setup();
+    renderScanner();
+    await user.click(screen.getByText("read databar"));
+    expect(await screen.findByText("Mango")).toBeInTheDocument();
+    expect(screen.getByText("Barcode: 4959")).toBeInTheDocument();
   });
 });

@@ -83,3 +83,24 @@ Feature: Barcode Scanning
     And I enter weight "2.0" lbs
     And I add it to the trip
     Then the total weight of "Chicken Breast" should be "3.5" lbs
+
+  # Commit: Read the GS1 DataBar on a produce sticker
+  Scenario: A DataBar scan of a PLU opens the same item a typed PLU does
+    Given an item "Mango" exists with barcode "4959"
+    When I tap "Scan" on the Active Trip page
+    And the scanner reads a GS1 DataBar "0100000000049597" from a produce sticker
+    Then I should see the item name "Mango"
+    And it is the same item I get by typing PLU "4959"
+
+  # Commit: Read the GS1 DataBar on a produce sticker
+  Scenario: A DataBar scan of an unknown PLU goes to the photo screen with the PLU
+    When I tap "Scan" on the Active Trip page
+    And the scanner reads a GS1 DataBar "0100000000949590" from a produce sticker
+    Then I should be sent to the photo screen with the barcode "94959"
+
+  # Commit: Read the GS1 DataBar on a produce sticker
+  Scenario: A DataBar scan of a packaged product's GTIN is looked up as a barcode
+    Given an item "Organic Milk" exists with barcode "036632001252"
+    When I tap "Scan" on the Active Trip page
+    And the scanner reads a GS1 DataBar "0100036632001252" from a produce sticker
+    Then I should see the item name "Organic Milk"
