@@ -24,7 +24,7 @@
     "react-router": "^7.13.1",
     "recharts": "^2.15.4",
     "tailwindcss": "^4.2.1",
-    "voice-kit": "github:Jonathan-A-White/voice-kit#932f97d83eecba278498558bfc202ba346fa906f"
+    "voice-kit": "github:Jonathan-A-White/voice-kit#a3cd22da2f6dd388a37515bb44d7f700d8fa98f8"
   },
   "devDependencies": {
     "@eslint/js": "^9.39.4",
