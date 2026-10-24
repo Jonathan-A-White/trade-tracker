@@ -93,7 +93,7 @@ export default function ScannerPage() {
       {/* Item found confirmation overlay */}
       {foundItem && (
         <div className="fixed inset-0 z-[60] flex items-end justify-center bg-black/50">
-          <div className="bg-white dark:bg-gray-800 w-full max-w-lg rounded-t-2xl p-6 space-y-4 animate-slide-up">
+          <div className="bg-white dark:bg-gray-800 w-full max-w-lg rounded-t-2xl p-6 pb-[calc(var(--tt-bar-inset)+1.5rem)] space-y-4 animate-slide-up">
             <div className="flex items-start justify-between">
               <div>
                 <h2 className="text-lg font-semibold text-gray-900 dark:text-gray-100">

@@ -6,7 +6,7 @@ export function AppShell() {
   return (
     <div className="min-h-screen bg-gray-50 dark:bg-gray-900">
       <UpdateBanner />
-      <div className="pb-16">
+      <div className="pb-(--tt-nav-h)">
         <Outlet />
       </div>
       <BottomNav />

@@ -102,7 +102,7 @@ export function ScannerViewfinder({
       </div>
 
       {/* Scan instruction */}
-      <p className="absolute bottom-24 left-0 right-0 text-center text-white text-sm">
+      <p className="absolute bottom-[calc(var(--tt-bar-inset)+3rem)] left-0 right-0 text-center text-white text-sm">
         Align barcode within the frame
       </p>
 

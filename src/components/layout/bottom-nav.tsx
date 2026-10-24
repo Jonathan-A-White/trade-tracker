@@ -72,15 +72,16 @@ export function BottomNav() {
     return location.pathname.startsWith(path);
   }
 
+  // The box ends at the floor above the phone's own bar; the ::after paints the nav's colour under it, in the strip that bar covers.
   return (
-    <nav className="fixed bottom-0 left-0 right-0 z-20 bg-white dark:bg-gray-800 border-t dark:border-gray-700 grid grid-cols-5">
+    <nav className="fixed bottom-(--tt-bar-inset) left-0 right-0 z-20 h-14 bg-white dark:bg-gray-800 border-t dark:border-gray-700 grid grid-cols-5 after:absolute after:inset-x-0 after:top-full after:h-(--tt-bar-inset) after:bg-white dark:after:bg-gray-800">
       {tabs.map((tab) => {
         const active = isActive(tab.path);
         return (
           <Link
             key={tab.path}
             to={tab.path}
-            className={`flex flex-col items-center justify-center py-2 text-xs ${
+            className={`flex flex-col items-center justify-center text-xs ${
               active ? "text-blue-600 dark:text-blue-400" : "text-gray-500 dark:text-gray-400 hover:text-gray-700 dark:hover:text-gray-300"
             }`}
           >

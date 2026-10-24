@@ -288,7 +288,7 @@ export default function ActiveTripPage() {
         )}
       </div>
 
-      <main className="flex-1 overflow-y-auto pb-40">
+      <main className="flex-1 overflow-y-auto pb-[calc(var(--tt-nav-h)+6.5rem)]">
         {/* Trip items list */}
         {items.length === 0 ? (
           <div className="p-4 text-center text-gray-500 dark:text-gray-400 text-sm">

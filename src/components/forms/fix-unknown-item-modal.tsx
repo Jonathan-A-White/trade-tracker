@@ -154,7 +154,7 @@ export function FixUnknownItemModal({
         onClick={onCancel}
         role="presentation"
       />
-      <div className="relative w-full sm:max-w-md bg-white dark:bg-gray-800 rounded-t-2xl sm:rounded-2xl p-5 space-y-4 max-h-[90vh] overflow-y-auto">
+      <div className="relative w-full sm:max-w-md bg-white dark:bg-gray-800 rounded-t-2xl sm:rounded-2xl p-5 pb-[calc(var(--tt-bar-inset)+1.25rem)] sm:pb-5 space-y-4 max-h-[90vh] overflow-y-auto">
         <h2 className="text-lg font-semibold text-gray-900 dark:text-gray-100">
           {existingName ? "Edit Item" : "Identify Item"}
         </h2>

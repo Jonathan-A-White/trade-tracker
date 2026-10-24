@@ -115,7 +115,7 @@ export default function AddItemPage() {
     <div className="fixed inset-0 z-50 flex flex-col bg-gray-50 dark:bg-gray-900">
       <PageHeader title="Add Item" backTo={returnPath} />
 
-      <main className="flex-1 overflow-y-auto p-4 space-y-6">
+      <main className="flex-1 overflow-y-auto p-4 pb-[calc(var(--tt-bar-inset)+1rem)] space-y-6">
         {/* Quantity/weight prompt */}
         {quantityPrompt && (
           <div className="fixed inset-0 z-50 flex items-center justify-center bg-black/40">

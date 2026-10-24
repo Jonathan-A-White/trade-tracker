@@ -112,7 +112,7 @@ export default function TripEditPage() {
     <div className="flex flex-col min-h-screen bg-gray-50 dark:bg-gray-900">
       <PageHeader title="Edit Trip" backTo={`/trips/${id}`} />
 
-      <main className="flex-1 pb-24">
+      <main className="flex-1 pb-[calc(var(--tt-nav-h)+6rem)]">
         {/* Items list */}
         {items.length === 0 ? (
           <div className="p-4 text-center text-gray-500 dark:text-gray-400 text-sm">
@@ -195,7 +195,7 @@ export default function TripEditPage() {
       </main>
 
       {/* Save bar */}
-      <div className="fixed bottom-0 left-0 right-0 z-10 bg-white dark:bg-gray-800 border-t dark:border-gray-700 px-4 py-3">
+      <div className="fixed bottom-(--tt-nav-h) left-0 right-0 z-10 bg-white dark:bg-gray-800 border-t dark:border-gray-700 px-4 py-3">
         <button
           type="button"
           onClick={handleSaveChanges}

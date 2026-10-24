@@ -20,7 +20,7 @@ export function Toast({ message, variant, duration = 3000, onDismiss }: ToastPro
   }, [duration, onDismiss]);
 
   return (
-    <div className="fixed bottom-20 left-4 right-4 z-50 flex justify-center pointer-events-none">
+    <div className="fixed bottom-[calc(var(--tt-nav-h)+1rem)] left-4 right-4 z-50 flex justify-center pointer-events-none">
       <div
         className={`${variantClasses[variant]} text-white px-4 py-3 rounded-lg shadow-lg text-sm font-medium max-w-sm w-full flex items-center justify-between pointer-events-auto animate-[slideUp_0.2s_ease-out]`}
       >

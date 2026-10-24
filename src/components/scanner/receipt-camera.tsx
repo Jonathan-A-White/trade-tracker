@@ -96,7 +96,7 @@ export function ReceiptCamera({ taken, maxPhotos, onTake, onClose }: ReceiptCame
           </p>
         )}
       </div>
-      <div className="absolute bottom-0 left-0 right-0 space-y-3 bg-gradient-to-t from-black/80 to-transparent p-4 pb-8">
+      <div className="absolute bottom-0 left-0 right-0 space-y-3 bg-gradient-to-t from-black/80 to-transparent p-4 pb-[calc(var(--tt-bar-inset)+1rem)]">
         {taken > 0 && (
           <p className="text-center text-sm text-white/80">
             {taken} photo{taken === 1 ? "" : "s"} taken

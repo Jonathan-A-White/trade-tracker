@@ -56,7 +56,7 @@ export function SubtotalBar({ subtotal, itemCount, budget, guessCount = 0, onEnd
   const styles = STATE_STYLES[state];
 
   return (
-    <div className={`fixed bottom-16 left-0 right-0 z-10 text-white px-4 py-3 ${styles.bar}`}>
+    <div className={`fixed bottom-(--tt-nav-h) left-0 right-0 z-10 text-white px-4 py-3 ${styles.bar}`}>
       {hasBudget && (
         <div className="mb-2">
           <div className="flex justify-between text-xs mb-1">

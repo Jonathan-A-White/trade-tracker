@@ -218,7 +218,7 @@ export default function PhotoCapturePage() {
           </svg>
         </button>
 
-        <div className="absolute bottom-0 left-0 right-0 space-y-3 bg-gradient-to-t from-black/80 to-transparent p-4 pb-8">
+        <div className="absolute bottom-0 left-0 right-0 space-y-3 bg-gradient-to-t from-black/80 to-transparent p-4 pb-[calc(var(--tt-bar-inset)+1rem)]">
           {!priceOnly && step === "tag" && (
             <p className="text-center text-sm text-white/80">
               {photos.length} photo{photos.length === 1 ? "" : "s"} taken
@@ -267,7 +267,7 @@ export default function PhotoCapturePage() {
             alt="The photo you just took"
             className="min-h-0 flex-1 w-full object-contain"
           />
-          <div className="flex gap-3 p-4 pb-8">
+          <div className="flex gap-3 p-4 pb-[calc(var(--tt-bar-inset)+1rem)]">
             <button
               type="button"
               onClick={handleRetake}

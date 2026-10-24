@@ -9,6 +9,15 @@
   --color-danger: #dc2626;
 }
 
+/* Under viewport-fit=cover, Android Chrome with three-button navigation reports env(safe-area-inset-bottom) as 0 while the
+   phone's own 48 px Back/Home/Recents bar is drawn over the foot of the page. Anything fixed to the foot of the screen
+   (the nav, and the full-screen camera's controls) pads by this floor, not by the bare inset (mw-umpkr9). --tt-nav-h is the
+   nav's whole height; the bars that stack above it sit at that offset. */
+:root {
+  --tt-bar-inset: max(env(safe-area-inset-bottom), 48px);
+  --tt-nav-h: calc(3.5rem + var(--tt-bar-inset));
+}
+
 html,
 body {
   margin: 0;
