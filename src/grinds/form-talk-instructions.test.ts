@@ -9,9 +9,9 @@ const instructions = readFileSync(
 // The form fragment is voice-kit's (packages/forms/grind/helping-with-a-form.md),
 // copied whole; these are the two bullets of its one optional-field rule.
 const ORDER_BULLET =
-  "- Never ask for what a field already holds. Go through the fields in screen order, required ones first. Name the field your question is about in `form_ask`.";
+  "- Ask only about empty required fields, never for what a field already holds: the first empty required field in screen order first, even when an optional field comes before it on the screen. Name the field your question is about in `form_ask`.";
 const OPTIONAL_BULLET =
-  "- Optional fields: ask about one (once at most) only while a required field is still empty and he has answered past it. When every required field holds something, say so in one sentence and leave `form_ask` out, even if optional fields are empty; you may name those empty optional fields in that same sentence so he can add them if he likes. If `form.command` is present, the app shows a Send button once every required field holds something: tell him to read the form, change anything, and tap Send himself.";
+  "- Optional fields: never ask about an optional field. When every required field holds something, say so in one sentence and leave `form_ask` out; you may name the empty optional fields in that same sentence so he can add them if he likes. If `form.command` is present, the app shows a Send button once every required field holds something: tell him to read the form, change anything, and tap Send himself.";
 
 describe("grinds/form-talk.md form fragment", () => {
   it("carries the kit's one optional-field rule", () => {
