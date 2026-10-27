@@ -25,50 +25,58 @@ import ExportPage from "@/pages/export-page";
 import SettingsPage from "@/pages/settings-page";
 import AboutPage from "@/pages/about-page";
 import { NotFoundPage } from "@/pages/not-found-page";
+import { RouteErrorPage } from "@/pages/route-error-page";
 
 export const appRoutes: RouteObject[] = [
   {
     path: "/",
     element: <AppShell />,
+    errorElement: <RouteErrorPage />,
     children: [
-      { index: true, element: <HomePage /> },
-      { path: "trips/new", element: <NewTripPage /> },
       {
-        path: "trips/active",
-        element: <ActiveTripPage />,
+        // Pathless: a screen that throws is caught here, so the shell and nav stay.
+        errorElement: <RouteErrorPage />,
         children: [
-          { path: "scan", element: <ScannerPage /> },
-          { path: "photo", element: <PhotoCapturePage /> },
-          { path: "add", element: <AddItemPage /> },
+          { index: true, element: <HomePage /> },
+          { path: "trips/new", element: <NewTripPage /> },
+          {
+            path: "trips/active",
+            element: <ActiveTripPage />,
+            children: [
+              { path: "scan", element: <ScannerPage /> },
+              { path: "photo", element: <PhotoCapturePage /> },
+              { path: "add", element: <AddItemPage /> },
+            ],
+          },
+          { path: "trips/active/end", element: <EndTripPage /> },
+          { path: "trips/history", element: <TripHistoryPage /> },
+          { path: "trips/:id", element: <TripDetailPage /> },
+          {
+            path: "trips/:id/edit",
+            element: <TripEditPage />,
+            children: [
+              { path: "scan", element: <ScannerPage /> },
+              { path: "photo", element: <PhotoCapturePage /> },
+            ],
+          },
+          { path: "trips/:id/edit/add", element: <AddItemPage /> },
+          { path: "items", element: <ItemLibraryPage /> },
+          { path: "items/new", element: <NewItemPage /> },
+          { path: "items/:id", element: <ItemDetailPage /> },
+          { path: "reports", element: <ReportsPage /> },
+          { path: "reports/spending", element: <SpendingReportPage /> },
+          { path: "reports/frequency", element: <FrequencyReportPage /> },
+          { path: "reports/price/:itemId", element: <PriceHistoryReportPage /> },
+          { path: "reports/comparison", element: <TripComparisonPage /> },
+          { path: "stores", element: <StoresPage /> },
+          { path: "stores/new", element: <NewStorePage /> },
+          { path: "stores/:id/edit", element: <EditStorePage /> },
+          { path: "export", element: <ExportPage /> },
+          { path: "settings", element: <SettingsPage /> },
+          { path: "about", element: <AboutPage /> },
+          { path: "*", element: <NotFoundPage /> },
         ],
       },
-      { path: "trips/active/end", element: <EndTripPage /> },
-      { path: "trips/history", element: <TripHistoryPage /> },
-      { path: "trips/:id", element: <TripDetailPage /> },
-      {
-        path: "trips/:id/edit",
-        element: <TripEditPage />,
-        children: [
-          { path: "scan", element: <ScannerPage /> },
-          { path: "photo", element: <PhotoCapturePage /> },
-        ],
-      },
-      { path: "trips/:id/edit/add", element: <AddItemPage /> },
-      { path: "items", element: <ItemLibraryPage /> },
-      { path: "items/new", element: <NewItemPage /> },
-      { path: "items/:id", element: <ItemDetailPage /> },
-      { path: "reports", element: <ReportsPage /> },
-      { path: "reports/spending", element: <SpendingReportPage /> },
-      { path: "reports/frequency", element: <FrequencyReportPage /> },
-      { path: "reports/price/:itemId", element: <PriceHistoryReportPage /> },
-      { path: "reports/comparison", element: <TripComparisonPage /> },
-      { path: "stores", element: <StoresPage /> },
-      { path: "stores/new", element: <NewStorePage /> },
-      { path: "stores/:id/edit", element: <EditStorePage /> },
-      { path: "export", element: <ExportPage /> },
-      { path: "settings", element: <SettingsPage /> },
-      { path: "about", element: <AboutPage /> },
-      { path: "*", element: <NotFoundPage /> },
     ],
   },
 ];
