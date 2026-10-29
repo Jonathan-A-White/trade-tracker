@@ -26,6 +26,25 @@ $ grep -rn "Check for updates" src            (no output)
 $ grep -o "@media[^{]*hover[^{]*{" dist/assets/*.css   ->  @media(hover:hover){   (Tailwind 4 gates hover: itself)
 ```
 
+<!-- toc -->
+
+- [1. The checklist, one row per line](#1-the-checklist-one-row-per-line)
+- [2. The rules added 2026-10-09 and after](#2-the-rules-added-2026-10-09-and-after)
+- [3. The fail rows, counted](#3-the-fail-rows-counted)
+- [4. Ranked fix stories](#4-ranked-fix-stories)
+  - [F1. Reopen where he left off (C14)](#f1-reopen-where-he-left-off-c14)
+  - [F2. The phone shell: no white bars, tab bar clear of the gesture bar, no bounce (C06, C07, C08, C16)](#f2-the-phone-shell-no-white-bars-tab-bar-clear-of-the-gesture-bar-no-bounce-c06-c07-c08-c16)
+  - [F3. Ask the browser to keep his data (C11)](#f3-ask-the-browser-to-keep-his-data-c11)
+  - [F4. A backup that names itself and restores every table (C12)](#f4-a-backup-that-names-itself-and-restores-every-table-c12)
+  - [F5. Zoom, keyboard and the head meta tags (C02, C03, C04, C18)](#f5-zoom-keyboard-and-the-head-meta-tags-c02-c03-c04-c18)
+  - [F6. Deploy only what passed, and smoke-test the Pages path (C29, C26, C23)](#f6-deploy-only-what-passed-and-smoke-test-the-pages-path-c29-c26-c23)
+  - [F7. No bare timers, and catch up on pageshow (C10)](#f7-no-bare-timers-and-catch-up-on-pageshow-c10)
+  - [F8. PWA build config: a tested manifest, a real maskable icon, a safe precache limit (C01, C21, C05)](#f8-pwa-build-config-a-tested-manifest-a-real-maskable-icon-a-safe-precache-limit-c01-c21-c05)
+  - [F9. About links the changelog (R08)](#f9-about-links-the-changelog-r08)
+  - [F10. Keep half-typed forms (C15)](#f10-keep-half-typed-forms-c15)
+
+<!-- /toc -->
+
 ## 1. The checklist, one row per line
 
 | ID | Rule | Status | Evidence | Fix | Size |

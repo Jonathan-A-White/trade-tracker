@@ -2,6 +2,19 @@
 
 VISION.md is the Governor's vision for this app: a change that would cross one of its lines stops and says so.
 
+<!-- toc -->
+
+- [Quick Reference](#quick-reference)
+- [Tech Stack](#tech-stack)
+- [Project Structure](#project-structure)
+- [Architecture & Patterns](#architecture--patterns)
+- [Database](#database)
+- [Grinds and their examples](#grinds-and-their-examples)
+- [Writing Tests](#writing-tests)
+- [Code Conventions](#code-conventions)
+
+<!-- /toc -->
+
 ## Quick Reference
 
 ```bash

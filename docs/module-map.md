@@ -8,6 +8,24 @@ Written 2026-10-09 at base commit e1c4bac (story mw-vtjxh4.22). Docs only: nothi
 
 Contents: 1 Modules, 2 Collisions, 3 Proposed refactors, 4 Rule breaks, 5 Library candidates.
 
+<!-- toc -->
+
+- [1. Modules](#1-modules)
+- [2. Collisions](#2-collisions)
+- [3. Proposed refactors](#3-proposed-refactors)
+  - [R1. Factory behind one folder and one hook set](#r1-factory-behind-one-folder-and-one-hook-set)
+  - [R2. Settings as a list of sections](#r2-settings-as-a-list-of-sections)
+  - [R3. One hook for "a trip and its lines"](#r3-one-hook-for-a-trip-and-its-lines)
+  - [R4. Lookup queue apart from applying a lookup](#r4-lookup-queue-apart-from-applying-a-lookup)
+  - [R5. Split the trip exchange service](#r5-split-the-trip-exchange-service)
+  - [R6. One camera seam](#r6-one-camera-seam)
+  - [R7. Language and currency as settings, not constants](#r7-language-and-currency-as-settings-not-constants)
+  - [R8. Charts behind components](#r8-charts-behind-components)
+- [4. Rule breaks](#4-rule-breaks)
+- [5. Library candidates](#5-library-candidates)
+
+<!-- /toc -->
+
 ## 1. Modules
 
 Line counts exclude tests. "Imports" lists what the module reaches for, outside itself. Imports flow downward: pages use components, contexts, hooks, services and repositories; repositories use the database; nothing below a page imports a page.

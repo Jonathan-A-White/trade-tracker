@@ -6,6 +6,54 @@
 
 ---
 
+<!-- toc -->
+
+- [1. Tech Stack](#1-tech-stack)
+  - [Path Alias](#path-alias)
+- [2. Project Structure](#2-project-structure)
+- [3. PWA Configuration](#3-pwa-configuration)
+  - [3.1 Installability & Fullscreen](#31-installability--fullscreen)
+  - [3.2 Meta Tags (index.html)](#32-meta-tags-indexhtml)
+  - [3.3 Fullscreen CSS](#33-fullscreen-css)
+  - [3.4 Service Worker Registration (main.tsx)](#34-service-worker-registration-maintsx)
+- [4. App Shell & Navigation](#4-app-shell--navigation)
+  - [4.1 Provider Tree (App.tsx)](#41-provider-tree-apptsx)
+  - [4.2 Navigation Patterns](#42-navigation-patterns)
+  - [4.3 Page Header Component](#43-page-header-component)
+- [5. Dark Mode / Theming](#5-dark-mode--theming)
+  - [5.1 Implementation](#51-implementation)
+  - [5.2 Theme Context](#52-theme-context)
+  - [5.3 Tailwind Custom Colors](#53-tailwind-custom-colors)
+- [6. Data Layer](#6-data-layer)
+  - [6.1 Database (Dexie + IndexedDB)](#61-database-dexie--indexeddb)
+  - [6.2 Repository Pattern](#62-repository-pattern)
+  - [6.3 Reactive Queries](#63-reactive-queries)
+  - [6.4 Types](#64-types)
+- [7. Data Export / Import](#7-data-export--import)
+  - [7.1 Export Format](#71-export-format)
+  - [7.2 Import with Migration](#72-import-with-migration)
+  - [7.3 CSV Export (Optional)](#73-csv-export-optional)
+- [8. Settings Page](#8-settings-page)
+  - [8.1 Required Sections](#81-required-sections)
+  - [8.2 Danger Zone](#82-danger-zone)
+- [9. Error Handling](#9-error-handling)
+  - [9.1 Error Boundary](#91-error-boundary)
+  - [9.2 User Feedback System](#92-user-feedback-system)
+- [10. Mobile Interaction Patterns (Optional)](#10-mobile-interaction-patterns-optional)
+- [11. Testing Strategy](#11-testing-strategy)
+  - [11.1 BDD Feature Files (Acceptance Criteria)](#111-bdd-feature-files-acceptance-criteria)
+  - [11.2 Unit / Component Tests (Vitest)](#112-unit--component-tests-vitest)
+- [12. CI/CD & Deployment (GitHub Pages)](#12-cicd--deployment-github-pages)
+  - [12.1 CI Workflow (`.github/workflows/ci.yml`)](#121-ci-workflow-githubworkflowsciyml)
+  - [12.2 Deploy Workflow (`.github/workflows/deploy.yml`)](#122-deploy-workflow-githubworkflowsdeployyml)
+  - [12.3 GitHub Pages SPA Routing](#123-github-pages-spa-routing)
+- [13. Code Conventions](#13-code-conventions)
+- [14. npm Scripts](#14-npm-scripts)
+- [15. Scaffold Checklist](#15-scaffold-checklist)
+- [16. What This Scaffold Does NOT Cover](#16-what-this-scaffold-does-not-cover)
+
+<!-- /toc -->
+
 ## 1. Tech Stack
 
 | Layer | Technology | Version | Notes |

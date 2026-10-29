@@ -9,6 +9,21 @@ Currently, two official plugins are available:
 - [@vitejs/plugin-react](https://github.com/vitejs/vite-plugin-react/blob/main/packages/plugin-react) uses [Oxc](https://oxc.rs)
 - [@vitejs/plugin-react-swc](https://github.com/vitejs/vite-plugin-react/blob/main/packages/plugin-react-swc) uses [SWC](https://swc.rs/)
 
+<!-- toc -->
+
+- [The forms tutor: Let the tutor do it](#the-forms-tutor-let-the-tutor-do-it)
+- [React Compiler](#react-compiler)
+- [Expanding the ESLint configuration](#expanding-the-eslint-configuration)
+- [Docs](#docs)
+- [Credits](#credits)
+  - [Libraries in the app](#libraries-in-the-app)
+  - [Tools that build and test the app](#tools-that-build-and-test-the-app)
+  - [Data](#data)
+  - [Services](#services)
+  - [Ideas and the tools that built the app](#ideas-and-the-tools-that-built-the-app)
+
+<!-- /toc -->
+
 ## The forms tutor: Let the tutor do it
 
 No form without a tutor. Each of the app's three forms has a **Let the tutor do it** button at its top: the tutor asks for one field at a time in plain words, fills the field he answers, and when every required field holds something offers **Send**, which he taps himself (the tutor never sends).
