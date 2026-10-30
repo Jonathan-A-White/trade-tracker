@@ -1,9 +1,10 @@
 import { StrictMode } from "react";
 import { createRoot } from "react-dom/client";
 import { registerSW } from "virtual:pwa-register";
+import "pwa-kit/whats-new/styles.css";
 import "./index.css";
 import App from "./App.tsx";
-import { startAppUpdates } from "./services/app-update";
+import { startAppUpdates } from "pwa-kit/app-update";
 import { installPreloadErrorReload } from "./services/preload-reload";
 
 // A deploy that swaps the files under a running page: reload to pick up the new build.

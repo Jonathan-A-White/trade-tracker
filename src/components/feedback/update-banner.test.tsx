@@ -1,6 +1,6 @@
 // The update banner must stand out from the app's own blue bars: amber, with text that passes WCAG AA.
 import { cleanup, render, screen } from '@testing-library/react';
-import { startAppUpdates } from '@/services/app-update';
+import { startAppUpdates } from 'pwa-kit/app-update';
 import { UpdateBanner } from './update-banner';
 import { fakeSetup, fakeWorker } from '@/test/fake-registration';
 

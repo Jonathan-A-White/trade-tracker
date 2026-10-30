@@ -130,6 +130,7 @@ A source added or removed changes its credit in the same commit, and the test (`
 - [qrcode](https://github.com/soldair/node-qrcode): Drawing this phone's key as a QR code in Settings, so Postern can scan it. Licence: [MIT](https://opensource.org/license/mit). Changes: None.
 - [bsv-kit](https://github.com/Jonathan-A-White/bsv-kit): The factory key, the licence check and the signed requests to the factory door. Licence: [MIT](https://opensource.org/license/mit). Changes: Our own library, pinned to a commit.
 - [voice-kit](https://github.com/Jonathan-A-White/voice-kit): Lets the tutor ask for a form's fields one at a time and fill them in. Licence: [MIT](https://opensource.org/license/mit). Changes: Our own library, pinned to a commit.
+- [pwa-kit](https://github.com/Jonathan-A-White/pwa-kit): Finds a new build and offers the Update ready bar, and shows What's new from the change list. Licence: [MIT](https://opensource.org/license/mit). Changes: Our own library, pinned to a commit.
 
 ### Tools that build and test the app
 

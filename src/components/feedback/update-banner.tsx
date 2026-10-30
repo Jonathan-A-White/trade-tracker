@@ -1,4 +1,4 @@
-import { applyUpdate, useUpdateState } from "@/services/app-update";
+import { applyUpdate, useUpdateState } from "pwa-kit/app-update";
 
 /** 'Update ready, tap to reload' above the content while a newer build waits; the tap goes dead and says 'Updating…' until the page reloads. */
 export function UpdateBanner() {

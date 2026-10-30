@@ -157,6 +157,16 @@ export const CREDIT_GROUPS: CreditGroup[] = [
         changes: "Our own library, pinned to a commit.",
         packages: ["voice-kit"],
       },
+      {
+        name: "pwa-kit",
+        kind: "package",
+        url: "https://github.com/Jonathan-A-White/pwa-kit",
+        use: "Finds a new build and offers the Update ready bar, and shows What's new from the change list.",
+        licence: "MIT",
+        licenceUrl: MIT,
+        changes: "Our own library, pinned to a commit.",
+        packages: ["pwa-kit"],
+      },
     ],
   },
   {

@@ -34,6 +34,21 @@ describe("credits list", () => {
   });
 });
 
+describe("What's new", () => {
+  it("shows the newest version of CHANGELOG.md that has a line, under a What's new heading", () => {
+    const changelog = readFileSync("./CHANGELOG.md", "utf-8");
+    const newest = changelog
+      .split(/^## /m)
+      .slice(1)
+      .map((s) => ({ version: s.split("\n")[0].trim(), body: s }))
+      .find((s) => /^- (New|Fixed): /m.test(s.body));
+    expect(newest).toBeDefined();
+    renderAbout();
+    expect(screen.getByRole("heading", { name: "What's new" })).toBeInTheDocument();
+    expect(screen.getByText(newest!.version)).toBeInTheDocument();
+  });
+});
+
 describe("AboutPage", () => {
   it("opens with Newton's line, attributed, before the credits", () => {
     renderAbout();

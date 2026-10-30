@@ -1,5 +1,11 @@
+import { WhatsNewList } from "pwa-kit/whats-new";
 import { PageHeader } from "@/components/layout/page-header";
 import { CREDIT_GROUPS, NEWTON_QUOTE } from "@/content/credits";
+import { changelogEntries } from "@/services/changelog-entries";
+import changelog from "../../CHANGELOG.md?raw";
+
+// What's new is CHANGELOG.md's own lines, bundled with the build (an installed app reads it offline).
+const ENTRIES = changelogEntries(changelog);
 
 const linkClass = "text-blue-600 dark:text-blue-400 underline";
 
@@ -17,6 +23,11 @@ export default function AboutPage() {
           </figcaption>
           <p className="text-sm text-gray-700 dark:text-gray-300">{NEWTON_QUOTE.why}</p>
         </figure>
+
+        <section className="space-y-2">
+          <h2 className="text-sm font-medium text-gray-700 dark:text-gray-300">What&apos;s new</h2>
+          <WhatsNewList entries={ENTRIES} className="text-sm text-gray-700 dark:text-gray-300" />
+        </section>
 
         {CREDIT_GROUPS.map((group) => (
           <section key={group.title} className="space-y-2">

@@ -1,4 +1,4 @@
-// A service worker container and registration the app-update logic (src/services/app-update.ts) can watch: a worker can be put in waiting,
+// A service worker container and registration the app-update logic (pwa-kit/app-update) can watch: a worker can be put in waiting,
 // an update found, and a new worker take control, as the browser would, without a browser.
 import { vi, type Mock } from "vitest";
 

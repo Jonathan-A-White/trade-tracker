@@ -13,7 +13,7 @@ export default defineConfig({
     react(),
     tailwindcss(),
     VitePWA({
-      // "prompt": a new build waits until he taps the Update banner (src/services/app-update.ts).
+      // "prompt": a new build waits until he taps the Update banner (pwa-kit/app-update).
       registerType: "prompt",
       includeAssets: ["favicon.svg", "icon-192.png", "icon-512.png"],
       workbox: {
