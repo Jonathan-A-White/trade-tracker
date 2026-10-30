@@ -34,9 +34,11 @@ describe("makeAlertsClient", () => {
     const backend = fakeAlerts();
     const alert = backend.receive({ kind: "amazon", merchant: "Amazon" });
     const client = makeAlertsClient(BACKEND, key, backend.fetch);
-    await client.claim(alert.id);
+    expect(await client.claim(alert.id)).toBe(true);
     expect(backend.feed).toEqual([]);
     expect(backend.requests.some((r) => r.method === "DELETE" && r.path === `/api/alerts/${alert.id}`)).toBe(true);
+    // a second claim (another phone's, after the first) finds it gone
+    expect(await client.claim(alert.id)).toBe(false);
   });
 
   it("says in plain words when there is no licence, when the backend has no alerts, and when it fails", async () => {

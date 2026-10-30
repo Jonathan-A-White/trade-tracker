@@ -32,8 +32,8 @@ export interface AlertsClient {
   address(): Promise<string>;
   /** GET /api/alerts?since=: the family's alerts after `since`, oldest first. */
   list(since: number): Promise<AlertsPage>;
-  /** DELETE /api/alerts/{id}: the alert is gone for every phone of the family. */
-  claim(id: string): Promise<void>;
+  /** DELETE /api/alerts/{id}: the alert is gone for every phone of the family. True when this call claimed it, false when it was gone already (404: another phone claimed it). */
+  claim(id: string): Promise<boolean>;
 }
 
 /** The plain sentence for a status the backend answered with that is not a success. */
@@ -73,7 +73,9 @@ export function makeAlertsClient(backendUrl: string, key: Uint8Array, fetchImpl?
     },
     async claim(id) {
       const response = await gate.fetch(`/alerts/${encodeURIComponent(id)}`, { method: "DELETE" });
-      if (!response.ok && response.status !== 404) throw refusal(response.status);
+      if (response.status === 404) return false;
+      if (!response.ok) throw refusal(response.status);
+      return true;
     },
   };
 }
