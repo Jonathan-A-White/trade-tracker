@@ -30,3 +30,21 @@ export function useYnabOn(): boolean {
 export function setYnabOn(on: boolean): Promise<void> {
   return settingsStore.set(ynabConnection.switch, on ? "on" : "off");
 }
+
+/** Family is On once the family's alert address was asked and answered. */
+export const familyConnection = connections.register({
+  key: "family",
+  name: "Family",
+  section: "family",
+  hint: "Share one mail address so the family's card alerts come here.",
+  fields: [],
+});
+
+/** Whether Family is On, live: false until read, and as soon as it is turned Off. Draw nothing of the family while it is false. */
+export function useFamilyOn(): boolean {
+  return connections.useConnectionOn(familyConnection.key);
+}
+
+export function setFamilyOn(on: boolean): Promise<void> {
+  return settingsStore.set(familyConnection.switch, on ? "on" : "off");
+}

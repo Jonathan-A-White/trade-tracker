@@ -6,6 +6,7 @@ import { AiTripSection } from "./sections/ai-trip-section";
 import { AppearanceSection } from "./sections/appearance-section";
 import { DangerZoneSection } from "./sections/danger-zone-section";
 import { FactorySection } from "./sections/factory-section";
+import { FamilySection } from "./sections/family-section";
 import { ItemsTransferSection } from "./sections/items-transfer-section";
 import { PluCodesSection } from "./sections/plu-codes-section";
 import { StorageSection } from "./sections/storage-section";
@@ -25,6 +26,7 @@ const COMPONENTS: Record<SectionId, () => JSX.Element> = {
   appearance: AppearanceSection,
   factory: FactorySection,
   ynab: YnabSection,
+  family: FamilySection,
   storage: StorageSection,
   "plu-codes": PluCodesSection,
   "tj-barcodes": TjBarcodesSection,

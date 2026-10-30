@@ -63,6 +63,7 @@ describe("SettingsPage layout", () => {
       "Appearance",
       "Factory",
       "YNAB",
+      "Family",
       "Storage Usage",
       "Produce PLU Codes",
       "Trader Joe's Barcodes",

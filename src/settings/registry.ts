@@ -10,6 +10,7 @@ export type SectionId =
   | "appearance"
   | "factory"
   | "ynab"
+  | "family"
   | "storage"
   | "plu-codes"
   | "tj-barcodes"
@@ -30,6 +31,7 @@ export const SECTIONS: readonly SettingsSection<SectionId>[] = [
   { id: "appearance", title: "Appearance" },
   { id: "factory", title: "Factory" },
   { id: "ynab", title: "YNAB" },
+  { id: "family", title: "Family" },
   { id: "storage", title: "Storage Usage" },
   { id: "plu-codes", title: "Produce PLU Codes" },
   { id: "tj-barcodes", title: "Trader Joe's Barcodes" },
@@ -45,7 +47,7 @@ export const SECTIONS: readonly SettingsSection<SectionId>[] = [
 export const GROUPS: readonly SettingsGroup<SectionId, GroupId>[] = [
   { id: "display", title: "Display", hint: "Dark or light mode.", sections: ["appearance"] },
   { id: "factory", title: "Factory", hint: "This phone's key, licence and backend.", sections: ["factory"] },
-  { id: "connections", title: "Connections", hint: "Other services this app can work with, each off until you turn it on.", sections: ["ynab"] },
+  { id: "connections", title: "Connections", hint: "Other services this app can work with, each off until you turn it on.", sections: ["ynab", "family"] },
   {
     id: "data",
     title: "Your data",
@@ -84,6 +86,13 @@ export const ROWS: readonly SettingsRow<SectionId>[] = rowsInOrder<SectionId, Se
     label: "YNAB",
     hint: "Connect your YNAB budget so this app can fit around it.",
     help: "Off until you turn it on. It needs a Personal Access Token from YNAB (app.ynab.com > Account Settings > Developer Settings > New Token); the token is kept sealed under your key on this device, and the budget's categories, accounts and payees are copied here.",
+  },
+  {
+    key: "family",
+    section: "family",
+    label: "Family",
+    hint: "Share one mail address so the family's card alerts come here.",
+    help: "Off until you turn it on. It gives the family one alert address on the backend, with the Gmail filter that forwards your bank's alerts to it, Gmail's confirmation code when it arrives, and the cards you tell it about: whose each is and which YNAB account it maps to.",
   },
   {
     key: "storage",
