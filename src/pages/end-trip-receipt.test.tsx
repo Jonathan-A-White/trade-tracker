@@ -2,7 +2,7 @@ import { Blob } from "node:buffer";
 import { render, screen, waitFor, within } from "@testing-library/react";
 import userEvent from "@testing-library/user-event";
 import { MemoryRouter } from "react-router";
-import type { grist } from "bsv-kit/grist";
+import type { GristAnswer, Photo } from "@/factory/mill";
 import EndTripPage from "./end-trip-page";
 import { db } from "@/db/database";
 import { ItemRepository } from "@/db/repositories/item-repository";
@@ -56,8 +56,8 @@ const tripItemRepo = new TripItemRepository();
 const grind = { app: "trade-tracker", kind: "receipt-reconcile", v: "1.0" };
 
 /** A grist client the test steers: sends are recorded, and the answer is what the test set. */
-function fakeClient(record: () => grist.GristAnswer) {
-  const sent: { input: ReceiptReconcileRequest; photos: grist.Photo[] }[] = [];
+function fakeClient(record: () => GristAnswer) {
+  const sent: { input: ReceiptReconcileRequest; photos: Photo[] }[] = [];
   const client: ReceiptClient = {
     send: vi.fn(async (call) => {
       sent.push({ input: call.input, photos: call.photos });
@@ -68,7 +68,7 @@ function fakeClient(record: () => grist.GristAnswer) {
   return { client, sent };
 }
 
-function answered(answer: ReceiptReconcileAnswer): grist.GristAnswer {
+function answered(answer: ReceiptReconcileAnswer): GristAnswer {
   return { re: "direct:tx1", status: "answered", answer, grind };
 }
 
@@ -297,10 +297,10 @@ describe("End Trip: Photograph receipt", () => {
 
   it("says it is waiting while the factory reads the receipt", async () => {
     await seedTrip();
-    let release: (record: grist.GristAnswer) => void = () => {};
+    let release: (record: GristAnswer) => void = () => {};
     const client: ReceiptClient = {
       send: vi.fn(async () => "direct:tx1"),
-      awaitAnswer: vi.fn(() => new Promise<grist.GristAnswer>((resolve) => (release = resolve))),
+      awaitAnswer: vi.fn(() => new Promise<GristAnswer>((resolve) => (release = resolve))),
     };
     factory.client = client;
     const user = userEvent.setup();
@@ -510,10 +510,10 @@ describe("End Trip: Photograph receipt", () => {
 
   it("leaving the page while the factory reads the receipt still gets the answer applied", async () => {
     const { lines } = await seedTrip();
-    let release: (record: grist.GristAnswer) => void = () => {};
+    let release: (record: GristAnswer) => void = () => {};
     const client: ReceiptClient = {
       send: vi.fn(async () => "direct:tx1"),
-      awaitAnswer: vi.fn(() => new Promise<grist.GristAnswer>((resolve) => (release = resolve))),
+      awaitAnswer: vi.fn(() => new Promise<GristAnswer>((resolve) => (release = resolve))),
     };
     factory.client = client;
     const user = userEvent.setup();
@@ -564,13 +564,13 @@ describe("End Trip: Photograph receipt", () => {
   it("after 10 minutes with no answer the card says so and offers Send again, which sends the same photo", async () => {
     const user = userEvent.setup();
     const { client, sent } = (() => {
-      const sent: { input: ReceiptReconcileRequest; photos: grist.Photo[] }[] = [];
+      const sent: { input: ReceiptReconcileRequest; photos: Photo[] }[] = [];
       const client: ReceiptClient = {
         send: vi.fn(async (call) => {
           sent.push({ input: call.input, photos: call.photos });
           return `direct:tx${sent.length}`;
         }),
-        awaitAnswer: vi.fn(() => new Promise<grist.GristAnswer>(() => {})),
+        awaitAnswer: vi.fn(() => new Promise<GristAnswer>(() => {})),
       };
       return { client, sent };
     })();
@@ -603,10 +603,10 @@ describe("End Trip: Photograph receipt", () => {
 
   it("a refusal that arrives while the page is closed shows when he comes back", async () => {
     await seedTrip();
-    let release: (record: grist.GristAnswer) => void = () => {};
+    let release: (record: GristAnswer) => void = () => {};
     const client: ReceiptClient = {
       send: vi.fn(async () => "direct:tx1"),
-      awaitAnswer: vi.fn(() => new Promise<grist.GristAnswer>((resolve) => (release = resolve))),
+      awaitAnswer: vi.fn(() => new Promise<GristAnswer>((resolve) => (release = resolve))),
     };
     factory.client = client;
     const user = userEvent.setup();

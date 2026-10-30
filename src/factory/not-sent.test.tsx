@@ -7,7 +7,7 @@ import { useLiveQuery } from "dexie-react-hooks";
 import { MemoryRouter } from "react-router";
 import { licence } from "bsv-kit/bsv";
 import { FactoryProvider, useFactory } from "@/factory";
-import type { FactoryLicenceChecker } from "@/factory/licence";
+import type { FactoryLicenceChecker } from "@/factory";
 import { PendingLineRow } from "@/components/data-display/pending-line-row";
 import { db } from "@/db/database";
 import { PendingLookupRepository } from "@/db/repositories/pending-lookup-repository";
@@ -64,9 +64,7 @@ async function renderOpened(checkLicence: FactoryLicenceChecker) {
     <MemoryRouter>
       <FactoryProvider
         checkLicence={checkLicence}
-        askDoor={async () => "unreachable"}
         passkeyPort={noWebAuthn}
-        licenceRetryMs={[]}
       >
         <MakeKey />
         <Line id={created.id} />
@@ -88,13 +86,19 @@ describe("a scan the phone has not sent", () => {
   });
   afterEach(() => setOnline(true));
 
-  it("with the licence unchecked, says so and points to Settings > Factory > Check again", async () => {
+  it("while the licence is still being checked, says so and sends nothing ('checking' is not allowed)", async () => {
+    await renderOpened(() => new Promise<licence.LicenceStatus>(() => {}));
+    expect(await screen.findByText("Not sent: checking the licence")).toBeInTheDocument();
+    expect(screen.queryByText("Waiting on the factory")).not.toBeInTheDocument();
+    await new Promise((r) => setTimeout(r, 50));
+    expect(sendMock).not.toHaveBeenCalled();
+  });
+
+  it("with the licence unreadable and none kept, says no licence rather than sending", async () => {
     await renderOpened(async () => {
       throw new Error("Failed to fetch");
     });
-    expect(
-      await screen.findByText("Not sent: licence not checked. Settings > Factory > Check again"),
-    ).toBeInTheDocument();
+    expect(await screen.findByText("Not sent: no licence")).toBeInTheDocument();
     expect(screen.queryByText("Waiting on the factory")).not.toBeInTheDocument();
     expect(sendMock).not.toHaveBeenCalled();
   });
@@ -102,45 +106,22 @@ describe("a scan the phone has not sent", () => {
   it("with no licence, says so", async () => {
     await renderOpened(async () => ({ state: "none", checkedAt }));
     expect(await screen.findByText("Not sent: no licence")).toBeInTheDocument();
+    expect(sendMock).not.toHaveBeenCalled();
   });
 
-  it("re-checks an unknown licence once when the app comes online, and sends on held", async () => {
+  it("asks the chain again when the app returns to the screen, and sends on held", async () => {
     const check = vi.fn<FactoryLicenceChecker>();
     check.mockRejectedValueOnce(new Error("Failed to fetch"));
     check.mockResolvedValue(held);
     await renderOpened(check);
-    await screen.findByText(/Not sent: licence not checked/);
+    await screen.findByText("Not sent: no licence");
     expect(check).toHaveBeenCalledTimes(1);
-    act(() => {
-      window.dispatchEvent(new Event("online"));
-    });
-    await waitFor(() => expect(check).toHaveBeenCalledTimes(2));
-    await waitFor(() => expect(sendMock).toHaveBeenCalledTimes(1));
-    expect(await screen.findByText("Waiting on the factory")).toBeInTheDocument();
-  });
-
-  it("re-checks an unknown licence once when the app returns to the screen", async () => {
-    const check = vi.fn<FactoryLicenceChecker>();
-    check.mockRejectedValueOnce(new Error("Failed to fetch"));
-    check.mockResolvedValue(held);
-    await renderOpened(check);
-    await screen.findByText(/Not sent: licence not checked/);
     act(() => {
       document.dispatchEvent(new Event("visibilitychange"));
     });
     await waitFor(() => expect(check).toHaveBeenCalledTimes(2));
     await waitFor(() => expect(sendMock).toHaveBeenCalledTimes(1));
-  });
-
-  it("does not re-check a licence that is not unknown", async () => {
-    const check = vi.fn<FactoryLicenceChecker>(async () => ({ state: "none", checkedAt }));
-    await renderOpened(check);
-    await screen.findByText("Not sent: no licence");
-    act(() => {
-      window.dispatchEvent(new Event("online"));
-    });
-    await new Promise((r) => setTimeout(r, 50));
-    expect(check).toHaveBeenCalledTimes(1);
+    expect(await screen.findByText("Waiting on the factory")).toBeInTheDocument();
   });
 
   it("offline, says it sends when he is back", async () => {

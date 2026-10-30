@@ -5,7 +5,7 @@ import { Blob } from "node:buffer";
 import { render, screen, waitFor, within } from "@testing-library/react";
 import userEvent from "@testing-library/user-event";
 import { MemoryRouter, Route, Routes } from "react-router";
-import type { grist } from "bsv-kit/grist";
+import type { GristAnswer } from "@/factory/mill";
 import ActiveTripPage from "./active-trip-page";
 import PhotoCapturePage from "./photo-capture-page";
 import ScannerPage from "./scanner-page";
@@ -45,7 +45,7 @@ const tripRepo = new TripRepository();
 const tripItemRepo = new TripItemRepository();
 const priceRepo = new PriceHistoryRepository();
 
-type Answer = grist.GristAnswer;
+type Answer = GristAnswer;
 const grind = { app: "trade-tracker", kind: "item-from-photos", v: "1.0" };
 
 /** A grist client the test steers: sends are recorded, each answer is held until the test gives it. */
@@ -79,7 +79,6 @@ function renderApp() {
     <MemoryRouter initialEntries={["/trips/active"]}>
       <FactoryProvider
         checkLicence={async () => ({ state: "none", checkedAt: "x" })}
-        askDoor={async () => "unreachable"}
       >
         <Routes>
           <Route path="/trips/active" element={<ActiveTripPage />}>

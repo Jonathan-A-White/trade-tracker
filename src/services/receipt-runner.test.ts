@@ -1,5 +1,5 @@
 import { waitFor } from "@testing-library/react";
-import type { grist } from "bsv-kit/grist";
+import type { GristAnswer } from "@/factory/mill";
 import { db } from "@/db/database";
 import { ItemRepository } from "@/db/repositories/item-repository";
 import { TripItemRepository } from "@/db/repositories/trip-item-repository";
@@ -15,12 +15,12 @@ const tripItemRepo = new TripItemRepository();
 const grind = { app: "trade-tracker", kind: "receipt-reconcile", v: "2.0" };
 
 function fakeClient() {
-  const waiting = new Map<string, (record: grist.GristAnswer) => void>();
+  const waiting = new Map<string, (record: GristAnswer) => void>();
   const client: ReceiptClient = {
     send: vi.fn(async () => "direct:tx1"),
     awaitAnswer: vi.fn(
       (txid: string, signal: AbortSignal) =>
-        new Promise<grist.GristAnswer>((resolve, reject) => {
+        new Promise<GristAnswer>((resolve, reject) => {
           waiting.set(txid, resolve);
           signal.addEventListener("abort", () => reject(new DOMException("aborted", "AbortError")));
         }),

@@ -37,7 +37,7 @@ function MakeKeyButton() {
 async function seedLockedKey(port: PasskeyPort) {
   const user = userEvent.setup();
   const first = render(
-    <FactoryProvider checkLicence={async () => held} passkeyPort={port} askDoor={async () => "unreachable"}>
+    <FactoryProvider checkLicence={async () => held} passkeyPort={port}>
       <MakeKeyButton />
     </FactoryProvider>,
   );
@@ -52,8 +52,6 @@ function renderCard(port: PasskeyPort, checkLicence: () => Promise<licence.Licen
       <FactoryProvider
         checkLicence={checkLicence}
         passkeyPort={port}
-        askDoor={async () => "unreachable"}
-        licenceRetryMs={[]}
       >
         <Routes>
           <Route path="/trips/:id" element={<ReceiptReconcileCard tripId="t1" onTotal={() => {}} />} />
@@ -152,7 +150,7 @@ describe("Check against the receipt: the factory notice", () => {
     expect(await screen.findByRole("heading", { name: "Settings screen" })).toBeInTheDocument();
   });
 
-  it("a receipt already sent, with the licence unchecked: says it is not checking for the answer, and why", async () => {
+  it("a receipt already sent, with the licence still being checked: says it is not checking for the answer, and why", async () => {
     await db.trips.put({
       id: "t1",
       storeId: "s1",
@@ -167,16 +165,14 @@ describe("Check against the receipt: the factory notice", () => {
       },
     } as never);
     await seedLockedKey(fakePort());
+    // seeding the key kept a held answer for a day (bsv-kit's grace); this open has none
+    localStorage.removeItem("bsv-kit.licence");
     const user = userEvent.setup();
-    renderCard(fakePort(), async () => {
-      throw new Error("Failed to fetch");
-    });
+    renderCard(fakePort(), () => new Promise<licence.LicenceStatus>(() => {}));
     await user.click(screen.getByRole("button", { name: "Unlock" }));
 
     expect(
-      await screen.findByText(
-        "Not checking for the answer: licence not checked. Settings > Factory > Check again",
-      ),
+      await screen.findByText("Not checking for the answer: checking the licence"),
     ).toBeInTheDocument();
   });
 });

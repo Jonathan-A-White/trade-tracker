@@ -15,13 +15,8 @@ export function doorWords(door: FactoryDoorState, licence: FactoryLicence | null
       return "Locked. Unlock with your fingerprint to read a receipt.";
     case "unlocked":
       switch (licence) {
-        case "none":
-        case "revoked":
+        case "unlicensed":
           return "This key holds no TradeTracker licence.";
-        case "indexing":
-          return "The licence is on its way. Try again in a minute.";
-        case "unknown":
-          return "Could not check the licence just now. Open Settings to check again.";
         default:
           return "Checking the licence.";
       }

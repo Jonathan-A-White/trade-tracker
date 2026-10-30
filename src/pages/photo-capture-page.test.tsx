@@ -44,7 +44,6 @@ function renderScreen(search = `barcode=${BARCODE}`) {
     <MemoryRouter initialEntries={[`/trips/active/photo?${search}`]}>
       <FactoryProvider
         checkLicence={async () => ({ state: "none", checkedAt: "x" })}
-        askDoor={async () => "unreachable"}
       >
         <Routes>
           <Route

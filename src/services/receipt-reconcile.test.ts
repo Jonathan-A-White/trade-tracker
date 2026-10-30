@@ -3,7 +3,7 @@ import { ItemRepository } from "@/db/repositories/item-repository";
 import { TripItemRepository } from "@/db/repositories/trip-item-repository";
 import { TripRepository } from "@/db/repositories/trip-repository";
 import type { ReceiptReconcileAnswer, ReceiptReconcileAnswerLine } from "@/contracts/types";
-import type { grist } from "bsv-kit/grist";
+import type { GristAnswer } from "@/factory/mill";
 import {
   addReceiptLineAsItem,
   applyReceiptAnswer,
@@ -380,7 +380,7 @@ describe("reconcileReceipt", () => {
   const request = { store: "Trader Joe's", lines: [] };
   const grind = { app: "trade-tracker", kind: "receipt-reconcile", v: "1.0" };
 
-  function clientAnswering(record: grist.GristAnswer): ReceiptClient {
+  function clientAnswering(record: GristAnswer): ReceiptClient {
     return {
       send: vi.fn(async () => "direct:tx1"),
       awaitAnswer: vi.fn(async () => record),

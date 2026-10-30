@@ -1,5 +1,5 @@
 import { useEffect, useRef, useState } from "react";
-import type { FactoryLicence } from "@/contracts/types";
+import { useAiAllowed, useLicenceNow } from "./ai-allowed";
 import { currentReceiptClient, makeLookupClient } from "@/services/lookup-client";
 import { LookupRunner } from "@/services/lookup-runner";
 import { ReceiptRunner } from "@/services/receipt-runner";
@@ -12,17 +12,18 @@ export interface RunnerState {
 }
 
 /**
- * The lookup queue runs while the app is open: sending and polling only when the door is licensed
- * (a held licence and an unlocked key) and the device is online; polling only while the page is visible.
+ * The lookup queue runs while the app is open: sending and polling only when the AI is allowed
+ * (a licensed key, 'checking' is no) and the key is unlocked and the device is online; polling only while the page is visible.
  * Receipts sent for a trip are waited on by the same rules (their answers are applied whether or
  * not the trip's page is open).
  */
 export function useLookupRunning(opts: {
-  licence: FactoryLicence | null;
   key: Uint8Array | null;
   backendUrl: string;
 }): RunnerState {
-  const { licence, key, backendUrl } = opts;
+  const { key, backendUrl } = opts;
+  const aiAllowed = useAiAllowed();
+  const licenceNow = useLicenceNow();
   const [runner] = useState(() => new LookupRunner());
   const [receiptRunner] = useState(() => new ReceiptRunner());
   const [online, setOnlineState] = useState(() => navigator.onLine);
@@ -61,16 +62,16 @@ export function useLookupRunning(opts: {
     };
   }, [runner, receiptRunner]);
 
-  const licensed = licence === "held" && key !== null;
+  const licensed = aiAllowed && key !== null;
   const keyRef = useRef(key);
   useEffect(() => {
     keyRef.current = key;
   });
   useEffect(() => {
     const clientKey = keyRef.current;
-    runner.setClient(licensed && clientKey ? makeLookupClient(backendUrl, clientKey) : null);
+    runner.setClient(licensed && clientKey ? makeLookupClient(backendUrl, clientKey, licenceNow) : null);
     // makeLookupClient has just handed the key to the receipt client
     receiptRunner.setClient(licensed && clientKey ? currentReceiptClient() : null);
-  }, [runner, receiptRunner, licensed, backendUrl]);
+  }, [runner, receiptRunner, licensed, backendUrl, licenceNow]);
   return { online, lookupBackingOff, receiptBackingOff };
 }

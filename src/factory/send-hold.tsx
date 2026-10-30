@@ -7,8 +7,6 @@ export type SendHold =
   | "locked"
   | "offline"
   | "licence-checking"
-  | "licence-unchecked"
-  | "licence-pending"
   | "no-licence"
   | "backing-off";
 
@@ -27,14 +25,9 @@ export function sendHold(state: {
   if (!state.key) return "locked";
   if (!state.online) return "offline";
   switch (state.licence) {
-    case "none":
-    case "revoked":
+    case "unlicensed":
       return "no-licence";
-    case "unknown":
-      return "licence-unchecked";
-    case "indexing":
-      return "licence-pending";
-    case "held":
+    case "licensed":
       return state.backingOff ? "backing-off" : null;
     default:
       return "licence-checking";
@@ -46,8 +39,6 @@ const HOLD_TEXT: Record<SendHold, string> = {
   locked: "Not sent: factory key is locked. Settings > Factory > Unlock",
   offline: "Not sent: offline, sends when you are back",
   "licence-checking": "Not sent: checking the licence",
-  "licence-unchecked": "Not sent: licence not checked. Settings > Factory > Check again",
-  "licence-pending": "Not sent: licence on its way. Settings > Factory",
   "no-licence": "Not sent: no licence",
   "backing-off": "Not sent yet, trying again",
 };
@@ -63,9 +54,6 @@ const RECEIPT_HOLD_TEXT: Record<SendHold, string> = {
   locked: "Not checking for the answer: factory key is locked. Settings > Factory > Unlock",
   offline: "Not checking for the answer: offline, checks when you are back",
   "licence-checking": "Not checking for the answer: checking the licence",
-  "licence-unchecked":
-    "Not checking for the answer: licence not checked. Settings > Factory > Check again",
-  "licence-pending": "Not checking for the answer: licence on its way. Settings > Factory",
   "no-licence": "Not checking for the answer: no licence",
   "backing-off": "Not checking for the answer just now, trying again",
 };

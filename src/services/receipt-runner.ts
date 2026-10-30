@@ -1,5 +1,5 @@
 import { liveQuery, type Subscription } from "dexie";
-import type { grist } from "bsv-kit/grist";
+import type { GristAnswer } from "@/factory/mill";
 import { db } from "@/db/database";
 import {
   RECEIPT_TIMEOUT_MS,
@@ -175,7 +175,7 @@ export class ReceiptRunner {
       if (this.waiters.get(tripId)?.controller === controller) this.waiters.delete(tripId);
     };
     client.awaitAnswer(txid, controller.signal).then(
-      async (record: grist.GristAnswer) => {
+      async (record: GristAnswer) => {
         forget();
         this.failures = 0;
         this.setBackingOff(false);

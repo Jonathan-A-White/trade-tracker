@@ -97,8 +97,6 @@ describe("a closed screen sets no state when an awaited call answers", () => {
           <FactoryProvider
             checkLicence={async () => ({ state: "none", checkedAt: "2026-10-10T00:00:00.000Z" })}
             passkeyPort={noWebAuthn}
-            askDoor={async () => "unreachable"}
-            licenceRetryMs={[1, 1]}
           >
             <FactorySettings />
           </FactoryProvider>
@@ -127,8 +125,6 @@ describe("a closed screen sets no state when an awaited call answers", () => {
           <FactoryProvider
             checkLicence={async () => ({ state: "none", checkedAt: "2026-10-10T00:00:00.000Z" })}
             passkeyPort={noWebAuthn}
-            askDoor={async () => "unreachable"}
-            licenceRetryMs={[1, 1]}
           >
             <FactorySettings />
           </FactoryProvider>
@@ -184,7 +180,6 @@ describe("a closed screen sets no state when an awaited call answers", () => {
         <MemoryRouter initialEntries={["/trips/active/photo?barcode=0099887766"]}>
           <FactoryProvider
             checkLicence={async () => ({ state: "none", checkedAt: "x" })}
-            askDoor={async () => "unreachable"}
           >
             <Routes>
               <Route path="/trips/active/photo" element={<PhotoCapturePage />} />

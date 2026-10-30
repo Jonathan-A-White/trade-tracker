@@ -1,4 +1,4 @@
-import type { grist } from "bsv-kit/grist";
+import type { GristAnswer, Photo } from "@/factory/mill";
 import { db } from "@/db/database";
 import { TripItemRepository } from "@/db/repositories/trip-item-repository";
 import { ItemRepository } from "@/db/repositories/item-repository";
@@ -26,7 +26,7 @@ export const RECEIPT_TIMEOUT_MS = 10 * 60_000;
 const tripItemRepo = new TripItemRepository();
 const itemRepo = new ItemRepository();
 
-/** The two things a receipt reconcile needs of bsv-kit/grist; a fake in tests. */
+/** The two things a receipt reconcile needs of the mill; a fake in tests. */
 export interface ReceiptClient {
   /**
    * How big the sealed record would be and the most one record may be, measured the way bsv-kit's
@@ -36,11 +36,11 @@ export interface ReceiptClient {
   /** Uploads the photos and posts the grist; resolves with its txid. */
   send(call: {
     input: ReceiptReconcileRequest;
-    photos: grist.Photo[];
+    photos: Photo[];
     clientId: string;
   }): Promise<string>;
   /** Polls until the mill's answer arrives; rejects with an AbortError when the signal aborts. */
-  awaitAnswer(txid: string, signal: AbortSignal): Promise<grist.GristAnswer>;
+  awaitAnswer(txid: string, signal: AbortSignal): Promise<GristAnswer>;
 }
 
 export type ReceiptReconcileOutcome =
@@ -122,7 +122,7 @@ function describeFailure(err: unknown): string {
 export async function reconcileReceipt(
   client: ReceiptClient,
   request: ReceiptReconcileRequest,
-  photos: grist.Photo[],
+  photos: Photo[],
   options: { timeoutMs?: number; signal?: AbortSignal } = {},
 ): Promise<ReceiptReconcileOutcome> {
   const controller = new AbortController();
@@ -173,9 +173,9 @@ export async function reconcileReceipt(
  * The photos of the receipt last sent for each trip, kept in memory so 'Send again' needs no new
  * photos while the app stays open (after a restart he photographs the receipt again).
  */
-const sentPhotos = new Map<string, grist.Photo[]>();
+const sentPhotos = new Map<string, Photo[]>();
 
-export function lastSentReceiptPhotos(tripId: string): grist.Photo[] {
+export function lastSentReceiptPhotos(tripId: string): Photo[] {
   return sentPhotos.get(tripId) ?? [];
 }
 
@@ -193,7 +193,7 @@ export function receiptTimedOut(pending: ReceiptPending, now: number): boolean {
 export async function sendReceipt(
   client: ReceiptClient,
   tripId: string,
-  photos: grist.Photo[],
+  photos: Photo[],
 ): Promise<{ ok: true } | { ok: false; error: string }> {
   try {
     const request = await buildReceiptRequest(tripId);
@@ -230,7 +230,7 @@ async function failPending(tripId: string, txid: string, error: string): Promise
 export async function settleReceipt(
   tripId: string,
   txid: string,
-  record: grist.GristAnswer,
+  record: GristAnswer,
 ): Promise<void> {
   const pending = (await db.trips.get(tripId))?.receiptPending;
   if (!pending || pending.txid !== txid || pending.error) return;

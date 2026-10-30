@@ -1,8 +1,7 @@
-import { door } from "bsv-kit/bsv";
-import { grist } from "bsv-kit/grist";
+import { openMill } from "@/factory/mill";
+import type { MillLicence } from "@/factory/mill";
 import { FORM_NAME_MAX, requestFields } from "voice-kit/forms";
 import type { FormRequest, FormSpec, FormValue } from "voice-kit/forms";
-import { FACTORY_COLLECTION } from "@/services/factory-service";
 
 /** The grind the forms tutor runs: grinds/form-talk.json, version 1.0 of its input and answer. */
 export const FORM_TALK_KIND = "form-talk";
@@ -60,19 +59,15 @@ export function buildFormTalkRequest(
   return { question, history: history.slice(-MAX_HISTORY_TURNS), form: request };
 }
 
-/** The tutor over the factory: each turn is a form-talk grist, and its answer is waited for (the mill answers in a poll or two). */
-export function makeFormTalkAsk(backendUrl: string, key: Uint8Array): FormTalkAsk {
-  const d = new door.Door({ baseUrl: backendUrl, key });
+/**
+ * The tutor over the factory: each turn is a form-talk grist, and its answer is waited for (the mill answers in a poll or two).
+ * `licence` is read at each turn: the mill refuses to send or poll while it is not 'licensed'.
+ */
+export function makeFormTalkAsk(backendUrl: string, key: Uint8Array, licence: () => MillLicence): FormTalkAsk {
+  const mill = openMill(backendUrl, key, licence);
   return async (request, signal) => {
-    const txid = await grist.sendGrist({
-      door: d,
-      key,
-      app: FACTORY_COLLECTION,
-      kind: FORM_TALK_KIND,
-      v: FORM_TALK_VERSION,
-      input: request,
-    });
-    const reply = await grist.awaitAnswer<FormTalkAnswer>(txid, { door: d, key, signal });
+    const txid = await mill.send({ kind: FORM_TALK_KIND, v: FORM_TALK_VERSION, input: request });
+    const reply = await mill.awaitAnswer<FormTalkAnswer>(txid, signal);
     if (reply.status !== "answered" || !reply.answer) {
       throw new FormTalkError(reply.reason || "The factory could not answer this one.");
     }

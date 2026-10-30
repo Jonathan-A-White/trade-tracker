@@ -1,7 +1,7 @@
 // jsdom's Blob does not survive fake-indexeddb's structured clone; Node's does.
 import { Blob } from "node:buffer";
 import { waitFor } from "@testing-library/react";
-import type { grist } from "bsv-kit/grist";
+import type { GristAnswer } from "@/factory/mill";
 import { db } from "@/db/database";
 import { PendingLookupRepository } from "@/db/repositories/pending-lookup-repository";
 import { TripRepository } from "@/db/repositories/trip-repository";
@@ -16,7 +16,7 @@ const tripItemRepo = new TripItemRepository();
 const priceRepo = new PriceHistoryRepository();
 const itemRepo = new ItemRepository();
 
-type Answer = grist.GristAnswer;
+type Answer = GristAnswer;
 
 const grind = { app: "trade-tracker", kind: "item-from-photos", v: "1.0" };
 

@@ -9,7 +9,7 @@ import { currentReceiptClient, makeLookupClient } from "./lookup-client";
 describe("currentReceiptClient", () => {
   it("is null until the lookup queue has been given a key, then signs with that key", () => {
     expect(currentReceiptClient()).toBeNull();
-    makeLookupClient("https://example.test", new Uint8Array(32).fill(1));
+    makeLookupClient("https://example.test", new Uint8Array(32).fill(1), () => "licensed");
     const client = currentReceiptClient();
     expect(client).not.toBeNull();
     expect(typeof client?.send).toBe("function");
@@ -70,7 +70,7 @@ function stubBackend() {
     if (path.endsWith("/blobs")) return json({ hash: "c".repeat(64), size: 123 });
     if (path.endsWith("/messages")) {
       posted.push(String(init?.body));
-      return json({ txid: "direct:tx1" });
+      return json({ txid: "direct:tx1", seq: 1 });
     }
     return new Response("{}", { status: 404 });
   });
@@ -84,7 +84,7 @@ describe("the receipt-reconcile grist for a real-sized trip (mw-31qug1.7)", () =
   it("is accepted by bsv-kit's send for a trip of 40 lines with long Trader Joe's names", async () => {
     const trip = await seedTrip(40);
     const { posted } = stubBackend();
-    makeLookupClient("https://example.test", new Uint8Array(32).fill(1));
+    makeLookupClient("https://example.test", new Uint8Array(32).fill(1), () => "licensed");
     const request = await buildReceiptRequest(trip.id);
     expect(request.lines).toHaveLength(40);
 
@@ -101,7 +101,7 @@ describe("the receipt-reconcile grist for a real-sized trip (mw-31qug1.7)", () =
   it("says plainly how many lines a trip too large to send can take, never the byte count", async () => {
     const trip = await seedTrip(300);
     const { posted } = stubBackend();
-    makeLookupClient("https://example.test", new Uint8Array(32).fill(1));
+    makeLookupClient("https://example.test", new Uint8Array(32).fill(1), () => "licensed");
     const request = await buildReceiptRequest(trip.id);
 
     const outcome = await reconcileReceipt(
@@ -120,7 +120,7 @@ describe("the receipt-reconcile grist for a real-sized trip (mw-31qug1.7)", () =
 
   it("measures a 40-line trip and one receipt photo under bsv-kit's 20480-byte cap (mw-31qug1.8)", async () => {
     const trip = await seedTrip(40);
-    makeLookupClient("https://example.test", new Uint8Array(32).fill(1));
+    makeLookupClient("https://example.test", new Uint8Array(32).fill(1), () => "licensed");
     const request = await buildReceiptRequest(trip.id);
 
     const { bytes, cap } = currentReceiptClient()!.measure!(request, 1);
@@ -132,7 +132,7 @@ describe("the receipt-reconcile grist for a real-sized trip (mw-31qug1.7)", () =
   it("sends an 80-line trip that the old 10240-byte cap refused (mw-31qug1.8)", async () => {
     const trip = await seedTrip(80);
     const { posted } = stubBackend();
-    makeLookupClient("https://example.test", new Uint8Array(32).fill(1));
+    makeLookupClient("https://example.test", new Uint8Array(32).fill(1), () => "licensed");
     const request = await buildReceiptRequest(trip.id);
     const client = currentReceiptClient()!;
     const measured = client.measure!(request, 1);

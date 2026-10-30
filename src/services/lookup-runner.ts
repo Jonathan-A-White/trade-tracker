@@ -1,6 +1,7 @@
 import { liveQuery, type Subscription } from "dexie";
 import { door } from "bsv-kit/bsv";
-import { grist } from "bsv-kit/grist";
+import { AwaitAbortedError, GristInputError } from "@/factory/mill";
+import type { GristAnswer, Photo } from "@/factory/mill";
 import type { LookupMode, PendingLookup } from "@/contracts/types";
 import { GROCERY_CATEGORIES } from "@/core/categories";
 import { PendingLookupRepository } from "@/db/repositories/pending-lookup-repository";
@@ -11,17 +12,17 @@ export interface LookupRequest {
   barcode: string;
   mode: LookupMode;
   categories: string[];
-  photos: grist.Photo[];
+  photos: Photo[];
   /** The lookup's id, so the backend stores a retried send once. */
   clientId: string;
 }
 
-/** The two things the runner needs of bsv-kit/grist; a fake in tests. */
+/** The two things the runner needs of the mill; a fake in tests. */
 export interface LookupClient {
   /** Uploads the photos and posts the grist; resolves with its txid. */
   send(request: LookupRequest): Promise<string>;
   /** Polls (every 20 s) until the mill's answer arrives; rejects with an AbortError when the signal aborts. */
-  awaitAnswer(txid: string, signal: AbortSignal): Promise<grist.GristAnswer>;
+  awaitAnswer(txid: string, signal: AbortSignal): Promise<GristAnswer>;
 }
 
 export interface LookupRunnerOptions {
@@ -34,12 +35,12 @@ const DEFAULT_REASON = "The factory could not read this one.";
 
 function isAbort(err: unknown): boolean {
   return (
-    err instanceof grist.AwaitAbortedError ||
+    err instanceof AwaitAbortedError ||
     (err instanceof Error && err.name === "AbortError")
   );
 }
 
-async function toPhoto(blob: Blob): Promise<grist.Photo> {
+async function toPhoto(blob: Blob): Promise<Photo> {
   return { bytes: new Uint8Array(await blob.arrayBuffer()), mime: blob.type };
 }
 
@@ -197,7 +198,7 @@ export class LookupRunner {
       this.setBackingOff(false);
       return true;
     } catch (err) {
-      if (err instanceof grist.GristInputError || door.isPermanentRefusal(err)) {
+      if (err instanceof GristInputError || door.isPermanentRefusal(err)) {
         await this.repo.markFailed(lookup.id, err.message || DEFAULT_REASON);
         return true;
       }
@@ -225,7 +226,7 @@ export class LookupRunner {
     );
   }
 
-  private async settle(id: string, record: grist.GristAnswer): Promise<void> {
+  private async settle(id: string, record: GristAnswer): Promise<void> {
     try {
       if (record.status !== "answered") {
         await this.repo.markFailed(id, record.reason?.trim() || DEFAULT_REASON);

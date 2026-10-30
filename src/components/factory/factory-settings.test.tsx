@@ -25,8 +25,6 @@ function renderFactorySettings() {
         <FactoryProvider
           checkLicence={async () => ({ state: "none", checkedAt: "2026-10-10T00:00:00.000Z" })}
           passkeyPort={noWebAuthn}
-          askDoor={async () => "unreachable"}
-          licenceRetryMs={[1, 1]}
         >
           <FactorySettings />
         </FactoryProvider>

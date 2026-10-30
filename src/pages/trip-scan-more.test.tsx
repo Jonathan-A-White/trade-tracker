@@ -111,7 +111,6 @@ function renderAt(path: string) {
     <ThemeProvider>
       <FactoryProvider
         checkLicence={async () => ({ state: "none", checkedAt: "x" })}
-        askDoor={async () => "unreachable"}
       >
         <MemoryRouter initialEntries={[path]}>
           <Routed />

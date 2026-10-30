@@ -93,7 +93,6 @@ describe("a pending line on the other trip pages", () => {
       <MemoryRouter initialEntries={["/trips/end"]}>
         <FactoryProvider
           checkLicence={async () => ({ state: "none", checkedAt: "x" })}
-          askDoor={async () => "unreachable"}
         >
           <Routes>
             <Route path="/trips/end" element={<EndTripPage />} />

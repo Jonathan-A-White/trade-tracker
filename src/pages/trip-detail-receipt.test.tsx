@@ -2,7 +2,7 @@ import { Blob } from "node:buffer";
 import { render, screen, waitFor, within } from "@testing-library/react";
 import userEvent from "@testing-library/user-event";
 import { MemoryRouter, Route, Routes } from "react-router";
-import type { grist } from "bsv-kit/grist";
+import type { GristAnswer, Photo } from "@/factory/mill";
 import TripDetailPage from "./trip-detail-page";
 import { db } from "@/db/database";
 import { ItemRepository } from "@/db/repositories/item-repository";
@@ -55,8 +55,8 @@ const tripItemRepo = new TripItemRepository();
 
 const grind = { app: "trade-tracker", kind: "receipt-reconcile", v: "1.0" };
 
-function fakeClient(record: () => grist.GristAnswer) {
-  const sent: { input: ReceiptReconcileRequest; photos: grist.Photo[] }[] = [];
+function fakeClient(record: () => GristAnswer) {
+  const sent: { input: ReceiptReconcileRequest; photos: Photo[] }[] = [];
   const client: ReceiptClient = {
     send: vi.fn(async (call) => {
       sent.push({ input: call.input, photos: call.photos });
@@ -67,7 +67,7 @@ function fakeClient(record: () => grist.GristAnswer) {
   return { client, sent };
 }
 
-function answered(answer: ReceiptReconcileAnswer): grist.GristAnswer {
+function answered(answer: ReceiptReconcileAnswer): GristAnswer {
   return { re: "direct:tx1", status: "answered", answer, grind };
 }
 

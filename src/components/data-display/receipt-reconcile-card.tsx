@@ -2,7 +2,7 @@ import { useEffect, useRef, useState } from "react";
 import type { ChangeEvent } from "react";
 import { useLiveQuery } from "dexie-react-hooks";
 import { Link } from "react-router";
-import type { grist } from "bsv-kit/grist";
+import type { Photo } from "@/factory/mill";
 import { db } from "@/db/database";
 import { ReceiptCamera } from "@/components/scanner/receipt-camera";
 import { formatCurrency } from "@/core/pricing";
@@ -30,7 +30,7 @@ interface ReceiptReconcileCardProps {
   onTotal: (total: number) => void;
 }
 
-async function toPhoto(blob: Blob): Promise<grist.Photo> {
+async function toPhoto(blob: Blob): Promise<Photo> {
   return { bytes: new Uint8Array(await blob.arrayBuffer()), mime: blob.type };
 }
 
@@ -136,7 +136,7 @@ export function ReceiptReconcileCard({ tripId, onTotal }: ReceiptReconcileCardPr
     if (photos.length + 1 >= MAX_RECEIPT_PHOTOS) setCameraOpen(false);
   }
 
-  async function send(sentPhotos: grist.Photo[]) {
+  async function send(sentPhotos: Photo[]) {
     const client = getClient();
     if (!client) {
       setError(doorWords(door, licence) ?? "The factory is not ready. Try again in a moment.");

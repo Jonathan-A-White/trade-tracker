@@ -34,7 +34,7 @@ function renderSettings(port: PasskeyPort) {
   return render(
     <MemoryRouter>
       <ThemeProvider>
-        <FactoryProvider checkLicence={async () => none} passkeyPort={port} askDoor={async () => "unreachable"}>
+        <FactoryProvider checkLicence={async () => none} passkeyPort={port}>
           <DoorProbe />
           <SettingsPage />
         </FactoryProvider>

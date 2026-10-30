@@ -32,7 +32,7 @@ function renderSettings(checkLicence: FactoryLicenceChecker = async () => none) 
   return render(
     <MemoryRouter>
       <ThemeProvider>
-        <FactoryProvider checkLicence={checkLicence} passkeyPort={noWebAuthn} askDoor={async () => "unreachable"} licenceRetryMs={[1, 1]}>
+        <FactoryProvider checkLicence={checkLicence} passkeyPort={noWebAuthn}>
           <SettingsPage />
         </FactoryProvider>
       </ThemeProvider>

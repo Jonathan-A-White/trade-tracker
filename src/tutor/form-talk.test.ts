@@ -20,13 +20,15 @@ import {
   storeStrings,
 } from "./form-commands";
 
-const sendGrist = vi.fn();
+const send = vi.fn();
 const awaitAnswer = vi.fn();
-vi.mock("bsv-kit/grist", () => ({
-  grist: {
-    sendGrist: (...args: unknown[]) => sendGrist(...args),
-    awaitAnswer: (...args: unknown[]) => awaitAnswer(...args),
-  },
+const openMill = vi.fn((...args: [string, Uint8Array, () => string]) => ({
+  send: (...call: unknown[]) => send(...call),
+  awaitAnswer: (...call: unknown[]) => awaitAnswer(...call),
+  args,
+}));
+vi.mock("@/factory/mill", () => ({
+  openMill: (...args: [string, Uint8Array, () => string]) => openMill(...args),
 }));
 
 function readJson(path: string): Record<string, unknown> {
@@ -137,26 +139,25 @@ describe("makeFormTalkAsk", () => {
   const request = buildFormTalkRequest(ITEM_FORM, itemStrings(noItem), FORM_START, []);
 
   beforeEach(() => {
-    sendGrist.mockReset();
+    send.mockReset();
     awaitAnswer.mockReset();
   });
 
   it("sends the request as a form-talk grist and returns the answer", async () => {
-    sendGrist.mockResolvedValue("direct:abc");
+    send.mockResolvedValue("direct:abc");
     awaitAnswer.mockResolvedValue({ status: "answered", answer: { answer: "What is it called?", form_ask: "name" } });
-    const ask = makeFormTalkAsk("https://backend.example", key);
+    const ask = makeFormTalkAsk("https://backend.example", key, () => "licensed");
     const answer = await ask(request);
     expect(answer).toEqual({ answer: "What is it called?", form_ask: "name" });
-    expect(sendGrist).toHaveBeenCalledWith(
-      expect.objectContaining({ app: "trade-tracker", kind: "form-talk", v: "1.0", input: request, key }),
-    );
-    expect(awaitAnswer).toHaveBeenCalledWith("direct:abc", expect.objectContaining({ key }));
+    expect(send).toHaveBeenCalledWith({ kind: "form-talk", v: "1.0", input: request });
+    expect(awaitAnswer).toHaveBeenCalledWith("direct:abc", undefined);
+    expect(openMill).toHaveBeenCalledWith("https://backend.example", key, expect.any(Function));
   });
 
   it("names a refused or failed answer", async () => {
-    sendGrist.mockResolvedValue("direct:abc");
+    send.mockResolvedValue("direct:abc");
     awaitAnswer.mockResolvedValue({ status: "refused", reason: "Not licensed." });
-    const ask = makeFormTalkAsk("https://backend.example", key);
+    const ask = makeFormTalkAsk("https://backend.example", key, () => "licensed");
     await expect(ask(request)).rejects.toThrow(FormTalkError);
     await expect(ask(request)).rejects.toThrow("Not licensed.");
   });

@@ -1,11 +1,10 @@
+import type { ReactNode } from "react";
 import { act, renderHook, waitFor } from "@testing-library/react";
 import { licence } from "bsv-kit/bsv";
 import { browserStorage } from "@/services/factory-service";
-import type { DoorLicenceAsker } from "@/services/door-licence";
 import type { PasskeyPort } from "@/services/passkey";
-import { FactoryProvider, useFactory } from "@/factory";
+import { FactoryProvider, useAiAllowed, useFactory } from "@/factory";
 import { useKeySession } from "@/factory/key-session";
-import { useFactoryLicence } from "@/factory/licence";
 import * as oldPath from "@/contexts/factory-context";
 
 const noWebAuthn: PasskeyPort = {
@@ -48,39 +47,41 @@ describe("useKeySession", () => {
   });
 });
 
-describe("useFactoryLicence", () => {
-  it("is null with no key and the chain's answer once a key exists", async () => {
-    const { result, rerender } = renderHook(
-      (props: { publicKeyHex: string | null }) =>
-        useFactoryLicence({
-          publicKeyHex: props.publicKeyHex,
-          key: null,
-          backendUrl: "http://x",
-          collection: "trade-tracker",
-          checkLicence: async () => held,
-        }),
-      { initialProps: { publicKeyHex: null as string | null } },
+describe("the licence on the kit", () => {
+  function wrapper({ children }: { children: ReactNode }) {
+    return (
+      <FactoryProvider checkLicence={async () => held} passkeyPort={noWebAuthn}>
+        {children}
+      </FactoryProvider>
     );
-    expect(result.current).toBeNull();
-    rerender({ publicKeyHex: "aa" });
-    expect(result.current?.licence).toBe("checking");
-    await waitFor(() => expect(result.current?.licence).toBe("held"));
+  }
+
+  it("is null and not allowed with no key, then checking, then licensed once the chain says held", async () => {
+    const { result } = renderHook(() => ({ factory: useFactory(), allowed: useAiAllowed() }), { wrapper });
+    expect(result.current.factory.licence).toBeNull();
+    expect(result.current.allowed).toBe(false);
+    await act(async () => {
+      await result.current.factory.makeKey();
+    });
+    await waitFor(() => expect(result.current.factory.licence).toBe("licensed"));
+    expect(result.current.allowed).toBe(true);
+    expect(result.current.factory.door).toBe("licensed");
   });
 
-  it("asks the door when the key is given, and the door's word wins", async () => {
-    const askDoor = vi.fn<DoorLicenceAsker>(async () => "none");
-    const key = new Uint8Array([1, 2, 3]);
-    const { result } = renderHook(() =>
-      useFactoryLicence({
-        publicKeyHex: "aa",
-        key,
-        backendUrl: "http://x",
-        collection: "trade-tracker",
-        checkLicence: async () => held,
-        askDoor,
-      }),
-    );
-    await waitFor(() => expect(result.current?.licence).toBe("none"));
-    expect(askDoor).toHaveBeenCalledTimes(1);
+  it("does not allow the AI while the chain has not answered ('checking' is no)", async () => {
+    const never = () => new Promise<licence.LicenceStatus>(() => {});
+    const { result } = renderHook(() => ({ factory: useFactory(), allowed: useAiAllowed() }), {
+      wrapper: ({ children }: { children: ReactNode }) => (
+        <FactoryProvider checkLicence={never} passkeyPort={noWebAuthn}>
+          {children}
+        </FactoryProvider>
+      ),
+    });
+    await act(async () => {
+      await result.current.factory.makeKey();
+    });
+    expect(result.current.factory.licence).toBe("checking");
+    expect(result.current.allowed).toBe(false);
+    expect(result.current.factory.door).toBe("unlocked");
   });
 });
