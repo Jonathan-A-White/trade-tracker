@@ -18,7 +18,7 @@
     "bsv-kit": "github:Jonathan-A-White/bsv-kit#fec787f3f9462fa9787e094d3bd236b5362e1511",
     "dexie": "^4.3.0",
     "dexie-react-hooks": "^4.2.0",
-    "pwa-kit": "github:Jonathan-A-White/pwa-kit#1bcc9e9f14b4c3e28d7e3221080b9b29672c6fff",
+    "pwa-kit": "github:Jonathan-A-White/pwa-kit#d5eb441eace138f26bc3972b87f0561c2ff87579",
     "qrcode": "^1.5.4",
     "react": "^19.2.4",
     "react-dom": "^19.2.4",
