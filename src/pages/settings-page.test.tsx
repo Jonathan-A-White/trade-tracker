@@ -1,23 +1,52 @@
-import { render, screen, waitFor } from "@testing-library/react";
+import { render, screen, waitFor, within } from "@testing-library/react";
 import userEvent from "@testing-library/user-event";
 import { MemoryRouter } from "react-router";
+import type { licence } from "bsv-kit/bsv";
 import { FactoryProvider } from "@/contexts/factory-context";
+import type { FactoryLicenceChecker } from "@/contexts/factory-context";
 import { ThemeProvider } from "@/contexts/theme-context";
 import { db } from "@/db/database";
 import SettingsPage from "@/pages/settings-page";
+import type { PasskeyPort } from "@/services/passkey";
+import { ROWS } from "@/settings/registry";
 
-const none = { state: "none" as const, checkedAt: "2026-10-05T00:00:00.000Z" };
+const checkedAt = "2026-10-05T00:00:00.000Z";
+const none = { state: "none" as const, checkedAt };
+const held: licence.LicenceStatus = {
+  state: "held",
+  outpoint: { txid: "ab".repeat(32), vout: 0 },
+  collection: "trade-tracker",
+  checkedAt,
+};
 
-function renderSettings() {
+// No WebAuthn here: Make key still works, the 12 words are the only way to unlock.
+const noWebAuthn: PasskeyPort = {
+  isAvailable: () => false,
+  create: async () => {
+    throw new Error("no WebAuthn");
+  },
+  getPrfSecret: async () => null,
+};
+
+function renderSettings(checkLicence: FactoryLicenceChecker = async () => none) {
   return render(
     <MemoryRouter>
       <ThemeProvider>
-        <FactoryProvider checkLicence={async () => none}>
+        <FactoryProvider checkLicence={checkLicence} passkeyPort={noWebAuthn} askDoor={async () => "unreachable"} licenceRetryMs={[1, 1]}>
           <SettingsPage />
         </FactoryProvider>
       </ThemeProvider>
     </MemoryRouter>,
   );
+}
+
+/** Settings with a key made and the licence held: the door is licensed and Import Trip from AI is open. */
+async function renderLicensed() {
+  const user = userEvent.setup();
+  const rendered = renderSettings(async () => held);
+  await user.click(screen.getByRole("button", { name: "Make key" }));
+  await screen.findByText("Held");
+  return { user, ...rendered };
 }
 
 describe("SettingsPage layout", () => {
@@ -43,6 +72,14 @@ describe("SettingsPage layout", () => {
       "Danger Zone",
       "About",
     ]);
+  });
+
+  it("draws every registered row once, and nothing that is not registered", () => {
+    const { container } = renderSettings();
+    for (const row of ROWS) {
+      expect(container.querySelectorAll(`[data-setting="${row.key}"]`), `row ${row.key}`).toHaveLength(1);
+    }
+    expect(container.querySelectorAll("[data-setting]")).toHaveLength(ROWS.length);
   });
 
   it("shows every button, switch and link label", () => {
@@ -201,11 +238,88 @@ describe("SettingsPage confirm dialogs", () => {
   });
 
   it("rejects an AI trip file that is not JSON", async () => {
-    const user = userEvent.setup();
-    const { container } = renderSettings();
+    const { user, container } = await renderLicensed();
     const inputs = container.querySelectorAll('input[type="file"]');
     const aiInput = inputs[2] as HTMLInputElement;
     await user.upload(aiInput, new File(["nope"], "trip.json", { type: "application/json" }));
     expect(await screen.findByText("Could not parse file. Make sure it is valid JSON.")).toBeInTheDocument();
+  });
+});
+
+describe("SettingsPage search", () => {
+  beforeEach(() => {
+    localStorage.clear();
+    localStorage.setItem("tradetracker-theme", "light");
+  });
+
+  async function search(text: string) {
+    const user = userEvent.setup();
+    const rendered = renderSettings();
+    await user.type(screen.getByRole("searchbox", { name: "Search settings" }), text);
+    return { user, ...rendered };
+  }
+
+  it("finds the Backend row by 'backend', and says which group it is in", async () => {
+    await search("backend");
+    const found = screen.getByRole("list", { name: "Matching settings" });
+    const row = within(found).getByRole("button", { name: /Backend/ });
+    expect(row).toHaveAttribute("data-found", "backend");
+    expect(row).toHaveTextContent("in Factory");
+    expect(within(found).queryByRole("button", { name: /Danger Zone/ })).not.toBeInTheDocument();
+  });
+
+  it("finds the Factory row and the Backend row by 'key'", async () => {
+    await search("key");
+    const found = screen.getByRole("list", { name: "Matching settings" });
+    const keys = within(found)
+      .getAllByRole("button")
+      .map((b) => b.getAttribute("data-found"));
+    expect(keys).toContain("factory");
+  });
+
+  it("says when nothing matches", async () => {
+    await search("zzzz");
+    expect(screen.getByRole("status")).toHaveTextContent("Nothing in Settings matches");
+  });
+
+  it("opens the found row: the search clears and the row is marked", async () => {
+    const { user, container } = await search("backend");
+    await user.click(screen.getByRole("button", { name: /Backend/ }));
+    expect(screen.getByRole("searchbox", { name: "Search settings" })).toHaveValue("");
+    expect(container.querySelector('[data-setting="backend"]')).toHaveAttribute("aria-current", "location");
+  });
+});
+
+describe("SettingsPage Import Trip from AI needs a licence", () => {
+  beforeEach(() => {
+    localStorage.clear();
+    localStorage.setItem("tradetracker-theme", "light");
+  });
+
+  it("is off and greyed with 'Needs a licence' while the door is not licensed", () => {
+    const { container } = renderSettings();
+    const row = container.querySelector('[data-setting="ai-trip"]') as HTMLElement;
+    const input = row.querySelector('input[type="file"]') as HTMLInputElement;
+    expect(input).toBeDisabled();
+    expect(within(row).getByText("Import AI Trip JSON").closest("label")).toHaveClass("opacity-50");
+    expect(within(row).getByRole("link", { name: "Needs a licence" })).toBeInTheDocument();
+  });
+
+  it("links to the Factory row, which the link marks", async () => {
+    const user = userEvent.setup();
+    const { container } = renderSettings();
+    const factory = container.querySelector('[data-setting="factory"]') as HTMLElement;
+    expect(factory).not.toHaveAttribute("aria-current");
+    const link = screen.getByRole("link", { name: "Needs a licence" });
+    expect(link).toHaveAttribute("href", "/settings?setting=factory");
+    await user.click(link);
+    expect(container.querySelector('[data-setting="factory"]')).toHaveAttribute("aria-current", "location");
+  });
+
+  it("opens once the key is made and the licence is held", async () => {
+    const { container } = await renderLicensed();
+    const input = container.querySelector('[data-setting="ai-trip"] input[type="file"]') as HTMLInputElement;
+    expect(input).toBeEnabled();
+    expect(screen.queryByRole("link", { name: "Needs a licence" })).not.toBeInTheDocument();
   });
 });

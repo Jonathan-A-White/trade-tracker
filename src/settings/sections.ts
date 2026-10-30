@@ -1,4 +1,6 @@
 import type { JSX } from "react";
+import { SECTIONS } from "./registry";
+import type { SectionId } from "./registry";
 import { AboutSection } from "./sections/about-section";
 import { AiTripSection } from "./sections/ai-trip-section";
 import { AppearanceSection } from "./sections/appearance-section";
@@ -13,28 +15,28 @@ import { TripsTransferSection } from "./sections/trips-transfer-section";
 
 /** One block on the Settings screen. */
 export interface SettingsSection {
-  id: string;
+  id: SectionId;
   title: string;
-  /** Lower comes first; ties break on id. */
-  order: number;
   Component: () => JSX.Element;
 }
 
-const REGISTERED: SettingsSection[] = [
-  { id: "appearance", title: "Appearance", order: 10, Component: AppearanceSection },
-  { id: "factory", title: "Factory", order: 20, Component: FactorySection },
-  { id: "storage", title: "Storage Usage", order: 30, Component: StorageSection },
-  { id: "plu-codes", title: "Produce PLU Codes", order: 40, Component: PluCodesSection },
-  { id: "tj-barcodes", title: "Trader Joe's Barcodes", order: 50, Component: TjBarcodesSection },
-  { id: "tj-receipt", title: "TJ's Receipt (03/14/2026)", order: 60, Component: TjReceiptSection },
-  { id: "items-transfer", title: "Export / Import Items", order: 70, Component: ItemsTransferSection },
-  { id: "trips-transfer", title: "Export / Import Trips", order: 80, Component: TripsTransferSection },
-  { id: "ai-trip", title: "Import Trip from AI", order: 90, Component: AiTripSection },
-  { id: "danger-zone", title: "Danger Zone", order: 100, Component: DangerZoneSection },
-  { id: "about", title: "About", order: 110, Component: AboutSection },
-];
+const COMPONENTS: Record<SectionId, () => JSX.Element> = {
+  appearance: AppearanceSection,
+  factory: FactorySection,
+  storage: StorageSection,
+  "plu-codes": PluCodesSection,
+  "tj-barcodes": TjBarcodesSection,
+  "tj-receipt": TjReceiptSection,
+  "items-transfer": ItemsTransferSection,
+  "trips-transfer": TripsTransferSection,
+  "ai-trip": AiTripSection,
+  "danger-zone": DangerZoneSection,
+  about: AboutSection,
+};
 
-/** Every section, in the order the screen shows them. A new setting is a new file plus one line above. */
-export const SETTINGS_SECTIONS: readonly SettingsSection[] = [...REGISTERED].sort(
-  (a, b) => a.order - b.order || a.id.localeCompare(b.id),
-);
+/** Every block, in the order the registry lists its sections. A new block is a file, a section and its rows in registry.ts, and one line above. */
+export const SETTINGS_SECTIONS: readonly SettingsSection[] = SECTIONS.map(({ id, title }) => ({
+  id,
+  title,
+  Component: COMPONENTS[id],
+}));

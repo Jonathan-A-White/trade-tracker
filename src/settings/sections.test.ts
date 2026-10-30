@@ -1,3 +1,4 @@
+import { SECTIONS } from "./registry";
 import { SETTINGS_SECTIONS } from "./sections";
 
 describe("SETTINGS_SECTIONS", () => {
@@ -6,10 +7,7 @@ describe("SETTINGS_SECTIONS", () => {
     expect(new Set(ids).size).toBe(ids.length);
   });
 
-  it("is sorted by order, ties by id", () => {
-    const sorted = [...SETTINGS_SECTIONS].sort(
-      (a, b) => a.order - b.order || a.id.localeCompare(b.id),
-    );
-    expect(SETTINGS_SECTIONS.map((s) => s.id)).toEqual(sorted.map((s) => s.id));
+  it("draws the registry's sections, in the registry's order, under the registry's titles", () => {
+    expect(SETTINGS_SECTIONS.map((s) => [s.id, s.title])).toEqual(SECTIONS.map((s) => [s.id, s.title]));
   });
 });

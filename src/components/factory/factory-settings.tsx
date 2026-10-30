@@ -3,6 +3,7 @@ import { useAlive } from "pwa-kit/alive";
 import { useFactory } from "@/contexts/factory-context";
 import type { FactoryLicence } from "@/contracts/types";
 import { KeyQr } from "@/components/factory/key-qr";
+import { SettingRow } from "@/settings/setting-row";
 
 const LICENCE_TEXT: Record<FactoryLicence, string> = {
   checking: "Checking",
@@ -231,18 +232,20 @@ export function FactorySettings() {
         </div>
       )}
 
-      <label className="block text-xs text-gray-500 dark:text-gray-400">
-        Backend
-        <input
-          type="url"
-          value={backendDraft}
-          onChange={(e) => {
-            setBackendDraft(e.target.value);
-            setBackendUrl(e.target.value);
-          }}
-          className={`${inputClass} mt-1`}
-        />
-      </label>
+      <SettingRow settingKey="backend">
+        <label className="block text-xs text-gray-500 dark:text-gray-400">
+          Backend
+          <input
+            type="url"
+            value={backendDraft}
+            onChange={(e) => {
+              setBackendDraft(e.target.value);
+              setBackendUrl(e.target.value);
+            }}
+            className={`${inputClass} mt-1`}
+          />
+        </label>
+      </SettingRow>
     </div>
   );
 }

@@ -2,6 +2,7 @@ import { StrictMode } from "react";
 import { createRoot } from "react-dom/client";
 import { registerSW } from "virtual:pwa-register";
 import "pwa-kit/whats-new/styles.css";
+import "pwa-kit/settings/styles.css";
 import "./index.css";
 import App from "./App.tsx";
 import { startAppUpdates } from "pwa-kit/app-update";

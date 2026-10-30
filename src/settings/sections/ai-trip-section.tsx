@@ -1,10 +1,14 @@
 import { useState, useRef } from "react";
-import { useNavigate } from "react-router";
+import { Link, useNavigate } from "react-router";
+import { link } from "pwa-kit/settings";
+import { useAiAllowed } from "@/factory";
+import { SETTINGS_PATH } from "../registry";
 import { validateTripImportData, importTripFromAI } from "@/services/trip-exchange-service";
 import { ErrorNote, SectionCard, SectionNote } from "../parts";
 
 export function AiTripSection() {
   const navigate = useNavigate();
+  const allowed = useAiAllowed();
   const [importing, setImporting] = useState(false);
   const [error, setError] = useState<string | null>(null);
   const [result, setResult] = useState<{
@@ -54,7 +58,7 @@ export function AiTripSection() {
         This creates a new completed trip with all items.
       </SectionNote>
       <label
-        className={`block w-full rounded-lg border border-dashed border-purple-300 dark:border-purple-600 text-purple-600 dark:text-purple-400 px-4 py-2.5 text-sm font-medium hover:bg-purple-50 dark:hover:bg-purple-900/30 active:bg-purple-100 transition-colors cursor-pointer text-center ${importing ? "opacity-50 pointer-events-none" : ""}`}
+        className={`block w-full rounded-lg border border-dashed border-purple-300 dark:border-purple-600 text-purple-600 dark:text-purple-400 px-4 py-2.5 text-sm font-medium hover:bg-purple-50 dark:hover:bg-purple-900/30 active:bg-purple-100 transition-colors cursor-pointer text-center ${importing || !allowed ? "opacity-50 pointer-events-none" : ""}`}
       >
         {importing ? "Importing..." : "Import AI Trip JSON"}
         <input
@@ -62,10 +66,18 @@ export function AiTripSection() {
           type="file"
           accept=".json"
           onChange={handleFileSelect}
-          disabled={importing}
+          disabled={importing || !allowed}
           className="hidden"
         />
       </label>
+      {!allowed && (
+        <SectionNote>
+          <Link to={link("factory", SETTINGS_PATH)} className="font-medium text-blue-600 dark:text-blue-400 underline">
+            Needs a licence
+          </Link>
+          . Make the key and get the licence under Factory.
+        </SectionNote>
+      )}
       {error && <ErrorNote>{error}</ErrorNote>}
       {result && (
         <div className="text-sm text-green-600 dark:text-green-400 bg-green-50 dark:bg-green-900/30 rounded-lg p-3 space-y-2">
