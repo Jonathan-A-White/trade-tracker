@@ -67,6 +67,8 @@ interface FactoryContextValue {
   unlockWithFingerprint: () => Promise<void>;
   /** Deletes the fingerprint copy only. */
   removeFingerprint: () => Promise<void>;
+  /** The unlocked key, held in memory only; null while locked or without a key. For sealing and opening what the key guards. */
+  getKey: () => Uint8Array | null;
 }
 
 const FactoryContext = createContext<FactoryContextValue | null>(null);
@@ -169,6 +171,7 @@ function FactoryState({
         enableFingerprint: keySession.enableFingerprint,
         unlockWithFingerprint: keySession.unlockWithFingerprint,
         removeFingerprint: keySession.removeFingerprint,
+        getKey: keySession.getKey,
       }}
     >
       <FormTutorContext value={formAsk}>

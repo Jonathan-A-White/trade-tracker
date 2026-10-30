@@ -9,6 +9,7 @@ import type { SettingsGroup, SettingsRow, SettingsSection } from "pwa-kit/settin
 export type SectionId =
   | "appearance"
   | "factory"
+  | "ynab"
   | "storage"
   | "plu-codes"
   | "tj-barcodes"
@@ -19,7 +20,7 @@ export type SectionId =
   | "danger-zone"
   | "about";
 
-export type GroupId = "display" | "factory" | "data" | "about";
+export type GroupId = "display" | "factory" | "connections" | "data" | "about";
 
 /** The route the screen is mounted at (a link to a row is `${SETTINGS_PATH}?setting=<key>`). */
 export const SETTINGS_PATH = "/settings";
@@ -28,6 +29,7 @@ export const SETTINGS_PATH = "/settings";
 export const SECTIONS: readonly SettingsSection<SectionId>[] = [
   { id: "appearance", title: "Appearance" },
   { id: "factory", title: "Factory" },
+  { id: "ynab", title: "YNAB" },
   { id: "storage", title: "Storage Usage" },
   { id: "plu-codes", title: "Produce PLU Codes" },
   { id: "tj-barcodes", title: "Trader Joe's Barcodes" },
@@ -43,6 +45,7 @@ export const SECTIONS: readonly SettingsSection<SectionId>[] = [
 export const GROUPS: readonly SettingsGroup<SectionId, GroupId>[] = [
   { id: "display", title: "Display", hint: "Dark or light mode.", sections: ["appearance"] },
   { id: "factory", title: "Factory", hint: "This phone's key, licence and backend.", sections: ["factory"] },
+  { id: "connections", title: "Connections", hint: "Other services this app can work with, each off until you turn it on.", sections: ["ynab"] },
   {
     id: "data",
     title: "Your data",
@@ -74,6 +77,13 @@ export const ROWS: readonly SettingsRow<SectionId>[] = rowsInOrder<SectionId, Se
     label: "Backend",
     hint: "The address of the factory this phone sends lookups to.",
     help: "Leave it as it is unless you run your own backend. It is kept on this device.",
+  },
+  {
+    key: "ynab",
+    section: "ynab",
+    label: "YNAB",
+    hint: "Connect your YNAB budget so this app can fit around it.",
+    help: "Off until you turn it on. It needs a Personal Access Token from YNAB (app.ynab.com > Account Settings > Developer Settings > New Token); the token is kept sealed under your key on this device, and the budget's categories, accounts and payees are copied here.",
   },
   {
     key: "storage",

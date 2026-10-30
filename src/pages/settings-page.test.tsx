@@ -62,6 +62,7 @@ describe("SettingsPage layout", () => {
     expect(headings).toEqual([
       "Appearance",
       "Factory",
+      "YNAB",
       "Storage Usage",
       "Produce PLU Codes",
       "Trader Joe's Barcodes",

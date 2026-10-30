@@ -1,5 +1,7 @@
 import { useState } from "react";
 import { db } from "@/db/database";
+import { browserStorage } from "@/services/factory-service";
+import { disconnectYnab } from "@/ynab/disconnect";
 import { announceDataCleared } from "../data-cleared";
 import { ConfirmModal, SectionCard, SectionNote, SuccessNote } from "../parts";
 
@@ -22,6 +24,8 @@ export function DangerZoneSection() {
           await db.priceHistory.clear();
         },
       );
+      // YNAB goes Off with its sealed token and cached lists, so nothing of it outlives the data
+      await disconnectYnab(browserStorage());
       setCleared(true);
       setShowConfirm(false);
       announceDataCleared();

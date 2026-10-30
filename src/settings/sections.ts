@@ -12,6 +12,7 @@ import { StorageSection } from "./sections/storage-section";
 import { TjBarcodesSection } from "./sections/tj-barcodes-section";
 import { TjReceiptSection } from "./sections/tj-receipt-section";
 import { TripsTransferSection } from "./sections/trips-transfer-section";
+import { YnabSection } from "./sections/ynab-section";
 
 /** One block on the Settings screen. */
 export interface SettingsSection {
@@ -23,6 +24,7 @@ export interface SettingsSection {
 const COMPONENTS: Record<SectionId, () => JSX.Element> = {
   appearance: AppearanceSection,
   factory: FactorySection,
+  ynab: YnabSection,
   storage: StorageSection,
   "plu-codes": PluCodesSection,
   "tj-barcodes": TjBarcodesSection,

@@ -11,6 +11,7 @@ test("Settings: groups in order, search finds Backend, Needs a licence leads to 
   expect(headings).toEqual([
     "Appearance",
     "Factory",
+    "YNAB",
     "Storage Usage",
     "Produce PLU Codes",
     "Trader Joe's Barcodes",
