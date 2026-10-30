@@ -41,3 +41,18 @@ export interface YnabDelta<T> {
   rows: T[];
   serverKnowledge: number;
 }
+
+/** A transaction as YNAB reads and writes it (snake_case; `amount` in milliunits, negative for an outflow). No `import_id`: a transaction the app enters is matched by YNAB's own bank import. */
+export interface YnabTransactionWire {
+  id?: string;
+  account_id: string;
+  date: string;
+  amount: number;
+  payee_name?: string;
+  category_id?: string | null;
+  memo?: string | null;
+  cleared?: "cleared" | "uncleared" | "reconciled";
+  approved?: boolean;
+  subtransactions?: { amount: number; category_id?: string | null; memo?: string | null }[];
+  deleted?: boolean;
+}
