@@ -1,11 +1,14 @@
 import { useLiveQuery } from "dexie-react-hooks";
-import { Link } from "react-router";
+import { Link, Outlet } from "react-router";
 import { db } from "@/db/database";
 import { formatCurrency } from "@/core/pricing";
 import { StatCard } from "@/components/data-display/stat-card";
 import { TripCard } from "@/components/data-display/trip-card";
+import { useFamilyFeed } from "@/sort/sort-context";
+import { WaitingCard } from "@/sort/WaitingCard";
 
 export function HomePage() {
+  const family = useFamilyFeed();
   const now = new Date();
   const startOfMonth = new Date(now.getFullYear(), now.getMonth(), 1).getTime();
 
@@ -65,6 +68,8 @@ export function HomePage() {
       </header>
 
       <div className="flex-1 px-4 py-4 space-y-6">
+        <WaitingCard family={family} />
+
         {activeTrip ? (
           <Link
             to="/trips/active"
@@ -129,6 +134,7 @@ export function HomePage() {
           )}
         </section>
       </div>
+      <Outlet context={family} />
     </div>
   );
 }

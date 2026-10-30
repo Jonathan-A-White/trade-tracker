@@ -26,6 +26,7 @@ import SettingsPage from "@/pages/settings-page";
 import AboutPage from "@/pages/about-page";
 import { NotFoundPage } from "@/pages/not-found-page";
 import { RouteErrorPage } from "@/pages/route-error-page";
+import { SortRoute } from "@/sort/SortSheet";
 
 export const appRoutes: RouteObject[] = [
   {
@@ -37,7 +38,11 @@ export const appRoutes: RouteObject[] = [
         // Pathless: a screen that throws is caught here, so the shell and nav stay.
         errorElement: <RouteErrorPage />,
         children: [
-          { index: true, element: <HomePage /> },
+          {
+            // Home, with the Sort sheet of one charge drawn over it
+            element: <HomePage />,
+            children: [{ index: true }, { path: "sort/:alertId", element: <SortRoute /> }],
+          },
           { path: "trips/new", element: <NewTripPage /> },
           {
             path: "trips/active",

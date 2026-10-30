@@ -5,6 +5,7 @@ import { ThemeProvider } from "@/contexts/theme-context";
 import { FactoryProvider } from "@/contexts/factory-context";
 import { ErrorBoundary } from "@/components/feedback/error-boundary";
 import { appRoutes } from "@/routes";
+import { SortProvider } from "@/sort/sort-context";
 
 const basename = import.meta.env.BASE_URL.replace(/\/$/, "") || "/";
 
@@ -17,7 +18,9 @@ export default function App() {
         <ActiveTripProvider>
           <ToastProvider>
             <FactoryProvider>
-              <RouterProvider router={router} />
+              <SortProvider>
+                <RouterProvider router={router} />
+              </SortProvider>
             </FactoryProvider>
           </ToastProvider>
         </ActiveTripProvider>
