@@ -10,6 +10,8 @@ import type {
   YnabCategory,
   YnabAccount,
   YnabPayee,
+  YnabOutboxItem,
+  YnabLink,
 } from "../contracts/types";
 
 export class TradeTrackerDB extends Dexie {
@@ -23,6 +25,8 @@ export class TradeTrackerDB extends Dexie {
   ynabCategories!: EntityTable<YnabCategory, "id">;
   ynabAccounts!: EntityTable<YnabAccount, "id">;
   ynabPayees!: EntityTable<YnabPayee, "id">;
+  ynabOutbox!: EntityTable<YnabOutboxItem, "clientId">;
+  ynabLinks!: EntityTable<YnabLink, "localId">;
 
   constructor() {
     super("TradeTrackerDB");
@@ -73,6 +77,13 @@ export class TradeTrackerDB extends Dexie {
       ynabCategories: "id, groupId",
       ynabAccounts: "id",
       ynabPayees: "id",
+    });
+
+    // Version 10: the YNAB outbox (writes waiting to go, pwa-kit/outbox's rows keyed
+    // by clientId) and the links from a locally entered transaction to its YNAB id.
+    this.version(10).stores({
+      ynabOutbox: "clientId, queuedAt",
+      ynabLinks: "localId",
     });
   }
 }

@@ -276,3 +276,43 @@ export interface YnabPayee {
   id: string;
   name: string;
 }
+
+/** A transaction the app enters in YNAB. `amount` is dollars spent (positive); the writer sends it as negative milliunits. */
+export interface YnabTransactionInput {
+  accountId: string;
+  /** YYYY-MM-DD, the day of the trip */
+  date: string;
+  amount: number;
+  payeeName?: string;
+  /** the one category, when the transaction is not split */
+  categoryId?: string;
+  /** a split: each part's dollars, adding up to `amount` */
+  splits?: { categoryId: string; amount: number; memo?: string }[];
+  /** the user's memo; the writer adds the marker 'TT:<local id>' to its tail */
+  memo?: string;
+}
+
+/** One write waiting in the YNAB outbox. `localId` names the transaction in this app (and is its marker in YNAB's memo). */
+export type YnabWrite =
+  | { kind: "create"; localId: string; transaction: YnabTransactionInput }
+  | { kind: "update"; localId: string; transaction: YnabTransactionInput }
+  | { kind: "delete"; localId: string };
+
+/** A YNAB outbox row: the pwa-kit OutboxItem shape, keyed by clientId. */
+export interface YnabOutboxItem {
+  clientId: string;
+  payload: YnabWrite;
+  stage: "waiting" | "sending" | "sent" | "failed";
+  queuedAt: number;
+  attempts: number;
+  nextAt?: number;
+  reason?: string;
+  sentAt?: number;
+}
+
+/** Where a locally entered transaction stands in YNAB: `startedAt` is when its create was first posted; `ynabId` is set once YNAB's answer (or a recheck) gave it. */
+export interface YnabLink {
+  localId: string;
+  ynabId?: string;
+  startedAt: number;
+}
