@@ -11,6 +11,8 @@ export interface YnabCategoryWire {
   name: string;
   hidden: boolean;
   deleted: boolean;
+  /** what is left in the category this month, in milliunits */
+  balance?: number;
 }
 
 export interface YnabCategoryGroupWire {

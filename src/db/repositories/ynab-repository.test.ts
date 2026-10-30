@@ -36,6 +36,14 @@ describe("YnabRepository", () => {
     expect((await repo.listCategories()).map((c) => c.name)).toEqual(["Groceries"]);
   });
 
+  it("keeps each category's balance in dollars, and a later read's balance replaces it", async () => {
+    await repo.saveConnection({ budgetId: "b1", budgetName: "Our Budget" });
+    await repo.applyCategories([groupOf("g1", "Food", [["c1", "Groceries", 212_400], ["c2", "Eating Out", -5_000]])], 7);
+    expect((await repo.listCategories()).map((c) => [c.name, c.balance])).toEqual([["Eating Out", -5], ["Groceries", 212.4]]);
+    await repo.applyCategories([groupOf("g1", "Food", [["c1", "Groceries", 169_280]])], 8);
+    expect((await repo.listCategories()).find((c) => c.id === "c1")?.balance).toBe(169.28);
+  });
+
   it("caches accounts and payees, updates a changed one, and removes a deleted one", async () => {
     await repo.saveConnection({ budgetId: "b1", budgetName: "Our Budget" });
     await repo.applyAccounts([accountOf("a1", "Checking")], 3);

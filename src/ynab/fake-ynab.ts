@@ -52,18 +52,20 @@ export interface FakeYnab {
   rateLimited: { retryAfterSeconds?: number } | null;
 }
 
-export function groupOf(id: string, name: string, categories: [string, string][]): YnabCategoryGroupWire {
+/** A group of categories: [id, name] or [id, name, balance in milliunits]. */
+export function groupOf(id: string, name: string, categories: ([string, string] | [string, string, number])[]): YnabCategoryGroupWire {
   return {
     id,
     name,
     hidden: false,
     deleted: false,
-    categories: categories.map(([cid, cname]) => ({
+    categories: categories.map(([cid, cname, balance]) => ({
       id: cid,
       category_group_id: id,
       name: cname,
       hidden: false,
       deleted: false,
+      ...(balance === undefined ? {} : { balance }),
     })),
   };
 }

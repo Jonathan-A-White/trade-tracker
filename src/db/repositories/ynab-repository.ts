@@ -40,6 +40,7 @@ export class YnabRepository {
               groupName: group.name,
               name: c.name,
               hidden: c.hidden || group.hidden,
+              ...(typeof c.balance === "number" ? { balance: c.balance / 1000 } : {}),
             });
           }
         }

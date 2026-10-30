@@ -260,6 +260,8 @@ export interface YnabCategory {
   groupName: string;
   name: string;
   hidden: boolean;
+  /** what is left in it this month, in dollars, as of the last read; absent before a read that gave it */
+  balance?: number;
 }
 
 /** A YNAB account, cached. */
