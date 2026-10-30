@@ -9,3 +9,4 @@ export {
 export { PendingLookupRepository } from "./pending-lookup-repository";
 export { YnabRepository } from "./ynab-repository";
 export { YnabOutboxRepository } from "./ynab-outbox-repository";
+export { FamilyRepository } from "./family-repository";

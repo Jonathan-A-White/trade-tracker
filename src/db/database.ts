@@ -12,6 +12,7 @@ import type {
   YnabPayee,
   YnabOutboxItem,
   YnabLink,
+  FamilyCard,
 } from "../contracts/types";
 
 export class TradeTrackerDB extends Dexie {
@@ -27,6 +28,7 @@ export class TradeTrackerDB extends Dexie {
   ynabPayees!: EntityTable<YnabPayee, "id">;
   ynabOutbox!: EntityTable<YnabOutboxItem, "clientId">;
   ynabLinks!: EntityTable<YnabLink, "localId">;
+  familyCards!: EntityTable<FamilyCard, "id">;
 
   constructor() {
     super("TradeTrackerDB");
@@ -84,6 +86,11 @@ export class TradeTrackerDB extends Dexie {
     this.version(10).stores({
       ynabOutbox: "clientId, queuedAt",
       ynabLinks: "localId",
+    });
+
+    // Version 11: the family's cards (a card's last four, whose it is, the YNAB account it maps to); one card per last four.
+    this.version(11).stores({
+      familyCards: "id, &lastFour",
     });
   }
 }

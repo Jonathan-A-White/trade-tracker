@@ -316,3 +316,15 @@ export interface YnabLink {
   ynabId?: string;
   startedAt: number;
 }
+
+/** A card the family spends with, by its last four digits: whose it is and the YNAB account it maps to. */
+export interface FamilyCard {
+  id: string;
+  /** exactly four digits; one card per last four */
+  lastFour: string;
+  /** a name, or "shared" */
+  owner: string;
+  /** a cached YNAB account's id */
+  accountId?: string;
+  createdAt: number;
+}

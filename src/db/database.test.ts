@@ -48,7 +48,7 @@ describe("TradeTrackerDB upgrade to version 7", () => {
     const upgraded = new TradeTrackerDB();
     await upgraded.open();
 
-    expect(upgraded.verno).toBe(10);
+    expect(upgraded.verno).toBe(11);
     expect((await upgraded.stores.get("s1"))?.name).toBe("Stop & Shop");
     expect((await upgraded.items.get("i1"))?.barcode).toBe("0123");
     const line = await upgraded.tripItems.get("ti1");
@@ -103,7 +103,7 @@ describe("TradeTrackerDB upgrade to version 8", () => {
     const upgraded = new TradeTrackerDB();
     await upgraded.open();
 
-    expect(upgraded.verno).toBe(10);
+    expect(upgraded.verno).toBe(11);
     const trip = await upgraded.trips.get("t1");
     expect(trip?.scannedSubtotal).toBe(7);
     expect(trip?.budget).toBe(50);
@@ -160,7 +160,7 @@ describe("TradeTrackerDB upgrade to version 9", () => {
     const upgraded = new TradeTrackerDB();
     await upgraded.open();
 
-    expect(upgraded.verno).toBe(10);
+    expect(upgraded.verno).toBe(11);
     expect((await upgraded.stores.get("s1"))?.name).toBe("Stop & Shop");
     expect((await upgraded.trips.get("t1"))?.scannedSubtotal).toBe(7);
     expect(await upgraded.ynabConnection.count()).toBe(0);
@@ -215,7 +215,7 @@ describe("TradeTrackerDB upgrade to version 10", () => {
     const upgraded = new TradeTrackerDB();
     await upgraded.open();
 
-    expect(upgraded.verno).toBe(10);
+    expect(upgraded.verno).toBe(11);
     expect((await upgraded.stores.get("s1"))?.name).toBe("Stop & Shop");
     expect((await upgraded.ynabConnection.get("connection"))?.budgetName).toBe("Our Budget");
     expect(await upgraded.ynabOutbox.count()).toBe(0);
@@ -231,6 +231,56 @@ describe("TradeTrackerDB upgrade to version 10", () => {
     await upgraded.ynabLinks.put({ localId: "l1", ynabId: "y1", startedAt: 5 });
     expect((await upgraded.ynabOutbox.orderBy("queuedAt").toArray()).map((i) => i.clientId)).toEqual(["c1"]);
     expect((await upgraded.ynabLinks.get("l1"))?.ynabId).toBe("y1");
+    upgraded.close();
+  });
+});
+
+describe("TradeTrackerDB upgrade to version 11", () => {
+  it("keeps existing data when upgrading from version 10 and adds the family's cards", async () => {
+    // Build the version 10 database exactly as the previous release left it.
+    const old = new Dexie("TradeTrackerDB");
+    old.version(1).stores({
+      stores: "id, name, createdAt",
+      items: "id, &barcode, name, category, createdAt",
+      trips: "id, storeId, status, startedAt, [storeId+status], createdAt",
+      tripItems: "id, tripId, itemId, [tripId+itemId], addedAt",
+      priceHistory: "id, itemId, storeId, [itemId+storeId], recordedAt",
+    });
+    old.version(5).stores({
+      priceHistory:
+        "id, itemId, storeId, [itemId+storeId], recordedAt, tripItemId",
+    });
+    old.version(7).stores({
+      pendingLookups: "id, tripId, barcode, status, createdAt",
+    });
+    old.version(8).stores({});
+    old.version(9).stores({
+      ynabConnection: "id",
+      ynabCategories: "id, groupId",
+      ynabAccounts: "id",
+      ynabPayees: "id",
+    });
+    old.version(10).stores({
+      ynabOutbox: "clientId, queuedAt",
+      ynabLinks: "localId",
+    });
+    await old.open();
+    await old.table("stores").put({ id: "s1", name: "Stop & Shop", createdAt: 1, updatedAt: 1 });
+    await old.table("ynabLinks").put({ localId: "l1", ynabId: "y1", startedAt: 5 });
+    old.close();
+
+    const upgraded = new TradeTrackerDB();
+    await upgraded.open();
+
+    expect(upgraded.verno).toBe(11);
+    expect((await upgraded.stores.get("s1"))?.name).toBe("Stop & Shop");
+    expect((await upgraded.ynabLinks.get("l1"))?.ynabId).toBe("y1");
+    expect(await upgraded.familyCards.count()).toBe(0);
+
+    await upgraded.familyCards.put({ id: "k1", lastFour: "1234", owner: "Jonathan", accountId: "a1", createdAt: 5 });
+    expect((await upgraded.familyCards.where("lastFour").equals("1234").first())?.owner).toBe("Jonathan");
+    // a last four is one card
+    await expect(upgraded.familyCards.put({ id: "k2", lastFour: "1234", owner: "Sam", createdAt: 6 })).rejects.toThrow();
     upgraded.close();
   });
 });
