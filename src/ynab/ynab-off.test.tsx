@@ -21,7 +21,7 @@ function renderAt(path: string) {
     <ThemeProvider>
       <ActiveTripProvider>
         <ToastProvider>
-          <FactoryProvider checkLicence={async () => ({ state: "none", checkedAt: "x" })} askDoor={async () => "unreachable"}>
+          <FactoryProvider checkLicence={async () => ({ state: "none", checkedAt: "x" })}>
             <MemoryRouter initialEntries={[path]}>
               <Routed />
             </MemoryRouter>

@@ -43,7 +43,7 @@ function renderSettings() {
   return render(
     <MemoryRouter>
       <ThemeProvider>
-        <FactoryProvider checkLicence={async () => ({ state: "none", checkedAt: "x" })} passkeyPort={noWebAuthn} askDoor={async () => "unreachable"}>
+        <FactoryProvider checkLicence={async () => ({ state: "none", checkedAt: "x" })} passkeyPort={noWebAuthn}>
           <SettingsPage />
         </FactoryProvider>
       </ThemeProvider>
