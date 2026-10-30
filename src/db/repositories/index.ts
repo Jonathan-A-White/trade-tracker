@@ -7,3 +7,4 @@ export {
   type PriceHistoryFilters,
 } from "./price-history-repository";
 export { PendingLookupRepository } from "./pending-lookup-repository";
+export { YnabRepository } from "./ynab-repository";

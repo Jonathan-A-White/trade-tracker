@@ -48,7 +48,7 @@ describe("TradeTrackerDB upgrade to version 7", () => {
     const upgraded = new TradeTrackerDB();
     await upgraded.open();
 
-    expect(upgraded.verno).toBe(8);
+    expect(upgraded.verno).toBe(9);
     expect((await upgraded.stores.get("s1"))?.name).toBe("Stop & Shop");
     expect((await upgraded.items.get("i1"))?.barcode).toBe("0123");
     const line = await upgraded.tripItems.get("ti1");
@@ -103,7 +103,7 @@ describe("TradeTrackerDB upgrade to version 8", () => {
     const upgraded = new TradeTrackerDB();
     await upgraded.open();
 
-    expect(upgraded.verno).toBe(8);
+    expect(upgraded.verno).toBe(9);
     const trip = await upgraded.trips.get("t1");
     expect(trip?.scannedSubtotal).toBe(7);
     expect(trip?.budget).toBe(50);
@@ -121,6 +121,55 @@ describe("TradeTrackerDB upgrade to version 8", () => {
       },
     });
     expect((await upgraded.trips.get("t1"))?.receiptReconcile?.matchedTripItemIds).toEqual(["ti1"]);
+    upgraded.close();
+  });
+});
+
+describe("TradeTrackerDB upgrade to version 9", () => {
+  it("keeps existing data when upgrading from version 8 and adds the YNAB tables", async () => {
+    // Build the version 8 database exactly as the previous release left it.
+    const old = new Dexie("TradeTrackerDB");
+    old.version(1).stores({
+      stores: "id, name, createdAt",
+      items: "id, &barcode, name, category, createdAt",
+      trips: "id, storeId, status, startedAt, [storeId+status], createdAt",
+      tripItems: "id, tripId, itemId, [tripId+itemId], addedAt",
+      priceHistory: "id, itemId, storeId, [itemId+storeId], recordedAt",
+    });
+    old.version(5).stores({
+      priceHistory:
+        "id, itemId, storeId, [itemId+storeId], recordedAt, tripItemId",
+    });
+    old.version(7).stores({
+      pendingLookups: "id, tripId, barcode, status, createdAt",
+    });
+    old.version(8).stores({});
+    await old.open();
+    await old.table("stores").put({ id: "s1", name: "Stop & Shop", createdAt: 1, updatedAt: 1 });
+    await old.table("trips").put({
+      id: "t1",
+      storeId: "s1",
+      status: "active",
+      startedAt: 1,
+      scannedSubtotal: 7,
+      createdAt: 1,
+      updatedAt: 1,
+    });
+    old.close();
+
+    const upgraded = new TradeTrackerDB();
+    await upgraded.open();
+
+    expect(upgraded.verno).toBe(9);
+    expect((await upgraded.stores.get("s1"))?.name).toBe("Stop & Shop");
+    expect((await upgraded.trips.get("t1"))?.scannedSubtotal).toBe(7);
+    expect(await upgraded.ynabConnection.count()).toBe(0);
+    expect(await upgraded.ynabCategories.count()).toBe(0);
+    expect(await upgraded.ynabAccounts.count()).toBe(0);
+    expect(await upgraded.ynabPayees.count()).toBe(0);
+
+    await upgraded.ynabCategories.put({ id: "c1", groupId: "g1", groupName: "Food", name: "Groceries", hidden: false });
+    expect((await upgraded.ynabCategories.where("groupId").equals("g1").toArray()).map((c) => c.name)).toEqual(["Groceries"]);
     upgraded.close();
   });
 });

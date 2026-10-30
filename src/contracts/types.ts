@@ -241,3 +241,38 @@ export type FactoryDoorState = "no-key" | "locked" | "unlocked" | "licensed";
 
 /** What the app knows of its licence in the collection trade-tracker (bsv-kit's three words). */
 export type FactoryLicence = "licensed" | "unlicensed" | "checking";
+
+/** The YNAB budget this device is connected to, and how far each cached list has been read (YNAB's server_knowledge). One row, id "connection". */
+export interface YnabConnection {
+  id: "connection";
+  budgetId: string;
+  budgetName: string;
+  connectedAt: number;
+  categoriesKnowledge: number;
+  accountsKnowledge: number;
+  payeesKnowledge: number;
+}
+
+/** A YNAB category, cached with the name of its group. */
+export interface YnabCategory {
+  id: string;
+  groupId: string;
+  groupName: string;
+  name: string;
+  hidden: boolean;
+}
+
+/** A YNAB account, cached. */
+export interface YnabAccount {
+  id: string;
+  name: string;
+  type: string;
+  onBudget: boolean;
+  closed: boolean;
+}
+
+/** A YNAB payee, cached. */
+export interface YnabPayee {
+  id: string;
+  name: string;
+}

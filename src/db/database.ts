@@ -6,6 +6,10 @@ import type {
   TripItem,
   PriceHistoryEntry,
   PendingLookup,
+  YnabConnection,
+  YnabCategory,
+  YnabAccount,
+  YnabPayee,
 } from "../contracts/types";
 
 export class TradeTrackerDB extends Dexie {
@@ -15,6 +19,10 @@ export class TradeTrackerDB extends Dexie {
   tripItems!: EntityTable<TripItem, "id">;
   priceHistory!: EntityTable<PriceHistoryEntry, "id">;
   pendingLookups!: EntityTable<PendingLookup, "id">;
+  ynabConnection!: EntityTable<YnabConnection, "id">;
+  ynabCategories!: EntityTable<YnabCategory, "id">;
+  ynabAccounts!: EntityTable<YnabAccount, "id">;
+  ynabPayees!: EntityTable<YnabPayee, "id">;
 
   constructor() {
     super("TradeTrackerDB");
@@ -57,6 +65,15 @@ export class TradeTrackerDB extends Dexie {
     // trips later gained an optional receiptPending mark (a receipt sent and not
     // yet answered): not indexed, so the schema stays at 8.
     this.version(8).stores({});
+
+    // Version 9: the YNAB connection (one row) and the lists cached from the budget
+    // it is connected to: categories, accounts and payees.
+    this.version(9).stores({
+      ynabConnection: "id",
+      ynabCategories: "id, groupId",
+      ynabAccounts: "id",
+      ynabPayees: "id",
+    });
   }
 }
 
