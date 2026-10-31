@@ -164,7 +164,7 @@ describe("the factory flow, start to finish", () => {
     expect(factory.sent[0].photos).toHaveLength(2);
     expect(await screen.findByText("Waiting on the factory")).toBeInTheDocument();
 
-    // 4. the answer fills the line in: name, price, 'Check price'
+    // 4. the answer fills the line in: name, price, 'Price read'
     await waitFor(() => expect(factory.isWaiting("direct:tx1")).toBe(true));
     factory.answer("direct:tx1", {
       name: "Oat Bars",
@@ -176,13 +176,15 @@ describe("the factory flow, start to finish", () => {
     });
     expect(await screen.findByText("Oat Bars")).toBeInTheDocument();
     expect(screen.queryByText("Waiting on the factory")).not.toBeInTheDocument();
-    const badge = await screen.findByRole("button", { name: "Check price" });
+    const badge = await screen.findByRole("button", { name: /^Price read by the factory/ });
     const oats = await itemRepo.findByBarcode("0099887766");
     expect(oats).toMatchObject({ name: "Oat Bars", category: "Snacks & Candy", currentPrice: 4.25 });
     expect((await tripRepo.getById(trip.id))?.scannedSubtotal).toBe(7.25);
+    // the first tap shows what to do, the second (the price matches the tag) clears the flag
+    await user.click(badge);
     await user.click(badge);
     await waitFor(() =>
-      expect(screen.queryByRole("button", { name: "Check price" })).not.toBeInTheDocument(),
+      expect(screen.queryByRole("button", { name: /^Price read by the factory/ })).not.toBeInTheDocument(),
     );
 
     // 5. 'Photo price' on the known item opens the tag-only screen; one shot goes back
@@ -198,7 +200,7 @@ describe("the factory flow, start to finish", () => {
     expect(factory.sent[1].photos).toHaveLength(1);
     expect(await screen.findByText("Waiting on the factory")).toBeInTheDocument();
 
-    // 6. the tag's price lands on the row, flagged 'Check price', with a history entry
+    // 6. the tag's price lands on the row, flagged 'Price read', with a history entry
     await waitFor(() => expect(factory.isWaiting("direct:tx2")).toBe(true));
     factory.answer("direct:tx2", {
       name: "Milk",
@@ -208,7 +210,7 @@ describe("the factory flow, start to finish", () => {
       confidence: "high",
     });
     expect(await screen.findByText(/\$3\.49 \/ each/)).toBeInTheDocument();
-    expect(await screen.findByRole("button", { name: "Check price" })).toBeInTheDocument();
+    expect(await screen.findByRole("button", { name: /^Price read by the factory/ })).toBeInTheDocument();
     expect(await itemRepo.getById(milk.id)).toMatchObject({ name: "Milk", currentPrice: 3.49 });
     const history = await priceRepo.getByItem(milk.id);
     expect(history.some((h) => h.price === 3.49 && h.storeId === "s1")).toBe(true);

@@ -20,7 +20,7 @@ interface TripItemRowProps {
   onEditPrice?: (id: string) => void;
   onEditQuantity?: (id: string) => void;
   onRemove?: (id: string) => void;
-  /** A tap on the 'Check price' badge: the shopper has looked. */
+  /** A tap on the 'Price read' badge once its note is showing: the shopper has looked. */
   onClearPriceFlag?: (id: string) => void;
   /** What the item's price lookup has to say (waiting, failed, no price read); none when it has nothing. */
   priceLookupNote?: PriceLookupNote | null;
@@ -52,6 +52,10 @@ export function TripItemRow({
   const waiting = priceLookupNote?.kind === "waiting";
   const linkButton =
     "text-xs font-medium text-blue-600 dark:text-blue-400 hover:text-blue-700 dark:hover:text-blue-300 cursor-pointer";
+  const flagBadge =
+    "inline-flex items-center rounded-full bg-amber-100 dark:bg-amber-900 px-1.5 py-0.5 text-xs font-medium text-amber-800 dark:text-amber-200 cursor-pointer whitespace-nowrap";
+  // The first tap on 'Price read' explains the badge; the second clears the flag.
+  const [readNoteShown, setReadNoteShown] = useState(false);
   const quantityDisplay =
     unitType === "per_lb" && tripItem.weightLbs !== undefined
       ? `${tripItem.weightLbs.toFixed(2)} lbs`
@@ -244,17 +248,29 @@ export function TripItemRow({
           <div className="flex-1 min-w-0">
             <div className="flex items-center gap-2">
               <p className="font-medium text-gray-900 dark:text-gray-100 truncate">{itemName}</p>
-              {tripItem.priceFlag && (
+              {tripItem.priceFlag === "add" && (
                 <button
                   type="button"
-                  onClick={() =>
-                    tripItem.priceFlag === "add"
-                      ? onEditPrice?.(tripItem.id)
-                      : onClearPriceFlag?.(tripItem.id)
-                  }
-                  className="inline-flex items-center rounded-full bg-amber-100 dark:bg-amber-900 px-1.5 py-0.5 text-xs font-medium text-amber-800 dark:text-amber-200 cursor-pointer"
+                  onClick={() => onEditPrice?.(tripItem.id)}
+                  className={flagBadge}
                 >
-                  {tripItem.priceFlag === "add" ? "Add price" : "Check price"}
+                  Add price
+                </button>
+              )}
+              {tripItem.priceFlag === "check" && (
+                <button
+                  type="button"
+                  aria-label={
+                    readNoteShown
+                      ? "Price read by the factory. Tap if it matches the tag."
+                      : "Price read by the factory. Tap to see what to do."
+                  }
+                  onClick={() =>
+                    readNoteShown ? onClearPriceFlag?.(tripItem.id) : setReadNoteShown(true)
+                  }
+                  className={flagBadge}
+                >
+                  Price read
                 </button>
               )}
               {tripItem.guess && (
@@ -282,6 +298,12 @@ export function TripItemRow({
                 </span>
               )}
             </p>
+            {tripItem.priceFlag === "check" && readNoteShown && (
+              <p className="text-xs text-amber-800 dark:text-amber-200 mt-0.5">
+                The factory read this price. Tap the badge if it matches the tag, or press and hold the
+                line to fix the price.
+              </p>
+            )}
             {tripItem.guess && (
               <p className="text-xs text-sky-700 dark:text-sky-300 mt-0.5">
                 {tripItem.guess.basis} Edit the price when you know it.

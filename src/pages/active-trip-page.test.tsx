@@ -14,6 +14,11 @@ const tripRepo = new TripRepository();
 const tripItemRepo = new TripItemRepository();
 const itemRepo = new ItemRepository();
 
+// The badge on a line whose price the factory filled in (its accessible name), and the note the first tap shows.
+const PRICE_READ = /^Price read by the factory/;
+const PRICE_READ_NOTE =
+  "The factory read this price. Tap the badge if it matches the tag, or press and hold the line to fix the price.";
+
 async function seedTripWithMilkAndPending() {
   const now = Date.now();
   await db.stores.put({ id: "s1", name: "Corner Shop", createdAt: now, updatedAt: now });
@@ -171,7 +176,7 @@ describe("ActiveTripPage factory answers", () => {
     expect(screen.queryByText("The photos are too dark to read.")).not.toBeInTheDocument();
   });
 
-  it("marks a filled line 'Check price' until it is tapped", async () => {
+  it("says the factory read the price, then what to do, and clears on the second tap", async () => {
     const { lookup, trip } = await seedTripWithMilkAndPending();
     await lookups.applyAnswer(lookup.id, {
       name: "Oat Bars",
@@ -183,18 +188,28 @@ describe("ActiveTripPage factory answers", () => {
     const user = userEvent.setup();
     renderPage();
 
-    const badge = await screen.findByRole("button", { name: "Check price" });
+    const badge = await screen.findByRole("button", { name: PRICE_READ });
+    expect(badge).toHaveTextContent("Price read");
+    expect(screen.queryByRole("button", { name: "Check price" })).not.toBeInTheDocument();
     expect(await screen.findByText("Oat Bars")).toBeInTheDocument();
-    await user.click(badge);
+    expect(screen.queryByText(PRICE_READ_NOTE)).not.toBeInTheDocument();
 
+    // the first tap explains and leaves the flag
+    await user.click(badge);
+    expect(await screen.findByText(PRICE_READ_NOTE)).toBeInTheDocument();
+    expect((await tripItemRepo.getByTrip(trip.id)).find((l) => l.price === 4.25)?.priceFlag).toBe("check");
+
+    // the second tap, as the note says, clears it
+    await user.click(screen.getByRole("button", { name: PRICE_READ }));
     await waitFor(() => {
-      expect(screen.queryByRole("button", { name: "Check price" })).not.toBeInTheDocument();
+      expect(screen.queryByRole("button", { name: PRICE_READ })).not.toBeInTheDocument();
     });
+    expect(screen.queryByText(PRICE_READ_NOTE)).not.toBeInTheDocument();
     const lines = await tripItemRepo.getByTrip(trip.id);
     expect(lines.find((l) => l.price === 4.25)?.priceFlag).toBeUndefined();
   });
 
-  it("clears 'Check price' when the line is edited", async () => {
+  it("clears 'Price read' when the line is edited", async () => {
     const { lookup, trip } = await seedTripWithMilkAndPending();
     await lookups.applyAnswer(lookup.id, {
       name: "Oat Bars",
@@ -223,7 +238,7 @@ describe("ActiveTripPage factory answers", () => {
     renderPage();
 
     expect(await screen.findByRole("button", { name: "Add price" })).toBeInTheDocument();
-    expect(screen.queryByRole("button", { name: "Check price" })).not.toBeInTheDocument();
+    expect(screen.queryByRole("button", { name: PRICE_READ })).not.toBeInTheDocument();
     const line = (await tripItemRepo.getByTrip(trip.id)).find((l) => l.priceFlag === "add")!;
 
     await tripItemRepo.update(line.id, { quantity: 2 });
@@ -299,7 +314,7 @@ describe("ActiveTripPage Photo price", () => {
     expect(screen.queryByRole("button", { name: /fill by hand/i })).not.toBeInTheDocument();
   });
 
-  it("marks the row 'Check price' with the new price once the answer lands", async () => {
+  it("flags the row 'Price read' with the new price once the answer lands", async () => {
     const { trip, milk } = await seedKnown();
     const lookup = await priceLookup(trip.id, milk.id);
     renderPage();
@@ -313,7 +328,7 @@ describe("ActiveTripPage Photo price", () => {
       confidence: "high",
     });
 
-    expect(await screen.findByRole("button", { name: "Check price" })).toBeInTheDocument();
+    expect(await screen.findByRole("button", { name: PRICE_READ })).toBeInTheDocument();
     expect(screen.queryByText("Sending to the factory")).not.toBeInTheDocument();
     expect(await screen.findByText(/\$3\.49 \/ each/)).toBeInTheDocument();
     expect(screen.getByText("Milk")).toBeInTheDocument();
