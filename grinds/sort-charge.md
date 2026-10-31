@@ -43,3 +43,21 @@ How to choose.
   Groceries, else the nearest to it), and say plainly in `why` that it is a guess.
 - A category with little left in it is no reason to leave it: the family decides about the
   balance. Never invent a category.
+
+When the request has `lines`.
+
+- `lines` (it may be left out): what the shopper's receipt for this charge prints, one entry
+  per item line, each `{ text, price }` (the line as printed, abbreviations and all, and its
+  price in dollars after any discount). The receipt is the better evidence of where the money
+  went than the merchant's name: group the lines by what each is, using only the categories
+  in `categories`.
+- Answer `split` when the lines belong to two or more categories, and `category` when they
+  all belong to one. Every line goes into exactly one category.
+- In this case the `split` amounts are what the receipt's lines in each category add up to
+  (the sum of those lines' prices), NOT shares of `amount`. They add up to the sum of all the
+  lines' prices, to the cent. Leave tax and fees out: the app spreads them over the
+  categories afterwards.
+- An abbreviation you cannot read goes with the category of the lines around it, or the
+  everyday one (usually Groceries); say so in `why`.
+- `why` names the groups ("Food went to Groceries, the dish soap and paper towels to
+  Household.").

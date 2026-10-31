@@ -1,0 +1,85 @@
+{
+  "description": "A grocery receipt photographed at Trader Joe's, tax not yet spread: every line is food, so the answer is the one category Groceries.",
+  "schemaVersion": "1.0",
+  "request": {
+    "merchant": "Trader Joe's",
+    "amount": 43.12,
+    "owner": "Jonathan",
+    "categories": [
+      {
+        "name": "Groceries",
+        "left": 212
+      },
+      {
+        "name": "Eating Out",
+        "left": 8
+      },
+      {
+        "name": "Household",
+        "left": 60.5
+      },
+      {
+        "name": "Kids",
+        "left": 31.25
+      },
+      {
+        "name": "Gas",
+        "left": 95
+      }
+    ],
+    "history": [],
+    "lines": [
+      {
+        "text": "ORG BNNA",
+        "price": 1.99
+      },
+      {
+        "text": "TJ MNDRN OR CHKN",
+        "price": 5.99
+      },
+      {
+        "text": "EVERYTHING BAGEL SEASONING",
+        "price": 2.49
+      },
+      {
+        "text": "WHL MILK GAL",
+        "price": 4.29
+      },
+      {
+        "text": "SOURDOUGH BOULE",
+        "price": 3.99
+      },
+      {
+        "text": "ORG BABY SPINACH",
+        "price": 3.49
+      },
+      {
+        "text": "GR BEEF 1LB",
+        "price": 7.99
+      },
+      {
+        "text": "CHEDDAR BLK",
+        "price": 4.99
+      },
+      {
+        "text": "FROZEN BERRY BLEND",
+        "price": 3.99
+      },
+      {
+        "text": "HUMMUS",
+        "price": 2.99
+      }
+    ]
+  },
+  "expect": {
+    "category": {
+      "equals": "Groceries"
+    },
+    "split": {
+      "present": false
+    },
+    "why": {
+      "present": true
+    }
+  }
+}

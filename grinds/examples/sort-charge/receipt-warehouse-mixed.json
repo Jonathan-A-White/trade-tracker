@@ -1,0 +1,97 @@
+{
+  "description": "A warehouse-store receipt mixing groceries and household goods: the answer is a split across Groceries and Household whose amounts are the lines' sums, not shares of the charge.",
+  "schemaVersion": "1.0",
+  "request": {
+    "merchant": "Costco",
+    "amount": 142.37,
+    "owner": "shared",
+    "categories": [
+      {
+        "name": "Groceries",
+        "left": 212
+      },
+      {
+        "name": "Eating Out",
+        "left": 8
+      },
+      {
+        "name": "Household",
+        "left": 60.5
+      },
+      {
+        "name": "Kids",
+        "left": 31.25
+      },
+      {
+        "name": "Gas",
+        "left": 95
+      }
+    ],
+    "history": [],
+    "lines": [
+      {
+        "text": "KS ORG EGGS 24CT",
+        "price": 8.99
+      },
+      {
+        "text": "KS BNLS CHKN BRST",
+        "price": 18.49
+      },
+      {
+        "text": "BANANAS 3LB",
+        "price": 1.99
+      },
+      {
+        "text": "KS PAPER TOWEL 12CT",
+        "price": 24.99
+      },
+      {
+        "text": "KS LAUNDRY PODS",
+        "price": 19.99
+      },
+      {
+        "text": "ROTISSERIE CHICKEN",
+        "price": 4.99
+      },
+      {
+        "text": "KS TRASH BAGS",
+        "price": 17.99
+      },
+      {
+        "text": "STRAWBERRIES 2LB",
+        "price": 6.49
+      },
+      {
+        "text": "KS DISH SOAP",
+        "price": 11.99
+      },
+      {
+        "text": "KS WHOLE MILK 2PK",
+        "price": 7.99
+      }
+    ]
+  },
+  "expect": {
+    "category": {
+      "present": false
+    },
+    "split": {
+      "present": true
+    },
+    "split.0.category": {
+      "one_of": [
+        "Groceries",
+        "Household"
+      ]
+    },
+    "split.1.category": {
+      "one_of": [
+        "Groceries",
+        "Household"
+      ]
+    },
+    "why": {
+      "present": true
+    }
+  }
+}
