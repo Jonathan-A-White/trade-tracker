@@ -15,6 +15,7 @@ export function photoPricePath(item: { barcode: string; id: string }, from?: str
 export type PriceLookupNote =
   | { kind: "waiting"; text: string }
   | { kind: "failed"; text: string }
+  | { kind: "not-back"; text: string }
   | { kind: "no-price"; text: string };
 
 /**
@@ -36,5 +37,6 @@ export function priceLookupNote(
   if (lookup.status === "waiting-to-send") {
     return { kind: "waiting", text: notSent ?? "Sending to the factory" };
   }
+  if (lookup.notBack) return { kind: "not-back", text: "The factory did not send this back" };
   return { kind: "waiting", text: "Waiting on the factory" };
 }

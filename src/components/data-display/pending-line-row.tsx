@@ -25,6 +25,9 @@ const STATE_TEXT: Record<PendingLookup["status"], string> = {
   failed: "The factory could not fill this in",
 };
 
+/** A lookup sent twice with no answer: the line says so rather than go on 'Waiting on the factory'. */
+export const NOT_BACK_TEXT = "The factory did not send this back";
+
 function useThumbnailUrl(photo: Blob | undefined): string | undefined {
   const [url, setUrl] = useState<string>();
 
@@ -55,8 +58,12 @@ export function PendingLineRow({
 }: PendingLineRowProps) {
   const thumbnail = useThumbnailUrl(lookup.photos[0]);
   const hold = useSendHold();
-  const stateText =
-    lookup.status === "waiting-to-send" && hold ? sendHoldText(hold) : STATE_TEXT[lookup.status];
+  const notBack = lookup.status === "at-the-factory" && lookup.notBack === true;
+  const stateText = notBack
+    ? NOT_BACK_TEXT
+    : lookup.status === "waiting-to-send" && hold
+      ? sendHoldText(hold)
+      : STATE_TEXT[lookup.status];
 
   return (
     <div className="border-b dark:border-gray-700 bg-white dark:bg-gray-800 px-4 py-3">
@@ -78,6 +85,8 @@ export function PendingLineRow({
             <p className="text-sm text-red-600 dark:text-red-400 mt-0.5">
               {lookup.error || STATE_TEXT.failed}
             </p>
+          ) : notBack ? (
+            <p className="text-sm text-red-600 dark:text-red-400 mt-0.5">{stateText}</p>
           ) : (
             <p className="text-sm text-amber-600 dark:text-amber-400 mt-0.5">
               {stateText}
@@ -118,13 +127,13 @@ export function PendingLineRow({
       </div>
       {(onRetry || onFillByHand || onDiscard) && (
         <div className="mt-2 flex gap-3">
-          {onRetry && lookup.status === "failed" && (
+          {onRetry && (lookup.status === "failed" || notBack) && (
             <button
               type="button"
               onClick={() => onRetry(lookup.id)}
               className="flex-1 rounded-lg bg-blue-600 px-3 py-1.5 text-sm font-medium text-white hover:bg-blue-700 transition-colors cursor-pointer"
             >
-              Retry
+              {notBack ? "Try again" : "Retry"}
             </button>
           )}
           {onFillByHand && (

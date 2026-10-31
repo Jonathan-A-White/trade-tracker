@@ -160,7 +160,7 @@ export function ItemDetailPage() {
                   {note && (
                     <span
                       className={
-                        note.kind === "failed"
+                        note.kind === "failed" || note.kind === "not-back"
                           ? "text-red-600 dark:text-red-400"
                           : "text-amber-600 dark:text-amber-400"
                       }
@@ -168,16 +168,17 @@ export function ItemDetailPage() {
                       {note.text}
                     </span>
                   )}
-                  {note?.kind === "failed" && priceLookup && (
+                  {(note?.kind === "failed" || note?.kind === "not-back") && priceLookup && (
                     <button
                       type="button"
                       onClick={() => pendingLookupRepo.retry(priceLookup.id)}
                       className="font-medium text-blue-600 dark:text-blue-400 cursor-pointer"
                     >
-                      Retry
+                      {note.kind === "not-back" ? "Try again" : "Retry"}
                     </button>
                   )}
-                  {(note?.kind === "failed" || note?.kind === "no-price") && priceLookup && (
+                  {(note?.kind === "failed" || note?.kind === "not-back" || note?.kind === "no-price") &&
+                    priceLookup && (
                     <button
                       type="button"
                       onClick={() => pendingLookupRepo.discard(priceLookup.id)}

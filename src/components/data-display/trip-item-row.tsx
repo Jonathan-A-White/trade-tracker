@@ -289,7 +289,7 @@ export function TripItemRow({
               {priceLookupNote && (
                 <span
                   className={`ml-2 ${
-                    priceLookupNote.kind === "failed"
+                    priceLookupNote.kind === "failed" || priceLookupNote.kind === "not-back"
                       ? "text-red-600 dark:text-red-400"
                       : "text-amber-600 dark:text-amber-400"
                   }`}
@@ -311,12 +311,14 @@ export function TripItemRow({
             )}
             {(onPhotoPrice || priceLookupNote) && (
               <div className="mt-1 flex gap-3">
-                {priceLookupNote?.kind === "failed" && onRetryPriceLookup && (
-                  <button type="button" onClick={onRetryPriceLookup} className={linkButton}>
-                    Retry
-                  </button>
-                )}
+                {(priceLookupNote?.kind === "failed" || priceLookupNote?.kind === "not-back") &&
+                  onRetryPriceLookup && (
+                    <button type="button" onClick={onRetryPriceLookup} className={linkButton}>
+                      {priceLookupNote.kind === "not-back" ? "Try again" : "Retry"}
+                    </button>
+                  )}
                 {(priceLookupNote?.kind === "failed" ||
+                  priceLookupNote?.kind === "not-back" ||
                   priceLookupNote?.kind === "no-price") &&
                   onDismissPriceLookup && (
                     <button type="button" onClick={onDismissPriceLookup} className={linkButton}>

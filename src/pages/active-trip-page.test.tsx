@@ -162,6 +162,23 @@ describe("ActiveTripPage factory answers", () => {
     expect(screen.queryByRole("button", { name: "Retry" })).not.toBeInTheDocument();
   });
 
+  it("says a sent lookup did not come back, with Try again beside Fill by hand, and Try again sends it again", async () => {
+    const { lookup } = await seedTripWithMilkAndPending();
+    await lookups.markSent(lookup.id, "direct:tx1");
+    await lookups.markResent(lookup.id, "direct:tx1");
+    await lookups.markNotBack(lookup.id);
+    const user = userEvent.setup();
+    renderPage();
+
+    expect(await screen.findByText("The factory did not send this back")).toBeInTheDocument();
+    expect(screen.queryByText("Waiting on the factory")).not.toBeInTheDocument();
+    expect(screen.getByRole("button", { name: "Fill by hand" })).toBeInTheDocument();
+    await user.click(screen.getByRole("button", { name: "Try again" }));
+
+    expect(await screen.findByText("Sending to the factory")).toBeInTheDocument();
+    expect((await lookups.getById(lookup.id))?.status).toBe("waiting-to-send");
+  });
+
   it("shows why a lookup failed with Retry, and Retry puts it back in the queue", async () => {
     const { lookup } = await seedTripWithMilkAndPending();
     await lookups.markFailed(lookup.id, "The photos are too dark to read.");
@@ -350,6 +367,23 @@ describe("ActiveTripPage Photo price", () => {
     expect(screen.getByText(/\$3\.00 \/ each/)).toBeInTheDocument();
     expect(await screen.findByRole("button", { name: "Retake price photo" })).toBeInTheDocument();
     expect(screen.queryByRole("button", { name: "Photo price" })).not.toBeInTheDocument();
+  });
+
+  it("says a price lookup did not come back, with Try again, and Try again sends it again", async () => {
+    const { trip, milk } = await seedKnown();
+    const lookup = await priceLookup(trip.id, milk.id);
+    await lookups.markSent(lookup.id, "direct:tx1");
+    await lookups.markResent(lookup.id, "direct:tx1");
+    await lookups.markNotBack(lookup.id);
+    const user = userEvent.setup();
+    renderPage();
+
+    expect(await screen.findByText("The factory did not send this back")).toBeInTheDocument();
+    expect(screen.queryByText("Waiting on the factory")).not.toBeInTheDocument();
+    await user.click(screen.getByRole("button", { name: "Try again" }));
+
+    expect(await screen.findByText("Sending to the factory")).toBeInTheDocument();
+    expect((await lookups.getById(lookup.id))?.status).toBe("waiting-to-send");
   });
 
   it("shows why a price lookup failed with Retry", async () => {
