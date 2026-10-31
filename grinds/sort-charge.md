@@ -37,7 +37,9 @@ How to choose.
   between food and the house; split it only when the history does, or when the amount is
   large and the categories plainly call for it. Otherwise give one category.
 - With no history for the merchant, judge by what the merchant is. When you cannot tell what
-  it is, answer the category the family most likely uses for everyday spending (usually
+  it is (a code, or only a payment processor's name such as "SQ *" or "TST*" followed by
+  letters and digits, says nothing about what was sold), do not guess a restaurant or a shop
+  from it: answer the category the family most likely uses for everyday spending (usually
   Groceries, else the nearest to it), and say plainly in `why` that it is a guess.
 - A category with little left in it is no reason to leave it: the family decides about the
   balance. Never invent a category.
