@@ -15,6 +15,7 @@ import { useYnabOn } from "@/settings/connections";
 import { CategoryPicker } from "./CategoryPicker";
 import { SplitEditor } from "./SplitEditor";
 import { newPart, partCents, remainderCents, splitReady, type SplitPart } from "./split";
+import { buildRequest, readHistory, recordCharge, resolveSuggestion, type SortChargeAsk, type Suggestion } from "./suggest";
 import type { FamilyFeed } from "./sort-context";
 import type { FeedPhase } from "./useAlerts";
 import { chargeDate, handOff, money, readSorted, takeBack, whenLine, type WaitingCharge } from "./waiting";
@@ -140,6 +141,62 @@ function useBalances(enabled: boolean, refresh: () => Promise<void>, timing: Lau
   return { phase, error, retry: () => setAttempt((n) => n + 1) };
 }
 
+/** Where the AI's suggestion stands: asking while the mill answers, slow when its deadline passed, quiet otherwise. */
+type SuggestStatus = "off" | "asking" | "slow" | "done";
+
+/**
+ * Asks the mill where the charge goes once `ready` (the categories and their balances are in), with a deadline. The answer reaches
+ * `onSuggestion` unless the deadline passed first; nothing is said of a refusal (no licence) or a failure: the sheet works by hand.
+ */
+function useSuggestion(opts: {
+  suggest: SortChargeAsk | null;
+  timeoutMs: number;
+  ready: boolean;
+  charge: WaitingCharge;
+  categories: YnabCategory[] | undefined;
+  onSuggestion: (suggestion: Suggestion) => void;
+}): SuggestStatus {
+  const { suggest, timeoutMs, ready } = opts;
+  const [result, setResult] = useState<"slow" | "done" | null>(null);
+  const latest = useRef(opts);
+  useEffect(() => {
+    latest.current = opts;
+  });
+  useEffect(() => {
+    const { charge: c, categories: list } = latest.current;
+    if (!suggest || !ready || !list) return;
+    const abort = new AbortController();
+    let current = true;
+    const owner = c.owner === ANYONE ? undefined : c.owner;
+    const request = buildRequest({ merchant: c.merchant, amount: c.amount, owner }, list, readHistory(c.merchant));
+    const timer = setTimeout(() => {
+      if (!current) return;
+      setResult("slow");
+      abort.abort();
+    }, timeoutMs);
+    suggest(request, abort.signal).then(
+      (answer) => {
+        if (!current || abort.signal.aborted) return;
+        clearTimeout(timer);
+        setResult("done");
+        const suggestion = resolveSuggestion(answer, list, c.amount);
+        if (suggestion) latest.current.onSuggestion(suggestion);
+      },
+      () => {
+        if (!current || abort.signal.aborted) return;
+        clearTimeout(timer);
+        setResult("done");
+      },
+    );
+    return () => {
+      current = false;
+      clearTimeout(timer);
+      abort.abort();
+    };
+  }, [suggest, ready, timeoutMs]);
+  return result ?? (suggest && ready ? "asking" : "off");
+}
+
 function chargeTitle(charge: WaitingCharge): string {
   return `${money(charge.amount)} at ${charge.merchant}`;
 }
@@ -169,6 +226,35 @@ function ChargeSheet({ family, charge, onClose }: { family: FamilyFeed; charge: 
   const [memo, setMemo] = useState("");
   const [saving, setSaving] = useState(false);
   const [saveError, setSaveError] = useState<string | null>(null);
+
+  // the AI's suggestion fills the sheet in only while nothing has been chosen by hand
+  const touched = useRef(false);
+  const [suggestion, setSuggestion] = useState<Suggestion | null>(null);
+  const suggestStatus = useSuggestion({
+    suggest: ynabOn ? family.suggest : null,
+    timeoutMs: family.suggestTimeoutMs,
+    ready: !!categories && categories.length > 0 && ["ready", "failed", "retryable"].includes(balances.phase),
+    charge,
+    categories,
+    onSuggestion: (s) => {
+      if (touched.current) return;
+      setSuggestion(s);
+      if ("categoryId" in s) setCategoryId(s.categoryId);
+      else {
+        setSplitting(true);
+        setParts(s.parts.map((p) => ({ ...newPart(p.categoryId), amount: p.amount.toFixed(2) })));
+      }
+    },
+  });
+  const suggestedShown = suggestion !== null && ("categoryId" in suggestion ? !splitting && categoryId === suggestion.categoryId : splitting);
+  const selectCategory = (id: string) => {
+    touched.current = true;
+    setCategoryId(id);
+  };
+  const changeParts = (next: SplitPart[]) => {
+    touched.current = true;
+    setParts(next);
+  };
 
   const ready = splitting ? splitReady(parts, amount) : categoryId !== null;
   const reason = !ynabOn
@@ -212,6 +298,11 @@ function ChargeSheet({ family, charge, onClose }: { family: FamilyFeed; charge: 
     try {
       await family.writer.create(input, { localId: `alert-${alert.id}` });
       family.sortedHere(charge, taken === "claimed");
+      const nameOf = (id: string) => categories?.find((c) => c.id === id)?.name;
+      const sortedInto = (splitting ? parts.map((p) => ({ id: p.categoryId, amount: (partCents(p.amount) ?? 0) / 100 })) : [{ id: categoryId ?? "", amount }])
+        .map((p) => ({ category: nameOf(p.id), amount: p.amount }))
+        .filter((p): p is { category: string; amount: number } => p.category !== undefined);
+      recordCharge(charge.merchant, amount, sortedInto);
       onClose();
     } catch (err) {
       setSaveError(err instanceof Error && err.message ? err.message : "This phone could not keep the transaction. Try again.");
@@ -316,10 +407,34 @@ function ChargeSheet({ family, charge, onClose }: { family: FamilyFeed; charge: 
 
           <div className="flex items-center justify-between gap-2">
             <h3 className="text-base font-semibold text-gray-900 dark:text-gray-100">{splitting ? "Split" : "Category"}</h3>
-            <button type="button" onClick={() => setSplitting((s) => !s)} className={LINK}>
+            <button
+              type="button"
+              onClick={() => {
+                touched.current = true;
+                setSplitting((s) => !s);
+              }}
+              className={LINK}
+            >
               {splitting ? "One category" : "Split"}
             </button>
           </div>
+
+          {suggestStatus === "asking" && (
+            <p role="status" className="text-sm text-gray-600 dark:text-gray-400">
+              Asking for a suggestion…
+            </p>
+          )}
+          {suggestStatus === "slow" && (
+            <p role="status" className="text-sm text-amber-700 dark:text-amber-400">
+              The suggestion is taking too long. Choose by hand.
+            </p>
+          )}
+          {suggestedShown && (
+            <p role="status" className="rounded-lg bg-blue-50 dark:bg-blue-950 px-3 py-2 text-sm text-gray-800 dark:text-gray-100">
+              <span className="font-semibold">Suggested · </span>
+              {suggestion.why}
+            </p>
+          )}
 
           {balances.phase !== "ready" && balances.phase !== "idle" && (
             <div role="status" className="space-y-2 text-sm">
@@ -341,9 +456,9 @@ function ChargeSheet({ family, charge, onClose }: { family: FamilyFeed; charge: 
           {categories === undefined ? null : categories.length === 0 ? (
             <p className="text-base text-gray-700 dark:text-gray-300">No categories are kept yet. Refresh YNAB under Settings.</p>
           ) : splitting ? (
-            <SplitEditor categories={categories} amount={amount} parts={parts} onChange={setParts} />
+            <SplitEditor categories={categories} amount={amount} parts={parts} onChange={changeParts} />
           ) : (
-            <CategoryPicker categories={categories} amount={amount} selected={categoryId} onSelect={setCategoryId} />
+            <CategoryPicker categories={categories} amount={amount} selected={categoryId} onSelect={selectCategory} />
           )}
 
           <div className="space-y-1">
