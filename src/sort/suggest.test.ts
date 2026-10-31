@@ -137,8 +137,11 @@ describe("the answer", () => {
     const validate = new Ajv({ strict: false }).compile(schema("sort-charge-answer-1.0.schema.json"));
     expect(validate({ category: "Groceries", why: "x" })).toBe(true);
     expect(validate({ split: [{ category: "Groceries", amount: 5 }, { category: "Household", amount: 5 }], why: "x" })).toBe(true);
-    expect(validate({ why: "x" })).toBe(false);
     expect(validate({ category: "Groceries" })).toBe(false);
+  });
+
+  it("is left unused by the sheet when it names neither a category nor a split (the live mill refuses a top-level anyOf, so the app checks)", () => {
+    expect(resolveSuggestion({ why: "Usual." }, cats, 40)).toBeNull();
   });
 
   it("resolves a category's name to the YNAB category, whatever the case", () => {
