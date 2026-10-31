@@ -1,0 +1,95 @@
+{
+  "$schema": "http://json-schema.org/draft-07/schema#",
+  "$id": "sort-charge-input-1.0",
+  "title": "Sort Charge input 1.0",
+  "description": "One card charge waiting to be sorted, the family's categories with what is left in each, and the last charges sorted at the same merchant (newest first).",
+  "type": "object",
+  "additionalProperties": false,
+  "required": [
+    "merchant",
+    "amount",
+    "categories",
+    "history"
+  ],
+  "properties": {
+    "merchant": {
+      "type": "string",
+      "minLength": 1,
+      "maxLength": 120
+    },
+    "amount": {
+      "type": "number",
+      "exclusiveMinimum": 0
+    },
+    "owner": {
+      "type": "string",
+      "minLength": 1,
+      "maxLength": 40
+    },
+    "categories": {
+      "type": "array",
+      "minItems": 1,
+      "maxItems": 150,
+      "items": {
+        "type": "object",
+        "additionalProperties": false,
+        "required": [
+          "name"
+        ],
+        "properties": {
+          "name": {
+            "type": "string",
+            "minLength": 1,
+            "maxLength": 60
+          },
+          "left": {
+            "type": "number"
+          }
+        }
+      }
+    },
+    "history": {
+      "type": "array",
+      "maxItems": 20,
+      "items": {
+        "type": "object",
+        "additionalProperties": false,
+        "required": [
+          "amount"
+        ],
+        "properties": {
+          "amount": {
+            "type": "number",
+            "exclusiveMinimum": 0
+          },
+          "category": {
+            "type": "string",
+            "maxLength": 60
+          },
+          "split": {
+            "type": "array",
+            "maxItems": 8,
+            "items": {
+              "type": "object",
+              "additionalProperties": false,
+              "required": [
+                "category",
+                "amount"
+              ],
+              "properties": {
+                "category": {
+                  "type": "string",
+                  "maxLength": 60
+                },
+                "amount": {
+                  "type": "number",
+                  "exclusiveMinimum": 0
+                }
+              }
+            }
+          }
+        }
+      }
+    }
+  }
+}

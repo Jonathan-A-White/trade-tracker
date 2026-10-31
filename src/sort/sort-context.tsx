@@ -5,6 +5,7 @@ import type { ReactNode } from "react";
 import { useLiveQuery } from "dexie-react-hooks";
 import type { LaunchTiming } from "pwa-kit/launch-gate";
 import { useFactory } from "@/factory";
+import { useLicenceNow } from "@/factory/ai-allowed";
 import { FamilyRepository } from "@/db/repositories/family-repository";
 import { makeAlertsClient, type AlertsClient, type FamilyAlert } from "@/family/alerts-client";
 import { cardBook, type CardBook } from "@/family/cards";
@@ -14,6 +15,7 @@ import { createYnabClient } from "@/ynab/api";
 import { refreshCache } from "@/ynab/cache";
 import { openToken } from "@/ynab/token";
 import { createYnabWriter, type YnabWriter } from "@/ynab/writer";
+import { SUGGEST_DEADLINE_MS, makeSortChargeAsk, type SortChargeAsk } from "./suggest";
 import { useAlerts, type AlertsFeed } from "./useAlerts";
 import {
   HANDED_KEY,
@@ -45,6 +47,10 @@ export interface SortSeams {
   me?: string | null;
   /** reads the category balances from YNAB into the cache */
   refreshBalances?: () => Promise<void>;
+  /** asks the mill where a charge goes; null asks nothing (the app's own is the factory's, only on a licensed key) */
+  suggest?: SortChargeAsk | null;
+  /** how long the sheet waits for the suggestion */
+  suggestTimeoutMs?: number;
   pollMs?: number;
   feedTiming?: LaunchTiming;
   balanceTiming?: LaunchTiming;
@@ -80,10 +86,10 @@ function useAppWriter(enabled: boolean): SortWriter | null {
 
 export function SortProvider({ children, ...seams }: SortSeams & { children: ReactNode }) {
   const appWriter = useAppWriter(seams.writer === undefined);
-  const { client, writer, me, refreshBalances, pollMs, feedTiming, balanceTiming } = seams;
+  const { client, writer, me, refreshBalances, suggest, suggestTimeoutMs, pollMs, feedTiming, balanceTiming } = seams;
   const value = useMemo<SortSeams>(
-    () => ({ client, writer: writer === undefined ? appWriter : writer, me, refreshBalances, pollMs, feedTiming, balanceTiming }),
-    [client, writer, appWriter, me, refreshBalances, pollMs, feedTiming, balanceTiming],
+    () => ({ client, writer: writer === undefined ? appWriter : writer, me, refreshBalances, suggest, suggestTimeoutMs, pollMs, feedTiming, balanceTiming }),
+    [client, writer, appWriter, me, refreshBalances, suggest, suggestTimeoutMs, pollMs, feedTiming, balanceTiming],
   );
   return <SortContext.Provider value={value}>{children}</SortContext.Provider>;
 }
@@ -122,6 +128,9 @@ export interface FamilyFeed {
   writer: SortWriter | null;
   refreshBalances: () => Promise<void>;
   balanceTiming?: LaunchTiming;
+  /** asks the mill where a charge goes; null when the AI is not allowed (no licensed key), and then nothing is asked */
+  suggest: SortChargeAsk | null;
+  suggestTimeoutMs: number;
   /** keeps that this phone sorted the charge; `claimed` false claims it for every phone now (or later, when unreached) */
   sortedHere: (charge: WaitingCharge, claimed: boolean) => void;
 }
@@ -130,6 +139,7 @@ export interface FamilyFeed {
 export function useFamilyFeed(): FamilyFeed {
   const seams = useContext(SortContext);
   const { door, getKey, backendUrl } = useFactory();
+  const licenceNow = useLicenceNow();
   const on = useFamilyOn();
   const licensed = door === "licensed";
   const unlocked = door === "licensed" || door === "unlocked";
@@ -206,6 +216,19 @@ export function useFamilyFeed(): FamilyFeed {
     [claim, forget],
   );
 
+  // the suggestion is the AI: asked only on a licensed key, the key read when it asks
+  const appSuggest = useMemo<SortChargeAsk | null>(
+    () =>
+      licensed
+        ? async (request, signal) => {
+            const key = getKey();
+            if (!key) throw new Error("The factory is locked.");
+            return makeSortChargeAsk(backendUrl, key, licenceNow)(request, signal);
+          }
+        : null,
+    [licensed, getKey, backendUrl, licenceNow],
+  );
+
   const blocked = !on || client ? null : !unlocked ? (door === "no-key" ? "Make the key" : "Unlock the key") : "Hold the licence";
 
   return {
@@ -221,6 +244,8 @@ export function useFamilyFeed(): FamilyFeed {
     writer: seams.writer ?? null,
     refreshBalances: seams.refreshBalances ?? appRefresh,
     balanceTiming: seams.balanceTiming,
+    suggest: seams.suggest !== undefined ? seams.suggest : appSuggest,
+    suggestTimeoutMs: seams.suggestTimeoutMs ?? SUGGEST_DEADLINE_MS,
     sortedHere,
   };
 }

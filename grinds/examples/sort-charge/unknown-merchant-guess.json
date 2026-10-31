@@ -1,0 +1,15 @@
+{
+  "description": "A merchant nobody can place and no history: the answer is the everyday category, Groceries, and the why says it is a guess.",
+  "schemaVersion": "1.0",
+  "request": {
+    "merchant": "SQ *ZQX 4471",
+    "amount": 17.9,
+    "categories": [{"name":"Groceries","left":212},{"name":"Eating Out","left":8},{"name":"Household","left":60.5},{"name":"Kids","left":31.25},{"name":"Gas","left":95}],
+    "history": []
+  },
+  "expect": {
+    "category": "Groceries",
+    "split": { "present": false },
+    "why": { "matches": "(?i)guess" }
+  }
+}

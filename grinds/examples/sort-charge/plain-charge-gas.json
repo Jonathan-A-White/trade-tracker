@@ -1,0 +1,16 @@
+{
+  "description": "A plain charge at a gas station with no history: the answer is one category, Gas, with a why.",
+  "schemaVersion": "1.0",
+  "request": {
+    "merchant": "Shell",
+    "amount": 38.5,
+    "owner": "Sarah",
+    "categories": [{"name":"Groceries","left":212},{"name":"Eating Out","left":8},{"name":"Household","left":60.5},{"name":"Kids","left":31.25},{"name":"Gas","left":95}],
+    "history": []
+  },
+  "expect": {
+    "category": "Gas",
+    "split": { "present": false },
+    "why": { "present": true }
+  }
+}
