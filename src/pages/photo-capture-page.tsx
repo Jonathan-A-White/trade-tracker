@@ -4,9 +4,10 @@ import { useAlive } from "pwa-kit/alive";
 import { db } from "@/db/database";
 import { PendingLookupRepository } from "@/db/repositories/pending-lookup-repository";
 import { useFactory } from "@/contexts/factory-context";
-import { captureStill } from "@/scanner/capture-still";
+import { RECEIPT_STILL, captureStill } from "@/scanner/capture-still";
 import { useCameraStream } from "@/hooks/use-camera-stream";
 import { useCameraZoomFocus } from "@/hooks/use-camera-zoom-focus";
+import { RECEIPT_PHOTOS_MAX, keepReceiptShots } from "@/sort/receipt-read";
 
 const pendingLookupRepo = new PendingLookupRepository();
 
@@ -15,7 +16,9 @@ export default function PhotoCapturePage() {
   const alive = useAlive();
   const [searchParams] = useSearchParams();
   // on an ended trip's Edit page the route names the trip; on the live trip it does not
-  const { id: tripIdParam } = useParams<{ id: string }>();
+  // under /sort/:alertId/receipt the camera shoots the receipt of that charge instead
+  const { id: tripIdParam, alertId } = useParams<{ id: string; alertId: string }>();
+  const receiptFor = alertId ?? null;
   const basePath = tripIdParam ? `/trips/${tripIdParam}/edit` : "/trips/active";
   const barcode = searchParams.get("barcode") ?? "";
   const priceOnlyItemId =
@@ -97,7 +100,8 @@ export default function PhotoCapturePage() {
     setBusy(true);
     setError(null);
     try {
-      const still = await captureStill(video, { zoom: digitalZoom });
+      // a receipt is read for small print: a longer long side than a package
+      const still = await captureStill(video, { zoom: digitalZoom, ...(receiptFor ? RECEIPT_STILL : {}) });
       if (alive()) setPreview(still);
     } catch (err) {
       console.error("Failed to take a photo:", err);
@@ -105,12 +109,31 @@ export default function PhotoCapturePage() {
     } finally {
       if (alive()) setBusy(false);
     }
-  }, [busy, digitalZoom, alive]);
+  }, [busy, digitalZoom, alive, receiptFor]);
 
   const handleRetake = useCallback(() => setPreview(null), []);
 
+  const sendReceipt = useCallback(
+    (taken: Blob[]) => {
+      if (!receiptFor) return;
+      keepReceiptShots(receiptFor, taken);
+      navigate(`/sort/${receiptFor}`, { replace: true });
+    },
+    [receiptFor, navigate],
+  );
+
   const handleUse = useCallback(async () => {
     if (!preview || busy) return;
+    if (receiptFor) {
+      // a long receipt may be shot in parts: the last shot allowed goes at once, else Read the receipt sends them
+      const taken = [...photos, preview];
+      if (taken.length >= RECEIPT_PHOTOS_MAX) sendReceipt(taken);
+      else {
+        setPhotos(taken);
+        setPreview(null);
+      }
+      return;
+    }
     if (priceOnly) {
       // one shot: the tag photo goes into the lookup; the preview stays up if saving fails
       await save([preview]);
@@ -123,19 +146,23 @@ export default function PhotoCapturePage() {
     }
     setPhotos([preview]);
     setPreview(null);
-  }, [preview, busy, priceOnly, photos, save]);
+  }, [preview, busy, receiptFor, priceOnly, photos, save, sendReceipt]);
 
   const handleTypeInstead = useCallback(() => {
     navigate(`${basePath}/add?barcode=${encodeURIComponent(barcode)}`, { replace: true });
   }, [barcode, navigate, basePath]);
 
   const handleCancel = useCallback(() => {
+    if (receiptFor) {
+      navigate(`/sort/${receiptFor}`, { replace: true });
+      return;
+    }
     navigate(priceOnly ? backTo : `${basePath}/scan`, { replace: true });
-  }, [navigate, priceOnly, backTo, basePath]);
+  }, [navigate, receiptFor, priceOnly, backTo, basePath]);
 
   const step = photos.length === 0 ? "package" : "tag";
   // the camera wants the package first, then (optionally) the shelf tag; a known item's price wants the tag only
-  const wantsTag = priceOnly || step === "tag";
+  const wantsTag = !receiptFor && (priceOnly || step === "tag");
   const button =
     "rounded-lg px-4 py-3 text-sm font-medium transition-colors cursor-pointer disabled:opacity-50 disabled:cursor-not-allowed";
 
@@ -178,13 +205,18 @@ export default function PhotoCapturePage() {
           <h1
             className={`text-2xl font-bold leading-tight ${wantsTag ? "text-amber-300" : "text-white"}`}
           >
-            {wantsTag ? "Photo of the PRICE TAG (on the shelf)" : "Photo of the PACKAGE (front, name showing)"}
+            {receiptFor
+              ? "Photo of the RECEIPT (flat, every line showing)"
+              : wantsTag
+                ? "Photo of the PRICE TAG (on the shelf)"
+                : "Photo of the PACKAGE (front, name showing)"}
           </h1>
-          {!priceOnly && step === "tag" && (
+          {receiptFor && <p className="text-sm text-white/80">A long receipt may be shot in parts: up to {RECEIPT_PHOTOS_MAX} photos</p>}
+          {!receiptFor && !priceOnly && step === "tag" && (
             <p className="text-sm text-white/80">Optional: Skip if the tag is not handy</p>
           )}
-          <p className="text-sm text-white/80">Barcode {barcode}</p>
-          {door !== "licensed" && (
+          {!receiptFor && <p className="text-sm text-white/80">Barcode {barcode}</p>}
+          {!receiptFor && door !== "licensed" && (
             <p className="mt-1 text-sm text-amber-300">
               Waiting for a licence: the lookup is kept and sent once the factory is ready.
             </p>
@@ -219,13 +251,23 @@ export default function PhotoCapturePage() {
         </button>
 
         <div className="absolute bottom-0 left-0 right-0 space-y-3 bg-gradient-to-t from-black/80 to-transparent p-4 pb-[calc(var(--tt-bar-inset)+1rem)]">
-          {!priceOnly && step === "tag" && (
+          {((!priceOnly && step === "tag") || (receiptFor && photos.length > 0)) && (
             <p className="text-center text-sm text-white/80">
               {photos.length} photo{photos.length === 1 ? "" : "s"} taken
             </p>
           )}
           <div className="flex gap-3">
-            {!priceOnly && step === "tag" && (
+            {receiptFor && photos.length > 0 && (
+              <button
+                type="button"
+                onClick={() => sendReceipt(photos)}
+                disabled={busy}
+                className={`${button} flex-1 border border-white/60 text-white hover:bg-white/10`}
+              >
+                Read the receipt
+              </button>
+            )}
+            {!receiptFor && !priceOnly && step === "tag" && (
               <button
                 type="button"
                 onClick={() => save(photos)}
@@ -246,7 +288,7 @@ export default function PhotoCapturePage() {
               Take photo
             </button>
           </div>
-          {!priceOnly && (
+          {!receiptFor && !priceOnly && (
             <button
               type="button"
               onClick={handleTypeInstead}

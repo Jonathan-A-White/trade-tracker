@@ -15,10 +15,12 @@ export const LOOKUP_VERSION = "1.0";
  */
 let latest: { backendUrl: string; key: Uint8Array; licence: () => MillLicence } | null = null;
 
-/** A receipt-reconcile client over the key the lookup queue was last given; null before any. */
-export function currentReceiptClient(): ReceiptClient | null {
-  if (!latest) return null;
-  const { backendUrl, key, licence } = latest;
+/** A receipt-reconcile client over `key`, signing every call with it; `licence` is read at each call. */
+export function makeReceiptClient(
+  backendUrl: string,
+  key: Uint8Array,
+  licence: () => MillLicence,
+): ReceiptClient {
   const mill = openMill(backendUrl, key, licence);
   return {
     measure: (input, photoCount) => ({
@@ -29,6 +31,11 @@ export function currentReceiptClient(): ReceiptClient | null {
       mill.send({ kind: RECEIPT_KIND, v: RECEIPT_VERSION, input, photos, clientId }),
     awaitAnswer: (txid, signal) => mill.awaitAnswer(txid, signal),
   };
+}
+
+/** A receipt-reconcile client over the key the lookup queue was last given; null before any. */
+export function currentReceiptClient(): ReceiptClient | null {
+  return latest ? makeReceiptClient(latest.backendUrl, latest.key, latest.licence) : null;
 }
 
 /**

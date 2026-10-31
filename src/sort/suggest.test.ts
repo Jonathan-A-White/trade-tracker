@@ -13,6 +13,7 @@ import {
   makeSortChargeAsk,
   readHistory,
   recordCharge,
+  resolveGrouping,
   resolveSuggestion,
   type SortChargeRequest,
 } from "./suggest";
@@ -86,6 +87,35 @@ describe("the request", () => {
       { amount: 80, split: [{ category: "Groceries", amount: 50 }, { category: "Household", amount: 30 }] },
     ]);
     expect(validate(request), JSON.stringify(validate.errors)).toBe(true);
+  });
+});
+
+describe("the request with a receipt's lines", () => {
+  const lines = [{ text: "ORG BNNA", price: 1.99 }, { text: "PAPER TWL", price: 12.99 }];
+
+  it("carries the lines, valid against the grind's input schema, and none when there are none", () => {
+    const validate = new Ajv({ strict: true }).compile(schema("sort-charge-input-1.0.schema.json"));
+    const request = buildRequest({ merchant: "Costco", amount: 20 }, cats, [], lines);
+    expect(request.lines).toEqual(lines);
+    expect(validate(request), JSON.stringify(validate.errors)).toBe(true);
+    expect(buildRequest({ merchant: "Costco", amount: 20 }, cats, [], [])).not.toHaveProperty("lines");
+  });
+
+  it("resolves the grouping, whose amounts are the lines' sums and need not add up to the charge", () => {
+    const answer = { split: [{ category: "groceries", amount: 1.99 }, { category: "Household", amount: 12.99 }], why: "Food, then the house." };
+    expect(resolveGrouping(answer, cats)).toEqual({
+      why: "Food, then the house.",
+      grouping: { split: [{ categoryId: "c1", amount: 1.99 }, { categoryId: "c3", amount: 12.99 }] },
+    });
+    expect(resolveGrouping({ category: "Groceries", why: "All food." }, cats)).toEqual({ why: "All food.", grouping: { categoryId: "c1" } });
+  });
+
+  it.each([
+    ["a category the budget does not have", { category: "Boats", why: "x" }],
+    ["a split naming one", { split: [{ category: "Groceries", amount: 1 }, { category: "Boats", amount: 2 }], why: "x" }],
+    ["no why", { category: "Groceries" }],
+  ])("is no grouping when it names %s", (_what, answer) => {
+    expect(resolveGrouping(answer as never, cats)).toBeNull();
   });
 });
 

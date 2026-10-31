@@ -41,7 +41,12 @@ export const appRoutes: RouteObject[] = [
           {
             // Home, with the Sort sheet of one charge drawn over it
             element: <HomePage />,
-            children: [{ index: true }, { path: "sort/:alertId", element: <SortRoute /> }],
+            children: [
+              { index: true },
+              { path: "sort/:alertId", element: <SortRoute /> },
+              // the camera for the receipt of that charge
+              { path: "sort/:alertId/receipt", element: <PhotoCapturePage /> },
+            ],
           },
           { path: "trips/new", element: <NewTripPage /> },
           {

@@ -15,6 +15,9 @@ import { createYnabClient } from "@/ynab/api";
 import { refreshCache } from "@/ynab/cache";
 import { openToken } from "@/ynab/token";
 import { createYnabWriter, type YnabWriter } from "@/ynab/writer";
+import { makeReceiptClient } from "@/services/lookup-client";
+import { reconcileReceipt } from "@/services/receipt-reconcile";
+import { RECEIPT_DEADLINE_MS, type ReceiptReader } from "./receipt-read";
 import { SUGGEST_DEADLINE_MS, makeSortChargeAsk, type SortChargeAsk } from "./suggest";
 import { useAlerts, type AlertsFeed } from "./useAlerts";
 import {
@@ -51,6 +54,10 @@ export interface SortSeams {
   suggest?: SortChargeAsk | null;
   /** how long the sheet waits for the suggestion */
   suggestTimeoutMs?: number;
+  /** reads a photographed receipt; null reads nothing (the app's own is the factory's, only on a licensed key) */
+  readReceipt?: ReceiptReader | null;
+  /** how long the sheet waits for the receipt to be read, and again for its lines to be grouped */
+  receiptTimeoutMs?: number;
   pollMs?: number;
   feedTiming?: LaunchTiming;
   balanceTiming?: LaunchTiming;
@@ -86,10 +93,10 @@ function useAppWriter(enabled: boolean): SortWriter | null {
 
 export function SortProvider({ children, ...seams }: SortSeams & { children: ReactNode }) {
   const appWriter = useAppWriter(seams.writer === undefined);
-  const { client, writer, me, refreshBalances, suggest, suggestTimeoutMs, pollMs, feedTiming, balanceTiming } = seams;
+  const { client, writer, me, refreshBalances, suggest, suggestTimeoutMs, readReceipt, receiptTimeoutMs, pollMs, feedTiming, balanceTiming } = seams;
   const value = useMemo<SortSeams>(
-    () => ({ client, writer: writer === undefined ? appWriter : writer, me, refreshBalances, suggest, suggestTimeoutMs, pollMs, feedTiming, balanceTiming }),
-    [client, writer, appWriter, me, refreshBalances, suggest, suggestTimeoutMs, pollMs, feedTiming, balanceTiming],
+    () => ({ client, writer: writer === undefined ? appWriter : writer, me, refreshBalances, suggest, suggestTimeoutMs, readReceipt, receiptTimeoutMs, pollMs, feedTiming, balanceTiming }),
+    [client, writer, appWriter, me, refreshBalances, suggest, suggestTimeoutMs, readReceipt, receiptTimeoutMs, pollMs, feedTiming, balanceTiming],
   );
   return <SortContext.Provider value={value}>{children}</SortContext.Provider>;
 }
@@ -131,6 +138,9 @@ export interface FamilyFeed {
   /** asks the mill where a charge goes; null when the AI is not allowed (no licensed key), and then nothing is asked */
   suggest: SortChargeAsk | null;
   suggestTimeoutMs: number;
+  /** reads a photographed receipt; null when the AI is not allowed, and then the sheet offers no photo */
+  readReceipt: ReceiptReader | null;
+  receiptTimeoutMs: number;
   /** keeps that this phone sorted the charge; `claimed` false claims it for every phone now (or later, when unreached) */
   sortedHere: (charge: WaitingCharge, claimed: boolean) => void;
 }
@@ -229,6 +239,21 @@ export function useFamilyFeed(): FamilyFeed {
     [licensed, getKey, backendUrl, licenceNow],
   );
 
+  // the receipt is read by the receipt grind, over the same key and licence
+  const appReadReceipt = useMemo<ReceiptReader | null>(
+    () =>
+      licensed
+        ? async (merchant, photos, signal) => {
+            const key = getKey();
+            if (!key) return { ok: false, error: "The factory is locked." };
+            const client = makeReceiptClient(backendUrl, key, licenceNow);
+            const sent = await Promise.all(photos.map(async (blob) => ({ bytes: new Uint8Array(await blob.arrayBuffer()), mime: blob.type })));
+            return reconcileReceipt(client, { store: merchant, lines: [] }, sent, { signal });
+          }
+        : null,
+    [licensed, getKey, backendUrl, licenceNow],
+  );
+
   const blocked = !on || client ? null : !unlocked ? (door === "no-key" ? "Make the key" : "Unlock the key") : "Hold the licence";
 
   return {
@@ -246,6 +271,8 @@ export function useFamilyFeed(): FamilyFeed {
     balanceTiming: seams.balanceTiming,
     suggest: seams.suggest !== undefined ? seams.suggest : appSuggest,
     suggestTimeoutMs: seams.suggestTimeoutMs ?? SUGGEST_DEADLINE_MS,
+    readReceipt: seams.readReceipt !== undefined ? seams.readReceipt : appReadReceipt,
+    receiptTimeoutMs: seams.receiptTimeoutMs ?? RECEIPT_DEADLINE_MS,
     sortedHere,
   };
 }

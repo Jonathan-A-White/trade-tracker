@@ -7,8 +7,10 @@ import { FactoryProvider } from "@/contexts/factory-context";
 import { db } from "@/db/database";
 import { TripRepository } from "@/db/repositories/trip-repository";
 import { captureStill } from "@/scanner/capture-still";
+import { receiptShotsOf, dropReceiptShots } from "@/sort/receipt-read";
 
-vi.mock("@/scanner/capture-still", () => ({
+vi.mock("@/scanner/capture-still", async (importOriginal) => ({
+  ...(await importOriginal<typeof import("@/scanner/capture-still")>()),
   captureStill: vi.fn(async () => new Blob(["jpeg"], { type: "image/jpeg" })),
 }));
 
@@ -536,6 +538,63 @@ describe("PhotoCapturePage", () => {
       fireEvent.pointerDown(button, { pointerId: 1, clientX: 200, clientY: 700 });
       fireEvent.pointerUp(button, { pointerId: 1, clientX: 200, clientY: 700 });
       expect(applyConstraints).not.toHaveBeenCalled();
+    });
+  });
+
+  describe("the receipt of a charge on the Sort sheet", () => {
+    function renderReceipt() {
+      return render(
+        <MemoryRouter initialEntries={["/sort/abc123/receipt"]}>
+          <FactoryProvider checkLicence={async () => ({ state: "none", checkedAt: "x" })}>
+            <Routes>
+              <Route path="/sort/:alertId/receipt" element={<PhotoCapturePage />} />
+              <Route path="*" element={<Where />} />
+            </Routes>
+          </FactoryProvider>
+        </MemoryRouter>,
+      );
+    }
+    beforeEach(() => {
+      // an earlier describe's restoreAllMocks cleared the module mock's implementation
+      vi.mocked(captureStill).mockImplementation(async () => new Blob(["jpeg"], { type: "image/jpeg" }) as unknown as globalThis.Blob);
+    });
+    afterEach(() => dropReceiptShots("abc123"));
+
+    it("asks for the receipt, not a package or a tag, and has no barcode", () => {
+      renderReceipt();
+      expect(screen.getByRole("heading", { name: "Photo of the RECEIPT (flat, every line showing)" })).toBeInTheDocument();
+      expect(screen.queryByText(/Barcode/)).not.toBeInTheDocument();
+      expect(screen.queryByRole("button", { name: "Type it instead" })).not.toBeInTheDocument();
+    });
+
+    it("Read the receipt hands the shots back to the sheet of that charge, shot at the receipt's size", async () => {
+      const user = userEvent.setup();
+      renderReceipt();
+      await takeAndUse(user);
+      await takeAndUse(user);
+      expect(screen.getByText("2 photos taken")).toBeInTheDocument();
+      expect(captureStill).toHaveBeenLastCalledWith(expect.anything(), expect.objectContaining({ maxLongSide: 2400 }));
+      await user.click(screen.getByRole("button", { name: "Read the receipt" }));
+      await waitFor(() => expect(screen.getByTestId("where")).toHaveTextContent("/sort/abc123"));
+      expect(receiptShotsOf("abc123")).toHaveLength(2);
+      // nothing was written to a trip
+      expect(await db.pendingLookups.count()).toBe(0);
+    });
+
+    it("the third shot goes at once, and Cancel goes back with none", async () => {
+      const user = userEvent.setup();
+      renderReceipt();
+      await takeAndUse(user);
+      await takeAndUse(user);
+      await takeAndUse(user);
+      await waitFor(() => expect(screen.getByTestId("where")).toHaveTextContent("/sort/abc123"));
+      expect(receiptShotsOf("abc123")).toHaveLength(3);
+      dropReceiptShots("abc123");
+
+      renderReceipt();
+      await user.click(screen.getAllByRole("button", { name: "Cancel" })[0]!);
+      await waitFor(() => expect(screen.getAllByTestId("where").length).toBeGreaterThan(0));
+      expect(receiptShotsOf("abc123")).toBeUndefined();
     });
   });
 });

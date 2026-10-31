@@ -15,7 +15,9 @@ import { useYnabOn } from "@/settings/connections";
 import { CategoryPicker } from "./CategoryPicker";
 import { SplitEditor } from "./SplitEditor";
 import { newPart, partCents, remainderCents, splitReady, type SplitPart } from "./split";
-import { buildRequest, readHistory, recordCharge, resolveSuggestion, type SortChargeAsk, type Suggestion } from "./suggest";
+import { dropReceiptShots, receiptShotsOf, type ReceiptReader } from "./receipt-read";
+import { groupLines, receiptSplits } from "./receiptSplits";
+import { buildRequest, readHistory, recordCharge, resolveGrouping, resolveSuggestion, type SortChargeAsk, type Suggestion } from "./suggest";
 import type { FamilyFeed } from "./sort-context";
 import type { FeedPhase } from "./useAlerts";
 import { chargeDate, handOff, money, readSorted, takeBack, whenLine, type WaitingCharge } from "./waiting";
@@ -197,6 +199,101 @@ function useSuggestion(opts: {
   return result ?? (suggest && ready ? "asking" : "off");
 }
 
+/** Where the photographed receipt stands: read by the mill, its lines grouped, then done; `failed` ends it with a sentence. */
+type ReceiptStatus =
+  | { phase: "off" }
+  | { phase: "reading" | "grouping" | "slow" }
+  | { phase: "failed"; message: string }
+  | { phase: "done"; why: string; line: string | null };
+
+/** The parts a photographed receipt makes of the charge, as the sheet's own category ids and typed dollars. */
+interface ReceiptParts {
+  parts: { categoryId: string; amount: string }[];
+}
+
+/**
+ * Reads the receipt photographed for the charge once the categories are in: the receipt grind reads its lines, the sort-charge grind
+ * groups them, and receiptSplits spreads the tax and checks the total against the charge. Each wait has the deadline; `onParts` is
+ * given the split (or the one category); a receipt that cannot make one (over the charge) fails with its plain sentence.
+ */
+function useReceipt(opts: {
+  shots: Blob[] | undefined;
+  readReceipt: ReceiptReader | null;
+  suggest: SortChargeAsk | null;
+  timeoutMs: number;
+  charge: WaitingCharge;
+  categories: YnabCategory[] | undefined;
+  onParts: (result: ReceiptParts | { categoryId: string }) => void;
+}): { status: ReceiptStatus; retry: () => void } {
+  const { shots, readReceipt, suggest, timeoutMs } = opts;
+  const [status, setStatus] = useState<ReceiptStatus>({ phase: "off" });
+  const [attempt, setAttempt] = useState(0);
+  const latest = useRef(opts);
+  useEffect(() => {
+    latest.current = opts;
+  });
+  const ready = !!opts.categories;
+  useEffect(() => {
+    const { charge: c, categories: list, onParts } = latest.current;
+    if (!shots || !ready || !list) return;
+    if (!readReceipt || !suggest) return;
+    const abort = new AbortController();
+    let current = true;
+    let timer: ReturnType<typeof setTimeout> | undefined;
+    const within = <T,>(work: Promise<T>): Promise<T> =>
+      new Promise((resolve, reject) => {
+        timer = setTimeout(() => {
+          setStatus({ phase: "slow" });
+          abort.abort();
+        }, timeoutMs);
+        work.then(resolve, reject).finally(() => clearTimeout(timer));
+      });
+    const fail = (message: string) => {
+      if (current) setStatus({ phase: "failed", message });
+    };
+    const run = async () => {
+      setStatus({ phase: "reading" });
+      const read = await within(readReceipt(c.merchant, shots, abort.signal));
+      if (!current || abort.signal.aborted) return;
+      if (!read.ok) return fail(read.error);
+      const lines = read.answer.lines.filter((l) => l.price > 0).map((l) => ({ text: l.text, price: l.price }));
+      if (lines.length === 0) return fail(read.answer.unreadable ?? "No lines could be read from the receipt. Take the photo again, or choose by hand.");
+      setStatus({ phase: "grouping" });
+      const owner = c.owner === ANYONE ? undefined : c.owner;
+      const request = buildRequest({ merchant: c.merchant, amount: c.amount, owner }, list, readHistory(c.merchant), lines);
+      const answer = await within(suggest(request, abort.signal));
+      if (!current || abort.signal.aborted) return;
+      const resolved = resolveGrouping(answer, list);
+      const groups = resolved && groupLines(lines, resolved.grouping);
+      if (!resolved || !groups) return fail("The factory could not sort the receipt's lines into your categories. Choose by hand.");
+      const tax = read.answer.tax;
+      const total = read.answer.total;
+      const split = receiptSplits({
+        groups,
+        taxCents: tax === null ? null : Math.round(tax * 100),
+        totalCents: total === null ? null : Math.round(total * 100),
+        chargeCents: Math.round(c.amount * 100),
+      });
+      if (!split.ok) return fail(split.line);
+      setStatus({ phase: "done", why: resolved.why, line: split.line });
+      if (split.rows.length === 1) onParts({ categoryId: split.rows[0]!.categoryId });
+      else onParts({ parts: split.rows.map((r) => ({ categoryId: r.categoryId, amount: (r.cents / 100).toFixed(2) })) });
+    };
+    run().catch((err: unknown) => {
+      if (!current || abort.signal.aborted) return;
+      fail(err instanceof Error && err.message ? err.message : "The receipt could not be read. Choose by hand.");
+    });
+    return () => {
+      current = false;
+      clearTimeout(timer);
+      abort.abort();
+    };
+  }, [shots, ready, readReceipt, suggest, timeoutMs, attempt]);
+  // a receipt photographed while the factory cannot be asked (the licence went) is said so, not waited for
+  const notReady: ReceiptStatus = { phase: "failed", message: "The factory is not ready to read the receipt. Choose by hand." };
+  return { status: shots && (!readReceipt || !suggest) ? notReady : status, retry: () => setAttempt((n) => n + 1) };
+}
+
 function chargeTitle(charge: WaitingCharge): string {
   return `${money(charge.amount)} at ${charge.merchant}`;
 }
@@ -227,11 +324,16 @@ function ChargeSheet({ family, charge, onClose }: { family: FamilyFeed; charge: 
   const [saving, setSaving] = useState(false);
   const [saveError, setSaveError] = useState<string | null>(null);
 
-  // the AI's suggestion fills the sheet in only while nothing has been chosen by hand
-  const touched = useRef(false);
+  const navigate = useNavigate();
+  // the receipt photographed for this charge, if the camera page has just handed it back
+  const [shots] = useState(() => receiptShotsOf(alert.id));
+  useEffect(() => () => dropReceiptShots(alert.id), [alert.id]);
+
+  // the AI's suggestion fills the sheet in only while nothing has been chosen by hand; a receipt he photographed takes its place
+  const touched = useRef(shots !== undefined);
   const [suggestion, setSuggestion] = useState<Suggestion | null>(null);
   const suggestStatus = useSuggestion({
-    suggest: ynabOn ? family.suggest : null,
+    suggest: ynabOn && !shots ? family.suggest : null,
     timeoutMs: family.suggestTimeoutMs,
     ready: !!categories && categories.length > 0 && ["ready", "failed", "retryable"].includes(balances.phase),
     charge,
@@ -247,6 +349,23 @@ function ChargeSheet({ family, charge, onClose }: { family: FamilyFeed; charge: 
     },
   });
   const suggestedShown = suggestion !== null && ("categoryId" in suggestion ? !splitting && categoryId === suggestion.categoryId : splitting);
+  const receipt = useReceipt({
+    shots: ynabOn ? shots : undefined,
+    readReceipt: family.readReceipt,
+    suggest: family.suggest,
+    timeoutMs: family.receiptTimeoutMs,
+    charge,
+    categories,
+    onParts: (result) => {
+      if ("parts" in result) {
+        setSplitting(true);
+        setParts(result.parts.map((p) => ({ ...newPart(p.categoryId), amount: p.amount })));
+      } else {
+        setSplitting(false);
+        setCategoryId(result.categoryId);
+      }
+    },
+  });
   const selectCategory = (id: string) => {
     touched.current = true;
     setCategoryId(id);
@@ -428,6 +547,41 @@ function ChargeSheet({ family, charge, onClose }: { family: FamilyFeed; charge: 
             <p role="status" className="text-sm text-amber-700 dark:text-amber-400">
               The suggestion is taking too long. Choose by hand.
             </p>
+          )}
+          {family.readReceipt && receipt.status.phase !== "reading" && receipt.status.phase !== "grouping" && (
+            <button type="button" onClick={guard(() => navigate(`/sort/${alert.id}/receipt`))} className={`${SECONDARY} w-full`}>
+              Photo the receipt
+            </button>
+          )}
+          {(receipt.status.phase === "reading" || receipt.status.phase === "grouping") && (
+            <p role="status" className="text-sm text-gray-600 dark:text-gray-400">
+              {receipt.status.phase === "reading" ? "Reading the receipt…" : "Sorting the receipt's lines…"}
+            </p>
+          )}
+          {receipt.status.phase === "slow" && (
+            <div role="status" className="space-y-2 text-sm text-amber-700 dark:text-amber-400">
+              <p>The receipt is taking too long. Choose by hand.</p>
+              <button type="button" onClick={receipt.retry} className={SECONDARY}>
+                Try again
+              </button>
+            </div>
+          )}
+          {receipt.status.phase === "failed" && (
+            <div role="status" className="space-y-2 text-sm text-amber-700 dark:text-amber-400">
+              <p>{receipt.status.message}</p>
+              <button type="button" onClick={receipt.retry} className={SECONDARY}>
+                Try again
+              </button>
+            </div>
+          )}
+          {receipt.status.phase === "done" && (
+            <div role="status" className="rounded-lg bg-blue-50 dark:bg-blue-950 px-3 py-2 text-sm text-gray-800 dark:text-gray-100">
+              <p>
+                <span className="font-semibold">From the receipt · </span>
+                {receipt.status.why}
+              </p>
+              {receipt.status.line && <p className="mt-1 font-medium">{receipt.status.line}</p>}
+            </div>
           )}
           {suggestedShown && (
             <p role="status" className="rounded-lg bg-blue-50 dark:bg-blue-950 px-3 py-2 text-sm text-gray-800 dark:text-gray-100">

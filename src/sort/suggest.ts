@@ -4,6 +4,7 @@
 import type { YnabCategory } from "@/contracts/types";
 import { MAX_PAYLOAD_BYTES, openMill, sealedRecordBytes } from "@/factory/mill";
 import type { MillLicence } from "@/factory/mill";
+import type { Grouping } from "./receiptSplits";
 
 /** The grind the suggestion runs: grinds/sort-charge.json, version 1.0 of its input and answer. */
 export const SORT_CHARGE_KIND = "sort-charge";
@@ -21,6 +22,9 @@ export const HISTORY_KEY = "tradetracker-sort-history";
 /** How many sorted charges, of all merchants, this phone keeps. */
 const HISTORY_KEPT = 300;
 const WHY_MAX = 160;
+/** The most receipt lines, and the longest line, the request carries (schemas/sort-charge-input-1.0). */
+export const LINES_SENT = 80;
+const LINE_TEXT_MAX = 80;
 
 /** One sorted charge as the request tells it: into one category, or split. */
 export interface HistoryLine {
@@ -37,6 +41,8 @@ export interface SortChargeRequest {
   categories: { name: string; left?: number }[];
   /** newest first */
   history: HistoryLine[];
+  /** what the shopper's photographed receipt prints, line by line; the answer then groups these (its amounts are the lines' sums) */
+  lines?: { text: string; price: number }[];
 }
 
 /** The app's answer of the sort-charge grind (schemas/sort-charge-answer-1.0). */
@@ -110,6 +116,7 @@ export function buildRequest(
   charge: { merchant: string; amount: number; owner?: string },
   categories: readonly YnabCategory[],
   history: readonly HistoryLine[],
+  lines?: readonly { text: string; price: number }[],
 ): SortChargeRequest {
   return {
     merchant: charge.merchant,
@@ -117,6 +124,7 @@ export function buildRequest(
     ...(charge.owner ? { owner: charge.owner } : {}),
     categories: categories.map((c) => ({ name: c.name, ...(c.balance === undefined ? {} : { left: c.balance }) })),
     history: [...history],
+    ...(lines && lines.length > 0 ? { lines: lines.map((l) => ({ text: l.text.slice(0, LINE_TEXT_MAX), price: l.price })).slice(0, LINES_SENT) } : {}),
   };
 }
 
@@ -162,4 +170,21 @@ export function resolveSuggestion(answer: SortChargeAnswer, categories: readonly
   }
   const categoryId = answer.category ? idOf(answer.category) : undefined;
   return categoryId === undefined ? null : { why, categoryId };
+}
+
+/**
+ * The answer to a request with receipt lines, in the sheet's own terms: the one category or the categories with what the lines in each
+ * add up to (not shares of the charge). Null when it cannot be used: no why, or a category the budget does not have.
+ */
+export function resolveGrouping(answer: SortChargeAnswer, categories: readonly YnabCategory[]): { why: string; grouping: Grouping } | null {
+  const why = typeof answer.why === "string" ? answer.why.replace(/\s+/g, " ").trim().slice(0, WHY_MAX) : "";
+  if (!why) return null;
+  const idOf = (name: string) => categories.find((c) => c.name.trim().toLowerCase() === name.trim().toLowerCase())?.id;
+  if (answer.split) {
+    const parts = answer.split.map((p) => ({ categoryId: idOf(p.category), amount: p.amount }));
+    if (parts.length < 1 || parts.some((p) => p.categoryId === undefined || !(p.amount > 0))) return null;
+    return { why, grouping: { split: parts.map((p) => ({ categoryId: p.categoryId!, amount: p.amount })) } };
+  }
+  const categoryId = answer.category ? idOf(answer.category) : undefined;
+  return categoryId === undefined ? null : { why, grouping: { categoryId } };
 }

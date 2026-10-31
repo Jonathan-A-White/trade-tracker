@@ -1,3 +1,4 @@
+import { Blob } from "node:buffer";
 import { render, screen, waitFor, within } from "@testing-library/react";
 import userEvent from "@testing-library/user-event";
 import { MemoryRouter, useLocation, useRoutes } from "react-router";
@@ -15,8 +16,15 @@ import { setFamilyOn, setYnabOn } from "@/settings/connections";
 import { accountOf, groupOf } from "@/ynab/fake-ynab";
 import { SortProvider, type SortSeams } from "./sort-context";
 import { NotAllowed } from "@/factory/mill";
+import { keepReceiptShots, type ReceiptReader } from "./receipt-read";
+import type { ReceiptReconcileAnswer } from "@/contracts/types";
 import { readHistory, recordCharge, type SortChargeAnswer, type SortChargeAsk } from "./suggest";
 import { PENDING_CLAIMS_KEY } from "./useAlerts";
+
+vi.mock("@/scanner/capture-still", async (importOriginal) => ({
+  ...(await importOriginal<typeof import("@/scanner/capture-still")>()),
+  captureStill: vi.fn(async () => new Blob(["jpeg"], { type: "image/jpeg" })),
+}));
 
 const BACKEND = "https://backend.example.test";
 const key = new Uint8Array(32).fill(7);
@@ -438,5 +446,128 @@ describe("the Sort sheet with the AI's suggestion", () => {
     await waitFor(() => expect(within(sheet).queryByText("Asking for a suggestion…")).not.toBeInTheDocument());
     expect(within(sheet).queryByText("Anchors.")).not.toBeInTheDocument();
     expect(within(sheet).getByRole("button", { name: "Done" })).toBeDisabled();
+  });
+});
+
+describe("the Sort sheet with a photographed receipt", () => {
+  const receiptLines = [
+    { text: "ORG BNNA", price: 5, quantity: 1, weightLbs: null, tripItemId: null, confidence: "high" as const },
+    { text: "MILK", price: 20, quantity: 1, weightLbs: null, tripItemId: null, confidence: "high" as const },
+    { text: "PAPER TWL", price: 15, quantity: 1, weightLbs: null, tripItemId: null, confidence: "high" as const },
+  ];
+  const receipt = (over: Partial<ReceiptReconcileAnswer> = {}): ReceiptReader =>
+    vi.fn<ReceiptReader>(async () => ({
+      ok: true,
+      answer: { store: "Target", date: "2026-10-30", subtotal: 40, tax: 3.12, total: 43.12, lines: receiptLines, unreadable: null, ...over },
+    }));
+  const grouped = () => vi.fn<SortChargeAsk>(async () => ({ split: [{ category: "Groceries", amount: 25 }, { category: "Household", amount: 15 }], why: "Food went to Groceries, the paper towels to Household." }));
+
+  beforeEach(() => {
+    HTMLMediaElement.prototype.play = vi.fn(async () => {});
+    URL.createObjectURL = vi.fn(() => "blob:preview");
+    URL.revokeObjectURL = vi.fn();
+    Object.defineProperty(navigator, "mediaDevices", { configurable: true, value: { getUserMedia: vi.fn(async () => ({ getTracks: () => [] })) } });
+  });
+
+  it("Photo the receipt opens the camera; the photo comes back as split rows with the tax spread, they can be edited, and Done writes them", async () => {
+    const user = userEvent.setup();
+    const alert = backend.receive({ kind: "charge", amount: "43.12", merchant: "Target", last4: "1234", when: WHEN });
+    const readReceipt = receipt();
+    const suggest = grouped();
+    renderPhone(`/sort/${alert.id}`, { readReceipt, suggest });
+    const sheet = await screen.findByRole("dialog", { name: "$43.12 at Target" });
+    await user.click(await within(sheet).findByRole("button", { name: "Photo the receipt" }));
+
+    // the camera, for this charge's receipt
+    expect(where()).toBe(`/sort/${alert.id}/receipt`);
+    expect(await screen.findByRole("heading", { name: /RECEIPT/ })).toBeInTheDocument();
+    await user.click(screen.getByRole("button", { name: "Take photo" }));
+    await user.click(await screen.findByRole("button", { name: "Use photo" }));
+    await user.click(await screen.findByRole("button", { name: "Read the receipt" }));
+
+    // back on the sheet: the lines read, grouped, and the tax spread in proportion (25 : 15 of 3.12 is 1.95 and 1.17)
+    const back = await screen.findByRole("dialog", { name: "$43.12 at Target" });
+    expect(where()).toBe(`/sort/${alert.id}`);
+    expect(await within(back).findByText(/From the receipt/)).toBeInTheDocument();
+    expect(within(back).getByText(/the paper towels to Household/)).toBeInTheDocument();
+    expect(readReceipt).toHaveBeenCalledWith("Target", expect.any(Array), expect.any(AbortSignal));
+    // the sheet's own suggestion asked first, without lines; the receipt's grouping asked with them
+    expect(suggest.mock.calls[0]![0].lines).toBeUndefined();
+    expect(suggest.mock.calls.at(-1)![0].lines).toEqual([
+      { text: "ORG BNNA", price: 5 },
+      { text: "MILK", price: 20 },
+      { text: "PAPER TWL", price: 15 },
+    ]);
+    expect(within(back).getByLabelText("Category for part 1")).toHaveValue("c1");
+    expect(within(back).getByLabelText("Amount for part 1")).toHaveValue("26.95");
+    expect(within(back).getByLabelText("Category for part 2")).toHaveValue("c3");
+    expect(within(back).getByLabelText("Amount for part 2")).toHaveValue("16.17");
+    expect(within(back).getByText("Adds up to $43.12")).toBeInTheDocument();
+
+    // a row can be moved to another category, and Done writes the split
+    await user.selectOptions(within(back).getByLabelText("Category for part 2"), "c2");
+    await user.click(within(back).getByRole("button", { name: "Done" }));
+    await waitFor(() => expect(create).toHaveBeenCalled());
+    expect(create.mock.calls[0]![0]).toMatchObject({
+      accountId: "a1",
+      amount: 43.12,
+      splits: [
+        { categoryId: "c1", amount: 26.95 },
+        { categoryId: "c2", amount: 16.17 },
+      ],
+    });
+  });
+
+  it("a receipt under the charge leaves the difference as a row of its own to place, and Done waits for it", async () => {
+    const user = userEvent.setup();
+    const alert = backend.receive({ kind: "charge", amount: "43.12", merchant: "Target", last4: "1234", when: WHEN });
+    keepReceiptShots(alert.id, [new Blob(["jpeg"], { type: "image/jpeg" }) as unknown as globalThis.Blob]);
+    // 25 + 15 = 40 and 1.80 tax: 41.80
+    renderPhone(`/sort/${alert.id}`, { readReceipt: receipt({ tax: 1.8, total: 41.8 }), suggest: grouped() });
+    const sheet = await screen.findByRole("dialog", { name: "$43.12 at Target" });
+    expect(await within(sheet).findByText("Receipt $41.80, charge $43.12: $1.32 not on the receipt")).toBeInTheDocument();
+    expect(within(sheet).getByLabelText("Amount for part 3")).toHaveValue("1.32");
+    expect(within(sheet).getByLabelText("Category for part 3")).toHaveValue("");
+    expect(within(sheet).getByText("Adds up to $43.12")).toBeInTheDocument();
+    expect(within(sheet).getByRole("button", { name: "Done" })).toBeDisabled();
+    expect(within(sheet).getByText("Give every part a category and an amount.")).toBeInTheDocument();
+
+    await user.selectOptions(within(sheet).getByLabelText("Category for part 3"), "c2");
+    await user.click(within(sheet).getByRole("button", { name: "Done" }));
+    await waitFor(() => expect(create).toHaveBeenCalled());
+    expect(create.mock.calls[0]![0].splits).toEqual([
+      { categoryId: "c1", amount: 26.13 },
+      { categoryId: "c3", amount: 15.67 },
+      { categoryId: "c2", amount: 1.32 },
+    ]);
+  });
+
+  it("a receipt over the charge says so plainly and writes nothing", async () => {
+    const alert = backend.receive({ kind: "charge", amount: "43.12", merchant: "Target", last4: "1234", when: WHEN });
+    keepReceiptShots(alert.id, [new Blob(["jpeg"], { type: "image/jpeg" }) as unknown as globalThis.Blob]);
+    renderPhone(`/sort/${alert.id}`, { readReceipt: receipt({ tax: 11, total: 51 }), suggest: grouped() });
+    const sheet = await screen.findByRole("dialog", { name: "$43.12 at Target" });
+    expect(await within(sheet).findByText("Receipt $51.00 is more than the charge $43.12. Place the charge by hand.")).toBeInTheDocument();
+    expect(within(sheet).getByRole("button", { name: "Done" })).toBeDisabled();
+    expect(create).not.toHaveBeenCalled();
+  });
+
+  it("a receipt the factory could not read says why and leaves the sheet to hand", async () => {
+    const alert = backend.receive({ kind: "charge", amount: "43.12", merchant: "Target", last4: "1234", when: WHEN });
+    keepReceiptShots(alert.id, [new Blob(["jpeg"], { type: "image/jpeg" }) as unknown as globalThis.Blob]);
+    const readReceipt = vi.fn<ReceiptReader>(async () => ({ ok: false, error: "The factory could not read the receipt." }));
+    renderPhone(`/sort/${alert.id}`, { readReceipt, suggest: grouped() });
+    const sheet = await screen.findByRole("dialog", { name: "$43.12 at Target" });
+    expect(await within(sheet).findByText("The factory could not read the receipt.")).toBeInTheDocument();
+    expect(within(sheet).getByRole("button", { name: "Try again" })).toBeInTheDocument();
+    expect(within(sheet).getByRole("radio", { name: /Groceries/ })).toBeInTheDocument();
+  });
+
+  it("without the factory there is no Photo the receipt", async () => {
+    const alert = backend.receive({ kind: "charge", amount: "43.12", merchant: "Target", last4: "1234", when: WHEN });
+    renderPhone(`/sort/${alert.id}`);
+    const sheet = await screen.findByRole("dialog", { name: "$43.12 at Target" });
+    await within(sheet).findByRole("radio", { name: /Groceries/ });
+    expect(within(sheet).queryByRole("button", { name: "Photo the receipt" })).not.toBeInTheDocument();
   });
 });
