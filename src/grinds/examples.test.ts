@@ -257,3 +257,22 @@ describe("checkExpect", () => {
     expect(checkExpect({ price: { is_null: false } }, noPrice)).toHaveLength(1);
   });
 });
+
+describe("the sort-charge grind's examples", () => {
+  const dir = resolve(ROOT, "grinds/examples/sort-charge");
+  const names = readdirSync(dir).filter((f) => f.endsWith(".json"));
+  const examples = names.map((f) => readJson(`grinds/examples/sort-charge/${f}`) as unknown as GrindExample);
+
+  it("has at least four: a plain charge, a split at a warehouse store, an unknown merchant and a merchant with history", () => {
+    expect(names.length).toBeGreaterThanOrEqual(4);
+    const requests = examples.map((e) => e.request as { history: unknown[]; merchant: string });
+    expect(examples.some((e) => JSON.stringify(e.expect.split) === JSON.stringify({ present: true }))).toBe(true);
+    expect(requests.some((r) => r.history.length === 0)).toBe(true);
+    expect(requests.some((r) => r.history.length > 0)).toBe(true);
+  });
+
+  it("an unknown merchant's example expects a why that says it is a guess", () => {
+    const guess = examples.find((e) => JSON.stringify(e.expect.why ?? "").includes("guess"));
+    expect(guess).toBeDefined();
+  });
+});

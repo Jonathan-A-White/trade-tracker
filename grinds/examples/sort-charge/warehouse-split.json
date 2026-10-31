@@ -1,0 +1,95 @@
+{
+  "description": "A large charge at a warehouse store whose last charges were split between food and the house: the answer is a split across Groceries and Household.",
+  "schemaVersion": "1.0",
+  "request": {
+    "merchant": "Costco",
+    "amount": 200,
+    "owner": "shared",
+    "categories": [
+      {
+        "name": "Groceries",
+        "left": 212
+      },
+      {
+        "name": "Eating Out",
+        "left": 8
+      },
+      {
+        "name": "Household",
+        "left": 60.5
+      },
+      {
+        "name": "Kids",
+        "left": 31.25
+      },
+      {
+        "name": "Gas",
+        "left": 95
+      }
+    ],
+    "history": [
+      {
+        "amount": 180,
+        "split": [
+          {
+            "category": "Groceries",
+            "amount": 120
+          },
+          {
+            "category": "Household",
+            "amount": 60
+          }
+        ]
+      },
+      {
+        "amount": 150,
+        "split": [
+          {
+            "category": "Groceries",
+            "amount": 100
+          },
+          {
+            "category": "Household",
+            "amount": 50
+          }
+        ]
+      },
+      {
+        "amount": 210,
+        "split": [
+          {
+            "category": "Groceries",
+            "amount": 140
+          },
+          {
+            "category": "Household",
+            "amount": 70
+          }
+        ]
+      }
+    ]
+  },
+  "expect": {
+    "category": {
+      "present": false
+    },
+    "split": {
+      "present": true
+    },
+    "split.0.category": {
+      "one_of": [
+        "Groceries",
+        "Household"
+      ]
+    },
+    "split.1.category": {
+      "one_of": [
+        "Groceries",
+        "Household"
+      ]
+    },
+    "why": {
+      "present": true
+    }
+  }
+}

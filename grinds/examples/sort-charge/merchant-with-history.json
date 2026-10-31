@@ -1,0 +1,21 @@
+{
+  "description": "A coffee shop whose recent charges all went to Eating Out: the answer is Eating Out, and the why points at the history.",
+  "schemaVersion": "1.0",
+  "request": {
+    "merchant": "Dunkin'",
+    "amount": 8.5,
+    "owner": "Jonathan",
+    "categories": [{"name":"Groceries","left":212},{"name":"Eating Out","left":8},{"name":"Household","left":60.5},{"name":"Kids","left":31.25},{"name":"Gas","left":95}],
+    "history": [
+      { "amount": 6.25, "category": "Eating Out" },
+      { "amount": 9.1, "category": "Eating Out" },
+      { "amount": 7.8, "category": "Eating Out" },
+      { "amount": 5.4, "category": "Eating Out" }
+    ]
+  },
+  "expect": {
+    "category": "Eating Out",
+    "split": { "present": false },
+    "why": { "present": true }
+  }
+}
