@@ -2,13 +2,19 @@
 import { Blob } from "node:buffer";
 import { waitFor } from "@testing-library/react";
 import type { GristAnswer } from "@/factory/mill";
+import type { PendingLookup } from "@/contracts/types";
 import { db } from "@/db/database";
 import { PendingLookupRepository } from "@/db/repositories/pending-lookup-repository";
 import { TripRepository } from "@/db/repositories/trip-repository";
 import { TripItemRepository } from "@/db/repositories/trip-item-repository";
 import { PriceHistoryRepository } from "@/db/repositories/price-history-repository";
 import { ItemRepository } from "@/db/repositories/item-repository";
-import { LookupRunner, type LookupClient, type LookupRequest } from "./lookup-runner";
+import {
+  LookupRunner,
+  type LookupClient,
+  type LookupRequest,
+  type LookupRunnerOptions,
+} from "./lookup-runner";
 
 const lookups = new PendingLookupRepository();
 const tripRepo = new TripRepository();
@@ -72,7 +78,7 @@ async function queueLookup(tripId: string, barcode = "0044") {
 }
 
 const runners: LookupRunner[] = [];
-function makeRunner(client: LookupClient | null, options: { backoffBaseMs?: number } = {}) {
+function makeRunner(client: LookupClient | null, options: LookupRunnerOptions = {}) {
   const runner = new LookupRunner({ backoffBaseMs: 1, ...options });
   runners.push(runner);
   runner.setClient(client);
@@ -574,5 +580,157 @@ describe("LookupRunner price-only lookups", () => {
     await lookups.discard(lookup.id);
     expect(await lookups.getById(lookup.id)).toBeUndefined();
     expect(await tripItemRepo.getByTrip(trip.id)).toHaveLength(1);
+  });
+});
+
+describe("LookupRunner a lookup the factory never answers", () => {
+  // the backend stores a send once per clientId and names the same txid for a repeat
+  function fakeBackendClient() {
+    const fake = fakeClient();
+    fake.client.send = vi.fn(async (req: LookupRequest) => {
+      fake.sent.push(req);
+      return `direct:${req.clientId}`;
+    });
+    return fake;
+  }
+
+  const LIMITS = { resendAfterMs: 80, giveUpAfterMs: 80 };
+
+  /**
+   * A lookup the phone has already sent (and kept the photo of: Dexie's update, which markSent
+   * uses, loses a Blob in fake-indexeddb, a put does not). The runner resumes it from this.
+   */
+  async function seedSent(id: string, extra: Partial<PendingLookup> = {}) {
+    const row = (await lookups.getById(id))!;
+    const photo = new Blob(["package"], { type: "image/jpeg" }) as unknown as globalThis.Blob;
+    await db.pendingLookups.put({
+      ...row,
+      photos: [photo],
+      status: "at-the-factory",
+      gristTxid: `direct:${id}`,
+      ...extra,
+    });
+  }
+
+  it("sends a lookup that was sent and never answered once more, with the same request id", async () => {
+    const trip = await startTrip();
+    const lookup = await queueLookup(trip.id);
+    await seedSent(lookup.id);
+    const fake = fakeBackendClient();
+
+    makeRunner(fake.client, LIMITS);
+
+    await waitFor(() => expect(fake.sent).toHaveLength(1));
+    expect(fake.sent[0].clientId).toBe(lookup.id);
+    expect(fake.sent[0].photos).toHaveLength(1);
+    expect(fake.sent[0].barcode).toBe("0044");
+    const row = await lookups.getById(lookup.id);
+    expect(row?.status).toBe("at-the-factory");
+    expect(row?.resentAt).toBeGreaterThan(0);
+    expect(row?.notBack).toBeUndefined();
+  });
+
+  it("after the second limit marks the lookup as not come back, and does not send it a third time", async () => {
+    const trip = await startTrip();
+    const lookup = await queueLookup(trip.id);
+    await seedSent(lookup.id);
+    const fake = fakeBackendClient();
+
+    makeRunner(fake.client, LIMITS);
+
+    await waitFor(async () => expect((await lookups.getById(lookup.id))?.notBack).toBe(true));
+    expect((await lookups.getById(lookup.id))?.status).toBe("at-the-factory");
+    await new Promise((r) => setTimeout(r, 250));
+    expect(fake.sent).toHaveLength(1);
+  });
+
+  it("still applies an answer that comes after the line said it did not come back", async () => {
+    const trip = await startTrip();
+    const lookup = await queueLookup(trip.id);
+    await seedSent(lookup.id);
+    const fake = fakeBackendClient();
+
+    makeRunner(fake.client, LIMITS);
+    await waitFor(async () => expect((await lookups.getById(lookup.id))?.notBack).toBe(true));
+
+    await waitFor(() => expect(fake.waiting.has(`direct:${lookup.id}`)).toBe(true));
+    fake.waiting.get(`direct:${lookup.id}`)!.resolve(answered(`direct:${lookup.id}`, goodAnswer));
+
+    await waitFor(async () => expect((await lookups.getById(lookup.id))?.status).toBe("applied"));
+    const row = await lookups.getById(lookup.id);
+    expect(row?.notBack).toBeUndefined();
+    const lines = await db.tripItems.where("tripId").equals(trip.id).toArray();
+    expect(lines.some((l) => l.pending)).toBe(false);
+  });
+
+  it("Try again sends a not-come-back lookup again, under the same request id", async () => {
+    const trip = await startTrip();
+    const lookup = await queueLookup(trip.id);
+    await seedSent(lookup.id);
+    const fake = fakeBackendClient();
+
+    const first = makeRunner(fake.client, LIMITS);
+    await waitFor(async () => expect((await lookups.getById(lookup.id))?.notBack).toBe(true));
+    expect(fake.sent).toHaveLength(1);
+
+    // the line's Try again; the runner is stopped meanwhile so the test can put the photo back
+    first.stop();
+    await lookups.retry(lookup.id);
+    expect((await lookups.getById(lookup.id))?.status).toBe("waiting-to-send");
+    const photo = new Blob(["package"], { type: "image/jpeg" }) as unknown as globalThis.Blob;
+    await db.pendingLookups.put({ ...(await lookups.getById(lookup.id))!, photos: [photo] });
+    makeRunner(fake.client, LIMITS);
+
+    await waitFor(() => expect(fake.sent).toHaveLength(2));
+    expect(fake.sent[1].clientId).toBe(lookup.id);
+    const row = await lookups.getById(lookup.id);
+    expect(row?.status).toBe("at-the-factory");
+    expect(row?.notBack).toBeUndefined();
+    expect(row?.resentAt).toBeUndefined();
+  });
+
+  it("counts the limit only while it can listen: a hidden page is not charged", async () => {
+    const trip = await startTrip();
+    const lookup = await queueLookup(trip.id);
+    await seedSent(lookup.id);
+    const fake = fakeBackendClient();
+
+    const runner = makeRunner(fake.client, LIMITS);
+    await waitFor(() => expect(fake.waiting.has(`direct:${lookup.id}`)).toBe(true));
+    runner.setVisible(false);
+    await new Promise((r) => setTimeout(r, 250));
+    expect(fake.sent).toHaveLength(0);
+
+    runner.setVisible(true);
+    await waitFor(() => expect(fake.sent).toHaveLength(1));
+  });
+
+  it("does not run the clock for a lookup the phone is still holding back (offline)", async () => {
+    const trip = await startTrip();
+    const lookup = await queueLookup(trip.id);
+    await seedSent(lookup.id, { createdAt: Date.now() - 60 * 60_000 });
+    const fake = fakeBackendClient();
+
+    const runner = makeRunner(fake.client, LIMITS);
+    runner.setOnline(false);
+    await new Promise((r) => setTimeout(r, 250));
+    expect(fake.sent).toHaveLength(0);
+    expect((await lookups.getById(lookup.id))?.resentAt).toBeUndefined();
+  });
+
+  it("marks a lookup failed when the factory refuses the second send", async () => {
+    const trip = await startTrip();
+    const lookup = await queueLookup(trip.id);
+    await seedSent(lookup.id);
+    const fake = fakeBackendClient();
+    fake.client.send = vi.fn(async () => {
+      const { door } = await import("bsv-kit/bsv");
+      throw new door.RefusedError("The backend refused the grist.", 400);
+    });
+
+    makeRunner(fake.client, LIMITS);
+
+    await waitFor(async () => expect((await lookups.getById(lookup.id))?.status).toBe("failed"));
+    expect((await lookups.getById(lookup.id))?.error).toBe("The backend refused the grist.");
   });
 });

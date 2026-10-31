@@ -173,7 +173,7 @@ export class PendingLookupRepository {
           quantity: pendingLine?.quantity ?? 1,
           onSale: false,
         });
-        await db.pendingLookups.update(id, { status: "applied", photos: [] });
+        await db.pendingLookups.update(id, { status: "applied", photos: [], notBack: undefined });
       },
     );
   }
@@ -224,7 +224,27 @@ export class PendingLookupRepository {
 
   /** The grist went out: the lookup is at the factory under its txid. */
   async markSent(id: string, gristTxid: string): Promise<void> {
-    await db.pendingLookups.update(id, { status: "at-the-factory", gristTxid, error: undefined });
+    await db.pendingLookups.update(id, {
+      status: "at-the-factory",
+      gristTxid,
+      resentAt: undefined,
+      notBack: undefined,
+      error: undefined,
+    });
+  }
+
+  /** Nothing came back, so the grist went out a second time (the backend names the same txid for the same request id). */
+  async markResent(id: string, gristTxid: string): Promise<void> {
+    const lookup = await db.pendingLookups.get(id);
+    if (!lookup || lookup.status !== "at-the-factory") return;
+    await db.pendingLookups.update(id, { gristTxid, resentAt: Date.now() });
+  }
+
+  /** Sent twice and still no answer: the line says so and offers Try again. */
+  async markNotBack(id: string): Promise<void> {
+    const lookup = await db.pendingLookups.get(id);
+    if (!lookup || lookup.status !== "at-the-factory") return;
+    await db.pendingLookups.update(id, { notBack: true });
   }
 
   /** The lookup will not be answered as it stands; the reason is shown with Retry. */
@@ -232,13 +252,19 @@ export class PendingLookupRepository {
     await db.pendingLookups.update(id, { status: "failed", error });
   }
 
-  /** Puts a failed lookup back in the queue to be sent afresh. */
+  /**
+   * Puts a failed lookup, or one that did not come back, in the queue to be sent afresh (Retry,
+   * Try again). It goes under the same request id, so the factory does not grind it twice.
+   */
   async retry(id: string): Promise<void> {
     const lookup = await db.pendingLookups.get(id);
-    if (!lookup || lookup.status !== "failed") return;
+    if (!lookup) return;
+    if (lookup.status !== "failed" && !(lookup.status === "at-the-factory" && lookup.notBack)) return;
     await db.pendingLookups.update(id, {
       status: "waiting-to-send",
       gristTxid: undefined,
+      resentAt: undefined,
+      notBack: undefined,
       answer: undefined,
       error: undefined,
     });
@@ -306,7 +332,12 @@ export class PendingLookupRepository {
             });
           }
         }
-        await db.pendingLookups.update(id, { status: "applied", photos: [], error: undefined });
+        await db.pendingLookups.update(id, {
+          status: "applied",
+          photos: [],
+          error: undefined,
+          notBack: undefined,
+        });
       },
     );
   }
@@ -358,6 +389,7 @@ export class PendingLookupRepository {
           status: "applied",
           photos: [],
           error: undefined,
+          notBack: undefined,
           noPrice: price === null || !item ? true : undefined,
         });
       },

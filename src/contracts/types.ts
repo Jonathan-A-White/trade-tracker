@@ -91,6 +91,10 @@ export interface PendingLookup {
   photos: Blob[];
   status: PendingLookupStatus;
   gristTxid?: string;
+  /** When the runner sent it a second time, having heard nothing; it sends a lookup again only once. */
+  resentAt?: number;
+  /** Sent twice and still no answer: the line says it did not come back and offers Try again. The runner goes on listening. */
+  notBack?: true;
   answer?: string;
   error?: string;
   /** A price-only lookup the factory answered without a price: nothing changed, and the shopper is told until they dismiss it. */

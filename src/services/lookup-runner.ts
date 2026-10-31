@@ -29,6 +29,20 @@ export interface LookupRunnerOptions {
   /** First wait after a network error, doubled for each failure in a row. */
   backoffBaseMs?: number;
   backoffMaxMs?: number;
+  /** How long a sent lookup may wait for its answer, with the phone able to listen, before it is sent once more. */
+  resendAfterMs?: number;
+  /** How long after that second send the line gives up and says the answer did not come back. */
+  giveUpAfterMs?: number;
+}
+
+/** Postern may hold a grist for minutes while the factory is busy, so the limits are generous. */
+const RESEND_AFTER_MS = 3 * 60_000;
+const GIVE_UP_AFTER_MS = 3 * 60_000;
+
+interface Waiter {
+  controller: AbortController;
+  /** The limit on this wait; none once the line has said the answer did not come back. */
+  limit: ReturnType<typeof setTimeout> | null;
 }
 
 const DEFAULT_REASON = "The factory could not read this one.";
@@ -44,17 +58,36 @@ async function toPhoto(blob: Blob): Promise<Photo> {
   return { bytes: new Uint8Array(await blob.arrayBuffer()), mime: blob.type };
 }
 
+/** The request for a lookup; always the same request id (the lookup's own), so a send repeated reaches the factory once. */
+async function requestOf(lookup: PendingLookup): Promise<LookupRequest> {
+  return {
+    barcode: lookup.barcode,
+    mode: lookup.mode ?? "new-item",
+    categories: [...GROCERY_CATEGORIES],
+    photos: await Promise.all(lookup.photos.map(toPhoto)),
+    clientId: lookup.id,
+  };
+}
+
 /**
  * Runs the lookup queue while the app is open: sends waiting lookups one at a
  * time (oldest first) and waits for the answer of each one at the factory, but
  * only while it has a client (the door is licensed), the device is online, and,
  * for the waiting, the page is visible. State lives in the stored lookups, so a
  * reload resumes from the stored status.
+ *
+ * A lookup waits for its answer at most `resendAfterMs` of listening before it is sent once more
+ * (under the same request id, so the factory grinds it once), and a further `giveUpAfterMs` before
+ * the line says it did not come back. The clock runs only while a wait is running: it starts again
+ * whenever the page was hidden, the device offline or the door shut. The runner goes on listening
+ * for a lookup that did not come back, so a late answer still fills its line.
  */
 export class LookupRunner {
   private readonly repo = new PendingLookupRepository();
   private readonly backoffBaseMs: number;
   private readonly backoffMaxMs: number;
+  private readonly resendAfterMs: number;
+  private readonly giveUpAfterMs: number;
   private client: LookupClient | null = null;
   private online = true;
   private visible = true;
@@ -65,13 +98,17 @@ export class LookupRunner {
   private failures = 0;
   private retryAt = 0;
   private retryTimer: ReturnType<typeof setTimeout> | null = null;
-  private readonly waiters = new Map<string, AbortController>();
+  private readonly waiters = new Map<string, Waiter>();
+  /** Lookups whose limit is being dealt with (sent again, or marked not come back): not waited on until that is done. */
+  private readonly atLimit = new Set<string>();
   private backingOff = false;
   private onBackoffChange: ((backingOff: boolean) => void) | null = null;
 
   constructor(options: LookupRunnerOptions = {}) {
     this.backoffBaseMs = options.backoffBaseMs ?? 5_000;
     this.backoffMaxMs = options.backoffMaxMs ?? 5 * 60_000;
+    this.resendAfterMs = options.resendAfterMs ?? RESEND_AFTER_MS;
+    this.giveUpAfterMs = options.giveUpAfterMs ?? GIVE_UP_AFTER_MS;
   }
 
   /** Begins watching the queue; safe to call once per runner. */
@@ -154,11 +191,8 @@ export class LookupRunner {
     const atFactory = new Set(
       lookups.filter((l) => l.status === "at-the-factory").map((l) => l.id),
     );
-    for (const [id, controller] of this.waiters) {
-      if (!atFactory.has(id) || !this.visible) {
-        controller.abort();
-        this.waiters.delete(id);
-      }
+    for (const id of [...this.waiters.keys()]) {
+      if (!atFactory.has(id) || !this.visible) this.dropWaiter(id);
     }
 
     // a timer can fire a hair before the clock says the backoff is over: wait out the rest
@@ -175,8 +209,8 @@ export class LookupRunner {
     if (this.visible && !this.stopped && Date.now() >= this.retryAt) {
       for (const lookup of lookups) {
         if (lookup.status !== "at-the-factory" || !lookup.gristTxid) continue;
-        if (this.waiters.has(lookup.id)) continue;
-        this.wait(client, lookup.id, lookup.gristTxid);
+        if (this.waiters.has(lookup.id) || this.atLimit.has(lookup.id)) continue;
+        this.wait(client, lookup);
       }
     }
   }
@@ -186,13 +220,7 @@ export class LookupRunner {
     try {
       // the list is a moment old: a lookup discarded or changed since is not sent
       if ((await this.repo.getById(lookup.id))?.status !== "waiting-to-send") return true;
-      const txid = await client.send({
-        barcode: lookup.barcode,
-        mode: lookup.mode ?? "new-item",
-        categories: [...GROCERY_CATEGORIES],
-        photos: await Promise.all(lookup.photos.map(toPhoto)),
-        clientId: lookup.id,
-      });
+      const txid = await client.send(await requestOf(lookup));
       await this.repo.markSent(lookup.id, txid);
       this.failures = 0;
       this.setBackingOff(false);
@@ -208,22 +236,72 @@ export class LookupRunner {
     }
   }
 
-  private wait(client: LookupClient, id: string, txid: string): void {
+  private wait(client: LookupClient, lookup: PendingLookup): void {
+    const { id } = lookup;
+    const txid = lookup.gristTxid!;
     const controller = new AbortController();
-    this.waiters.set(id, controller);
+    const limit = lookup.notBack
+      ? null
+      : setTimeout(
+          () => void this.pastLimit(client, id),
+          lookup.resentAt ? this.giveUpAfterMs : this.resendAfterMs,
+        );
+    const waiter: Waiter = { controller, limit };
+    this.waiters.set(id, waiter);
+    const forget = () => {
+      if (waiter.limit) clearTimeout(waiter.limit);
+      if (this.waiters.get(id) === waiter) this.waiters.delete(id);
+    };
     client.awaitAnswer(txid, controller.signal).then(
       async (record) => {
-        if (this.waiters.get(id) === controller) this.waiters.delete(id);
+        forget();
         this.failures = 0;
         this.setBackingOff(false);
         await this.settle(id, record);
       },
       (err: unknown) => {
-        if (this.waiters.get(id) === controller) this.waiters.delete(id);
+        forget();
         if (controller.signal.aborted || isAbort(err)) return;
         this.backOff();
       },
     );
+  }
+
+  /**
+   * The wait for an answer ran out: the first time the lookup is sent again, the second time the line
+   * says the answer did not come back. Listening goes on either way (the pass after this one starts it).
+   */
+  private async pastLimit(client: LookupClient, id: string): Promise<void> {
+    this.dropWaiter(id);
+    this.atLimit.add(id);
+    try {
+      const lookup = await this.repo.getById(id);
+      if (this.stopped || this.client !== client) return;
+      if (!lookup || lookup.status !== "at-the-factory" || lookup.notBack) return;
+      if (lookup.resentAt) {
+        await this.repo.markNotBack(id);
+        return;
+      }
+      const txid = await client.send(await requestOf(lookup));
+      await this.repo.markResent(id, txid);
+    } catch (err) {
+      if (err instanceof GristInputError || door.isPermanentRefusal(err)) {
+        await this.repo.markFailed(id, err.message || DEFAULT_REASON);
+      } else {
+        this.backOff();
+      }
+    } finally {
+      this.atLimit.delete(id);
+      this.kick();
+    }
+  }
+
+  private dropWaiter(id: string): void {
+    const waiter = this.waiters.get(id);
+    if (!waiter) return;
+    waiter.controller.abort();
+    if (waiter.limit) clearTimeout(waiter.limit);
+    this.waiters.delete(id);
   }
 
   private async settle(id: string, record: GristAnswer): Promise<void> {
@@ -247,8 +325,7 @@ export class LookupRunner {
   }
 
   private abortWaiters(): void {
-    for (const controller of this.waiters.values()) controller.abort();
-    this.waiters.clear();
+    for (const id of [...this.waiters.keys()]) this.dropWaiter(id);
   }
 
   /** Exponential backoff after a network error: the queue idles until the delay passes, then looks again. */
