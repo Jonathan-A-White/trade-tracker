@@ -2,23 +2,11 @@
   "$schema": "http://json-schema.org/draft-07/schema#",
   "$id": "sort-charge-answer-1.0",
   "title": "Sort Charge answer 1.0",
-  "description": "One category, or a split across categories, and a one-line why.",
+  "description": "One category, or a split across categories (give one of the two, never both), and a one-line why.",
   "type": "object",
   "additionalProperties": false,
   "required": [
     "why"
-  ],
-  "anyOf": [
-    {
-      "required": [
-        "category"
-      ]
-    },
-    {
-      "required": [
-        "split"
-      ]
-    }
   ],
   "properties": {
     "category": {
