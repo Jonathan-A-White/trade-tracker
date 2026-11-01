@@ -10,6 +10,9 @@ export const FORM_TALK_VERSION = "1.0";
 /** How many turns of the talk go back with each request. */
 export const MAX_HISTORY_TURNS = 6;
 
+/** How long one turn waits for the factory (send and answer together) before it gives up. */
+export const FORM_TALK_LIMIT_MS = 60_000;
+
 /** One turn of the talk: what he said and what the tutor asked. */
 export interface TalkTurn {
   q: string;
@@ -60,17 +63,44 @@ export function buildFormTalkRequest(
 }
 
 /**
- * The tutor over the factory: each turn is a form-talk grist, and its answer is waited for (the mill answers in a poll or two).
+ * The tutor over the factory: each turn is a form-talk grist, and its answer is waited for (the mill answers in a poll or two),
+ * but not for ever: after `limitMs` the turn ends in a FormTalkError and the wait is aborted, so the form door shows its Retry.
  * `licence` is read at each turn: the mill refuses to send or poll while it is not 'licensed'.
  */
-export function makeFormTalkAsk(backendUrl: string, key: Uint8Array, licence: () => MillLicence): FormTalkAsk {
+export function makeFormTalkAsk(
+  backendUrl: string,
+  key: Uint8Array,
+  licence: () => MillLicence,
+  limitMs: number = FORM_TALK_LIMIT_MS,
+): FormTalkAsk {
   const mill = openMill(backendUrl, key, licence);
   return async (request, signal) => {
-    const txid = await mill.send({ kind: FORM_TALK_KIND, v: FORM_TALK_VERSION, input: request });
-    const reply = await mill.awaitAnswer<FormTalkAnswer>(txid, signal);
-    if (reply.status !== "answered" || !reply.answer) {
-      throw new FormTalkError(reply.reason || "The factory could not answer this one.");
+    const turn = new AbortController();
+    const stopTurn = () => turn.abort();
+    if (signal?.aborted) throw new DOMException("Aborted", "AbortError");
+    signal?.addEventListener("abort", stopTurn, { once: true });
+    let timer: ReturnType<typeof setTimeout> | undefined;
+    const tooSlow = new Promise<never>((_resolve, reject) => {
+      timer = setTimeout(() => {
+        turn.abort();
+        reject(new FormTalkError("The factory did not answer in time."));
+      }, limitMs);
+    });
+    // A late rejection of the wait itself (the abort above) is not news once the limit has spoken.
+    const answered = (async () => {
+      const txid = await mill.send({ kind: FORM_TALK_KIND, v: FORM_TALK_VERSION, input: request });
+      return mill.awaitAnswer<FormTalkAnswer>(txid, turn.signal);
+    })();
+    answered.catch(() => undefined);
+    try {
+      const reply = await Promise.race([answered, tooSlow]);
+      if (reply.status !== "answered" || !reply.answer) {
+        throw new FormTalkError(reply.reason || "The factory could not answer this one.");
+      }
+      return reply.answer;
+    } finally {
+      clearTimeout(timer);
+      signal?.removeEventListener("abort", stopTurn);
     }
-    return reply.answer;
   };
 }

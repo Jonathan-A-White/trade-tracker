@@ -5,6 +5,7 @@ import { FORM_START } from "voice-kit/forms";
 import {
   FORM_TALK_KIND,
   FORM_TALK_VERSION,
+  FORM_TALK_LIMIT_MS,
   FormTalkError,
   MAX_HISTORY_TURNS,
   buildFormTalkRequest,
@@ -150,7 +151,7 @@ describe("makeFormTalkAsk", () => {
     const answer = await ask(request);
     expect(answer).toEqual({ answer: "What is it called?", form_ask: "name" });
     expect(send).toHaveBeenCalledWith({ kind: "form-talk", v: "1.0", input: request });
-    expect(awaitAnswer).toHaveBeenCalledWith("direct:abc", undefined);
+    expect(awaitAnswer).toHaveBeenCalledWith("direct:abc", expect.any(AbortSignal));
     expect(openMill).toHaveBeenCalledWith("https://backend.example", key, expect.any(Function));
   });
 
@@ -160,5 +161,86 @@ describe("makeFormTalkAsk", () => {
     const ask = makeFormTalkAsk("https://backend.example", key, () => "licensed");
     await expect(ask(request)).rejects.toThrow(FormTalkError);
     await expect(ask(request)).rejects.toThrow("Not licensed.");
+  });
+
+  describe("when the answer is slow", () => {
+    afterEach(() => {
+      vi.useRealTimers();
+    });
+
+    it("gives up after its limit with a FormTalkError, and stops waiting", async () => {
+      vi.useFakeTimers({ toFake: ["setTimeout", "clearTimeout"] });
+      send.mockResolvedValue("direct:abc");
+      let waitSignal: AbortSignal | undefined;
+      awaitAnswer.mockImplementation((_txid: string, signal?: AbortSignal) => {
+        waitSignal = signal;
+        return new Promise(() => {});
+      });
+      const ask = makeFormTalkAsk("https://backend.example", key, () => "licensed");
+      const outcome = ask(request).then(
+        () => "answered",
+        (err: unknown) => err,
+      );
+      await vi.advanceTimersByTimeAsync(FORM_TALK_LIMIT_MS - 1);
+      expect(waitSignal?.aborted).toBe(false);
+      await vi.advanceTimersByTimeAsync(1);
+      const err = await outcome;
+      expect(err).toBeInstanceOf(FormTalkError);
+      expect((err as Error).message).toMatch(/did not (answer|come back)/i);
+      expect(waitSignal?.aborted).toBe(true);
+      expect(vi.getTimerCount()).toBe(0);
+    });
+
+    it("gives up when the send itself never returns", async () => {
+      vi.useFakeTimers({ toFake: ["setTimeout", "clearTimeout"] });
+      send.mockReturnValue(new Promise(() => {}));
+      const ask = makeFormTalkAsk("https://backend.example", key, () => "licensed");
+      const outcome = ask(request).then(
+        () => "answered",
+        (err: unknown) => err,
+      );
+      await vi.advanceTimersByTimeAsync(FORM_TALK_LIMIT_MS);
+      expect(await outcome).toBeInstanceOf(FormTalkError);
+      expect(vi.getTimerCount()).toBe(0);
+    });
+
+    it("applies an answer that comes inside the limit and leaves no timer running", async () => {
+      vi.useFakeTimers({ toFake: ["setTimeout", "clearTimeout"] });
+      send.mockResolvedValue("direct:abc");
+      awaitAnswer.mockImplementation(
+        () =>
+          new Promise((resolve) =>
+            setTimeout(() => resolve({ status: "answered", answer: { answer: "What is it called?" } }), FORM_TALK_LIMIT_MS - 1_000),
+          ),
+      );
+      const ask = makeFormTalkAsk("https://backend.example", key, () => "licensed");
+      const outcome = ask(request);
+      await vi.advanceTimersByTimeAsync(FORM_TALK_LIMIT_MS - 1_000);
+      expect(await outcome).toEqual({ answer: "What is it called?" });
+      expect(vi.getTimerCount()).toBe(0);
+    });
+
+    it("stops at once when the caller aborts (the panel closed), and leaves no timer running", async () => {
+      vi.useFakeTimers({ toFake: ["setTimeout", "clearTimeout"] });
+      send.mockResolvedValue("direct:abc");
+      awaitAnswer.mockImplementation(
+        (_txid: string, signal?: AbortSignal) =>
+          new Promise((_resolve, reject) => {
+            signal?.addEventListener("abort", () => reject(new DOMException("Aborted", "AbortError")));
+          }),
+      );
+      const ask = makeFormTalkAsk("https://backend.example", key, () => "licensed");
+      const stop = new AbortController();
+      const outcome = ask(request, stop.signal).then(
+        () => "answered",
+        (err: unknown) => err,
+      );
+      await vi.advanceTimersByTimeAsync(5_000);
+      stop.abort();
+      const err = await outcome;
+      expect(err).not.toBeInstanceOf(FormTalkError);
+      expect((err as Error).name).toBe("AbortError");
+      expect(vi.getTimerCount()).toBe(0);
+    });
   });
 });
