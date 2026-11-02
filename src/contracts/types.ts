@@ -91,6 +91,8 @@ export interface PendingLookup {
   photos: Blob[];
   status: PendingLookupStatus;
   gristTxid?: string;
+  /** When the grist went out. The waits are read from this stored time, so closing the app does not restart them; absent on lookups sent before it was kept (their `createdAt` stands in). */
+  sentAt?: number;
   /** When the runner sent it a second time, having heard nothing; it sends a lookup again only once. */
   resentAt?: number;
   /** Sent twice and still no answer: the line says it did not come back and offers Try again. The runner goes on listening. */

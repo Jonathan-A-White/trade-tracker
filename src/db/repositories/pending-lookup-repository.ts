@@ -6,6 +6,7 @@ import type {
   CreatePendingLookupInput,
   TripItem,
 } from "../../contracts/types";
+import { lookupNotBack } from "../../core/lookup-wait";
 import { TripItemRepository } from "./trip-item-repository";
 
 const tripItemRepo = new TripItemRepository();
@@ -227,17 +228,26 @@ export class PendingLookupRepository {
     await db.pendingLookups.update(id, {
       status: "at-the-factory",
       gristTxid,
+      sentAt: Date.now(),
       resentAt: undefined,
       notBack: undefined,
       error: undefined,
     });
   }
 
-  /** Nothing came back, so the grist went out a second time (the backend names the same txid for the same request id). */
-  async markResent(id: string, gristTxid: string): Promise<void> {
+  /**
+   * Nothing came back, so the grist went out a second time (the backend names the same txid for the
+   * same request id). When both limits had already run out by the stored send time, the line says
+   * it did not come back in the same write, so it never goes back to waiting.
+   */
+  async markResent(id: string, gristTxid: string, notBack = false): Promise<void> {
     const lookup = await db.pendingLookups.get(id);
     if (!lookup || lookup.status !== "at-the-factory") return;
-    await db.pendingLookups.update(id, { gristTxid, resentAt: Date.now() });
+    await db.pendingLookups.update(id, {
+      gristTxid,
+      resentAt: Date.now(),
+      ...(notBack ? { notBack: true as const } : {}),
+    });
   }
 
   /** Sent twice and still no answer: the line says so and offers Try again. */
@@ -259,10 +269,11 @@ export class PendingLookupRepository {
   async retry(id: string): Promise<void> {
     const lookup = await db.pendingLookups.get(id);
     if (!lookup) return;
-    if (lookup.status !== "failed" && !(lookup.status === "at-the-factory" && lookup.notBack)) return;
+    if (lookup.status !== "failed" && !lookupNotBack(lookup, Date.now())) return;
     await db.pendingLookups.update(id, {
       status: "waiting-to-send",
       gristTxid: undefined,
+      sentAt: undefined,
       resentAt: undefined,
       notBack: undefined,
       answer: undefined,

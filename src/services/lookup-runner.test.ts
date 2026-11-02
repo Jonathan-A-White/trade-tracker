@@ -595,6 +595,8 @@ describe("LookupRunner a lookup the factory never answers", () => {
   }
 
   const LIMITS = { resendAfterMs: 80, giveUpAfterMs: 80 };
+  /** Limits too long for a timer to reach inside a test: only the stored times can show a lookup past them. */
+  const LONG = { resendAfterMs: 60_000, giveUpAfterMs: 60_000 };
 
   /**
    * A lookup the phone has already sent (and kept the photo of: Dexie's update, which markSent
@@ -608,6 +610,7 @@ describe("LookupRunner a lookup the factory never answers", () => {
       photos: [photo],
       status: "at-the-factory",
       gristTxid: `direct:${id}`,
+      sentAt: Date.now(),
       ...extra,
     });
   }
@@ -689,7 +692,7 @@ describe("LookupRunner a lookup the factory never answers", () => {
     expect(row?.resentAt).toBeUndefined();
   });
 
-  it("counts the limit only while it can listen: a hidden page is not charged", async () => {
+  it("a hidden page sends nothing, and the first look after it comes back sends the overdue lookup", async () => {
     const trip = await startTrip();
     const lookup = await queueLookup(trip.id);
     await seedSent(lookup.id);
@@ -716,6 +719,92 @@ describe("LookupRunner a lookup the factory never answers", () => {
     await new Promise((r) => setTimeout(r, 250));
     expect(fake.sent).toHaveLength(0);
     expect((await lookups.getById(lookup.id))?.resentAt).toBeUndefined();
+  });
+
+  it("reads the wait from the stored send time: reopening the app does not start it again", async () => {
+    const trip = await startTrip();
+    const lookup = await queueLookup(trip.id);
+    // sent 300 ms ago under a 400 ms limit; the first runner was closed before the limit
+    await seedSent(lookup.id, { sentAt: Date.now() - 300 });
+    const fake = fakeBackendClient();
+
+    const started = Date.now();
+    makeRunner(fake.client, { resendAfterMs: 400, giveUpAfterMs: 400 });
+
+    await waitFor(() => expect(fake.sent).toHaveLength(1), { timeout: 300 });
+    expect(Date.now() - started).toBeLessThan(350);
+  });
+
+  it("a lookup whose stored send time is long past both limits is sent once more and says it did not come back at once", async () => {
+    const trip = await startTrip();
+    const lookup = await queueLookup(trip.id);
+    await seedSent(lookup.id, { sentAt: Date.now() - 60 * 60_000 });
+    const fake = fakeBackendClient();
+
+    makeRunner(fake.client, LONG);
+
+    await waitFor(async () => expect((await lookups.getById(lookup.id))?.notBack).toBe(true));
+    const row = await lookups.getById(lookup.id);
+    expect(row?.resentAt).toBeGreaterThan(0);
+    expect(fake.sent).toHaveLength(1);
+    // the runner goes on listening for a late answer, and does not send a third time
+    await waitFor(() => expect(fake.waiting.has(`direct:${lookup.id}`)).toBe(true));
+    await new Promise((r) => setTimeout(r, 250));
+    expect(fake.sent).toHaveLength(1);
+  });
+
+  it("a lookup sent before the send time was kept is read from when it was made", async () => {
+    const trip = await startTrip();
+    const lookup = await queueLookup(trip.id);
+    await seedSent(lookup.id, { sentAt: undefined, createdAt: Date.now() - 60 * 60_000 });
+    const fake = fakeBackendClient();
+
+    makeRunner(fake.client, LONG);
+
+    await waitFor(async () => expect((await lookups.getById(lookup.id))?.notBack).toBe(true));
+  });
+
+  it("a lookup that was sent again, with the second limit long past, says it did not come back without a third send", async () => {
+    const trip = await startTrip();
+    const lookup = await queueLookup(trip.id);
+    await seedSent(lookup.id, {
+      sentAt: Date.now() - 60 * 60_000,
+      resentAt: Date.now() - 30 * 60_000,
+    });
+    const fake = fakeBackendClient();
+
+    makeRunner(fake.client, LONG);
+
+    await waitFor(async () => expect((await lookups.getById(lookup.id))?.notBack).toBe(true));
+    await new Promise((r) => setTimeout(r, 200));
+    expect(fake.sent).toHaveLength(0);
+  });
+
+  it("markSent keeps when the grist went out", async () => {
+    const trip = await startTrip();
+    const lookup = await queueLookup(trip.id);
+    const before = Date.now();
+    await lookups.markSent(lookup.id, "direct:x");
+    expect((await lookups.getById(lookup.id))?.sentAt).toBeGreaterThanOrEqual(before);
+  });
+
+  it("Try again works on a lookup whose limit passed by the stored time, though the flag was never set", async () => {
+    const trip = await startTrip();
+    const lookup = await queueLookup(trip.id);
+    await seedSent(lookup.id, { sentAt: Date.now() - 60 * 60_000 });
+    await lookups.retry(lookup.id);
+    const row = await lookups.getById(lookup.id);
+    expect(row?.status).toBe("waiting-to-send");
+    expect(row?.gristTxid).toBeUndefined();
+    expect(row?.sentAt).toBeUndefined();
+  });
+
+  it("Try again leaves a lookup still inside its limits alone", async () => {
+    const trip = await startTrip();
+    const lookup = await queueLookup(trip.id);
+    await seedSent(lookup.id);
+    await lookups.retry(lookup.id);
+    expect((await lookups.getById(lookup.id))?.status).toBe("at-the-factory");
   });
 
   it("marks a lookup failed when the factory refuses the second send", async () => {

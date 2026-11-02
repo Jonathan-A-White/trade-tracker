@@ -5,6 +5,7 @@ import type { GristAnswer, Photo } from "@/factory/mill";
 import type { LookupMode, PendingLookup } from "@/contracts/types";
 import { GROCERY_CATEGORIES } from "@/core/categories";
 import { PendingLookupRepository } from "@/db/repositories/pending-lookup-repository";
+import { GIVE_UP_AFTER_MS, RESEND_AFTER_MS, notBackAt, resendDueAt, type LookupWaitLimits } from "@/core/lookup-wait";
 import { parseItemAnswer } from "@/services/lookup-answer";
 
 /** What one lookup sends: the app's input (schemas/item-from-photos-input-1.0) plus its photos. */
@@ -29,15 +30,11 @@ export interface LookupRunnerOptions {
   /** First wait after a network error, doubled for each failure in a row. */
   backoffBaseMs?: number;
   backoffMaxMs?: number;
-  /** How long a sent lookup may wait for its answer, with the phone able to listen, before it is sent once more. */
+  /** How long after the stored send time a lookup may wait for its answer before it is sent once more. */
   resendAfterMs?: number;
   /** How long after that second send the line gives up and says the answer did not come back. */
   giveUpAfterMs?: number;
 }
-
-/** Postern may hold a grist for minutes while the factory is busy, so the limits are generous. */
-const RESEND_AFTER_MS = 3 * 60_000;
-const GIVE_UP_AFTER_MS = 3 * 60_000;
 
 interface Waiter {
   controller: AbortController;
@@ -76,11 +73,12 @@ async function requestOf(lookup: PendingLookup): Promise<LookupRequest> {
  * for the waiting, the page is visible. State lives in the stored lookups, so a
  * reload resumes from the stored status.
  *
- * A lookup waits for its answer at most `resendAfterMs` of listening before it is sent once more
- * (under the same request id, so the factory grinds it once), and a further `giveUpAfterMs` before
- * the line says it did not come back. The clock runs only while a wait is running: it starts again
- * whenever the page was hidden, the device offline or the door shut. The runner goes on listening
- * for a lookup that did not come back, so a late answer still fills its line.
+ * A lookup waits for its answer at most `resendAfterMs` after the send time stored on it before it
+ * is sent once more (under the same request id, so the factory grinds it once), and a further
+ * `giveUpAfterMs` before the line says it did not come back. The limits are read from the stored
+ * times (sentAt, resentAt), so closing the app, hiding the page or going offline does not restart
+ * them: a lookup found past both limits is sent once more and marked not come back in one write.
+ * The runner goes on listening for a lookup that did not come back, so a late answer still fills its line.
  */
 export class LookupRunner {
   private readonly repo = new PendingLookupRepository();
@@ -88,6 +86,7 @@ export class LookupRunner {
   private readonly backoffMaxMs: number;
   private readonly resendAfterMs: number;
   private readonly giveUpAfterMs: number;
+  private readonly limits: LookupWaitLimits;
   private client: LookupClient | null = null;
   private online = true;
   private visible = true;
@@ -109,6 +108,7 @@ export class LookupRunner {
     this.backoffMaxMs = options.backoffMaxMs ?? 5 * 60_000;
     this.resendAfterMs = options.resendAfterMs ?? RESEND_AFTER_MS;
     this.giveUpAfterMs = options.giveUpAfterMs ?? GIVE_UP_AFTER_MS;
+    this.limits = { resendAfterMs: this.resendAfterMs, giveUpAfterMs: this.giveUpAfterMs };
   }
 
   /** Begins watching the queue; safe to call once per runner. */
@@ -240,12 +240,10 @@ export class LookupRunner {
     const { id } = lookup;
     const txid = lookup.gristTxid!;
     const controller = new AbortController();
+    const due = lookup.resentAt !== undefined ? notBackAt(lookup, this.limits) : resendDueAt(lookup, this.limits);
     const limit = lookup.notBack
       ? null
-      : setTimeout(
-          () => void this.pastLimit(client, id),
-          lookup.resentAt ? this.giveUpAfterMs : this.resendAfterMs,
-        );
+      : setTimeout(() => void this.pastLimit(client, id), Math.max(0, due - Date.now()));
     const waiter: Waiter = { controller, limit };
     this.waiters.set(id, waiter);
     const forget = () => {
@@ -282,8 +280,11 @@ export class LookupRunner {
         await this.repo.markNotBack(id);
         return;
       }
+      // found past both limits (the app was closed while they ran out): one last send, and the line
+      // says so at once instead of waiting a second limit it has already had
+      const over = Date.now() >= notBackAt(lookup, this.limits);
       const txid = await client.send(await requestOf(lookup));
-      await this.repo.markResent(id, txid);
+      await this.repo.markResent(id, txid, over);
     } catch (err) {
       if (err instanceof GristInputError || door.isPermanentRefusal(err)) {
         await this.repo.markFailed(id, err.message || DEFAULT_REASON);
