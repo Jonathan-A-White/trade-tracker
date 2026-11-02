@@ -1,4 +1,4 @@
-import { render, screen } from "@testing-library/react";
+import { act, render, screen } from "@testing-library/react";
 import userEvent from "@testing-library/user-event";
 import { PendingLineRow } from "./pending-line-row";
 import type { PendingLookup } from "@/contracts/types";
@@ -85,8 +85,66 @@ describe("PendingLineRow when the factory did not send an answer back", () => {
   });
 
   it("a lookup still waiting has no Try again", () => {
-    render(<PendingLineRow lookup={lookup("at-the-factory")} onRetry={() => {}} />);
+    render(
+      <PendingLineRow
+        lookup={{ ...lookup("at-the-factory"), sentAt: Date.now() }}
+        onRetry={() => {}}
+      />,
+    );
     expect(screen.getByText("Waiting on the factory")).toBeInTheDocument();
     expect(screen.queryByRole("button", { name: "Try again" })).not.toBeInTheDocument();
+  });
+});
+
+describe("PendingLineRow reads the wait from the stored send time", () => {
+  const MIN = 60_000;
+  function sentAgo(minutes: number, extra: Partial<PendingLookup> = {}): PendingLookup {
+    return {
+      ...lookup("at-the-factory"),
+      gristTxid: "direct:x",
+      createdAt: Date.now() - minutes * MIN,
+      sentAt: Date.now() - minutes * MIN,
+      ...extra,
+    };
+  }
+
+  it("a lookup sent long ago says it did not come back on load, with Try again beside Fill by hand, though no flag was stored", async () => {
+    const user = userEvent.setup();
+    const onRetry = vi.fn();
+    render(<PendingLineRow lookup={sentAgo(45)} onRetry={onRetry} onFillByHand={() => {}} />);
+    expect(screen.getByText("The factory did not send this back")).toBeInTheDocument();
+    expect(screen.queryByText("Waiting on the factory")).not.toBeInTheDocument();
+    expect(screen.getByRole("button", { name: "Fill by hand" })).toBeInTheDocument();
+    await user.click(screen.getByRole("button", { name: "Try again" }));
+    expect(onRetry).toHaveBeenCalledWith("l1");
+  });
+
+  it("a lookup sent a minute ago is still waiting", () => {
+    render(<PendingLineRow lookup={sentAgo(1)} onRetry={() => {}} />);
+    expect(screen.getByText("Waiting on the factory")).toBeInTheDocument();
+  });
+
+  it("a lookup sent again a minute ago waits out the second limit from that send", () => {
+    render(<PendingLineRow lookup={sentAgo(45, { resentAt: Date.now() - MIN })} onRetry={() => {}} />);
+    expect(screen.getByText("Waiting on the factory")).toBeInTheDocument();
+  });
+
+  it("a lookup sent before the send time was kept falls back to when it was made", () => {
+    render(<PendingLineRow lookup={sentAgo(45, { sentAt: undefined })} onRetry={() => {}} />);
+    expect(screen.getByText("The factory did not send this back")).toBeInTheDocument();
+  });
+
+  it("flips to did-not-come-back by itself when the limit passes while the line is open", async () => {
+    vi.useFakeTimers({ toFake: ["setTimeout", "clearTimeout", "Date"] });
+    try {
+      render(<PendingLineRow lookup={sentAgo(5)} onRetry={() => {}} />);
+      expect(screen.getByText("Waiting on the factory")).toBeInTheDocument();
+      await act(async () => {
+        await vi.advanceTimersByTimeAsync(61_000);
+      });
+      expect(screen.getByText("The factory did not send this back")).toBeInTheDocument();
+    } finally {
+      vi.useRealTimers();
+    }
   });
 });

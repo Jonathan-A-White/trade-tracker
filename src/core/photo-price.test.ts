@@ -11,7 +11,8 @@ function lookup(extra: Partial<PendingLookup> = {}): PendingLookup {
     photos: [],
     status: "at-the-factory",
     gristTxid: "direct:x",
-    createdAt: 1,
+    createdAt: Date.now(),
+    sentAt: Date.now(),
     ...extra,
   };
 }
@@ -23,6 +24,14 @@ describe("priceLookupNote", () => {
 
   it("a lookup sent twice with no answer says it did not come back", () => {
     expect(priceLookupNote(lookup({ notBack: true }))).toEqual({
+      kind: "not-back",
+      text: "The factory did not send this back",
+    });
+  });
+
+  it("a lookup sent long ago says it did not come back, from the stored send time", () => {
+    const long = Date.now() - 45 * 60_000;
+    expect(priceLookupNote(lookup({ sentAt: long, createdAt: long }))).toEqual({
       kind: "not-back",
       text: "The factory did not send this back",
     });

@@ -1,6 +1,8 @@
 import { useEffect, useState } from "react";
 import type { PendingLookup } from "@/contracts/types";
 import { sendHoldText, useSendHold } from "@/factory/send-hold";
+import { lookupNotBack, notBackAt } from "@/core/lookup-wait";
+import { useNowAt } from "@/hooks/use-now-at";
 
 interface PendingLineRowProps {
   lookup: PendingLookup;
@@ -25,7 +27,7 @@ const STATE_TEXT: Record<PendingLookup["status"], string> = {
   failed: "The factory could not fill this in",
 };
 
-/** A lookup sent twice with no answer: the line says so rather than go on 'Waiting on the factory'. */
+/** A lookup sent twice with no answer, or past both limits by its stored send time: the line says so rather than go on 'Waiting on the factory'. */
 export const NOT_BACK_TEXT = "The factory did not send this back";
 
 function useThumbnailUrl(photo: Blob | undefined): string | undefined {
@@ -58,7 +60,11 @@ export function PendingLineRow({
 }: PendingLineRowProps) {
   const thumbnail = useThumbnailUrl(lookup.photos[0]);
   const hold = useSendHold();
-  const notBack = lookup.status === "at-the-factory" && lookup.notBack === true;
+  // read from the stored send time, so a line left open or closed past its limits says so
+  const now = useNowAt(
+    lookup.status === "at-the-factory" && !lookup.notBack ? [notBackAt(lookup)] : [],
+  );
+  const notBack = lookupNotBack(lookup, now);
   const stateText = notBack
     ? NOT_BACK_TEXT
     : lookup.status === "waiting-to-send" && hold
