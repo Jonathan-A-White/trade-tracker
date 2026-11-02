@@ -39,9 +39,13 @@ function answered(re: string, answer: unknown): Answer {
   return { re, status: "answered", answer, grind };
 }
 
-/** A grist client the test steers: sends are recorded, each wait is a promise the test settles. */
+/**
+ * A grist client the test steers: sends are recorded, each wait is a promise the test settles, and
+ * `onBackend` holds the answers a single read of the backend finds.
+ */
 function fakeClient() {
   const sent: LookupRequest[] = [];
+  const onBackend = new Map<string, Answer>();
   const waiting = new Map<
     string,
     { resolve: (a: Answer) => void; reject: (e: unknown) => void; signal: AbortSignal }
@@ -62,8 +66,9 @@ function fakeClient() {
         });
       });
     }),
+    findAnswer: vi.fn(async (txid: string) => onBackend.get(txid) ?? null),
   };
-  return { client, sent, waiting, waitCalls: () => waitCalls };
+  return { client, sent, waiting, onBackend, waitCalls: () => waitCalls };
 }
 
 async function startTrip() {
@@ -788,15 +793,51 @@ describe("LookupRunner a lookup the factory never answers", () => {
     expect((await lookups.getById(lookup.id))?.sentAt).toBeGreaterThanOrEqual(before);
   });
 
-  it("Try again works on a lookup whose limit passed by the stored time, though the flag was never set", async () => {
+  it("Try again leaves a lookup past its limits by the stored time alone until the runner has read the backend", async () => {
     const trip = await startTrip();
     const lookup = await queueLookup(trip.id);
     await seedSent(lookup.id, { sentAt: Date.now() - 60 * 60_000 });
     await lookups.retry(lookup.id);
+    expect((await lookups.getById(lookup.id))?.status).toBe("at-the-factory");
+  });
+
+  // mw-31qug1.19: on 10-31 the mill answered in seconds, the phone never picked the answers up, and the
+  // line said 'The factory did not send this back' from the stored send time while the answer sat there
+  it("a lookup found past both limits whose answer is on the backend is filled: not sent again, never said not come back", async () => {
+    const trip = await startTrip();
+    const lookup = await queueLookup(trip.id);
+    await seedSent(lookup.id, { sentAt: Date.now() - 2 * 24 * 60 * 60_000 });
+    const fake = fakeBackendClient();
+    fake.onBackend.set(`direct:${lookup.id}`, answered(`direct:${lookup.id}`, goodAnswer));
+    const seen: (true | undefined)[] = [];
+    const watch = setInterval(() => void lookups.getById(lookup.id).then((l) => seen.push(l?.notBack)), 5);
+
+    makeRunner(fake.client, LONG);
+
+    await waitFor(async () => expect((await lookups.getById(lookup.id))?.status).toBe("applied"));
+    clearInterval(watch);
+    expect(fake.sent).toHaveLength(0);
+    expect(seen).not.toContain(true);
+    expect(fake.client.findAnswer).toHaveBeenCalledWith(`direct:${lookup.id}`);
+  });
+
+  it("says nothing of a limit while the backend cannot be read, and sends nothing again", async () => {
+    const trip = await startTrip();
+    const lookup = await queueLookup(trip.id);
+    await seedSent(lookup.id, { sentAt: Date.now() - 60 * 60_000 });
+    const fake = fakeBackendClient();
+    fake.client.findAnswer = vi.fn(async () => {
+      throw new TypeError("Failed to fetch");
+    });
+
+    makeRunner(fake.client, LONG);
+
+    await waitFor(() => expect(fake.client.findAnswer).toHaveBeenCalled());
+    await new Promise((r) => setTimeout(r, 150));
     const row = await lookups.getById(lookup.id);
-    expect(row?.status).toBe("waiting-to-send");
-    expect(row?.gristTxid).toBeUndefined();
-    expect(row?.sentAt).toBeUndefined();
+    expect(row?.notBack).toBeUndefined();
+    expect(row?.resentAt).toBeUndefined();
+    expect(fake.sent).toHaveLength(0);
   });
 
   it("Try again leaves a lookup still inside its limits alone", async () => {

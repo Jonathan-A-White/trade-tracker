@@ -9,8 +9,6 @@ import { ItemForm } from "@/components/forms/item-form";
 import { ItemRepository } from "@/db/repositories/item-repository";
 import { PendingLookupRepository } from "@/db/repositories/pending-lookup-repository";
 import { photoPricePath, priceLookupNote } from "@/core/photo-price";
-import { notBackAt } from "@/core/lookup-wait";
-import { useNowAt } from "@/hooks/use-now-at";
 import type { UnitType } from "@/contracts/types";
 import { sendHoldText, useSendHold } from "@/factory/send-hold";
 
@@ -49,8 +47,7 @@ export function ItemDetailPage() {
     return lookups.filter((l) => l.itemId === id).at(-1);
   }, [id, activeTripId]);
   const hold = useSendHold();
-  const now = useNowAt(priceLookup && !priceLookup.notBack ? [notBackAt(priceLookup)] : []);
-  const note = priceLookupNote(priceLookup, hold ? sendHoldText(hold) : null, now);
+  const note = priceLookupNote(priceLookup, hold ? sendHoldText(hold) : null);
 
   const storeMap = new Map(stores?.map((s) => [s.id, s.name]) ?? []);
 

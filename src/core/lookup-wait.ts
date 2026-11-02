@@ -41,14 +41,10 @@ export function notBackAt(lookup: PendingLookup, limits: LookupWaitLimits = DEFA
 }
 
 /**
- * Whether a lookup at the factory has waited past its limits, by its stored times: true once the
- * runner has marked it so, and also when the app was closed while the limits ran out.
+ * Whether a lookup at the factory did not come back: only once the runner has marked it so, which it does
+ * after its limits ran out and a read of the backend found no answer. The stored times alone never say it:
+ * with the app closed nobody has looked, and the answer may be waiting to be fetched (mw-31qug1.19).
  */
-export function lookupNotBack(
-  lookup: PendingLookup,
-  now: number,
-  limits: LookupWaitLimits = DEFAULT_WAIT_LIMITS,
-): boolean {
-  if (lookup.status !== "at-the-factory") return false;
-  return lookup.notBack === true || now >= notBackAt(lookup, limits);
+export function lookupNotBack(lookup: PendingLookup): boolean {
+  return lookup.status === "at-the-factory" && lookup.notBack === true;
 }

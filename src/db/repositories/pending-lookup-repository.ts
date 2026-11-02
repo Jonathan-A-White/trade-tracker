@@ -269,7 +269,7 @@ export class PendingLookupRepository {
   async retry(id: string): Promise<void> {
     const lookup = await db.pendingLookups.get(id);
     if (!lookup) return;
-    if (lookup.status !== "failed" && !lookupNotBack(lookup, Date.now())) return;
+    if (lookup.status !== "failed" && !lookupNotBack(lookup)) return;
     await db.pendingLookups.update(id, {
       status: "waiting-to-send",
       gristTxid: undefined,

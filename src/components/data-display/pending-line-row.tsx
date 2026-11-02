@@ -1,8 +1,7 @@
 import { useEffect, useState } from "react";
 import type { PendingLookup } from "@/contracts/types";
 import { sendHoldText, useSendHold } from "@/factory/send-hold";
-import { lookupNotBack, notBackAt } from "@/core/lookup-wait";
-import { useNowAt } from "@/hooks/use-now-at";
+import { lookupNotBack } from "@/core/lookup-wait";
 
 interface PendingLineRowProps {
   lookup: PendingLookup;
@@ -60,11 +59,7 @@ export function PendingLineRow({
 }: PendingLineRowProps) {
   const thumbnail = useThumbnailUrl(lookup.photos[0]);
   const hold = useSendHold();
-  // read from the stored send time, so a line left open or closed past its limits says so
-  const now = useNowAt(
-    lookup.status === "at-the-factory" && !lookup.notBack ? [notBackAt(lookup)] : [],
-  );
-  const notBack = lookupNotBack(lookup, now);
+  const notBack = lookupNotBack(lookup);
   const stateText = notBack
     ? NOT_BACK_TEXT
     : lookup.status === "waiting-to-send" && hold

@@ -18,6 +18,7 @@ const sendMock = vi.fn(async () => "direct:tx1");
 const fakeClient: LookupClient = {
   send: sendMock,
   awaitAnswer: () => new Promise(() => {}),
+  findAnswer: async () => null,
 };
 vi.mock("@/services/lookup-client", async (importOriginal) => ({
   ...(await importOriginal<typeof import("@/services/lookup-client")>()),

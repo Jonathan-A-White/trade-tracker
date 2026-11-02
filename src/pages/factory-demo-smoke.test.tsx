@@ -67,6 +67,7 @@ function fakeClient() {
           });
         }),
     ),
+    findAnswer: async () => null,
   };
   const answer = (txid: string, body: unknown) =>
     waiting.get(txid)?.({ re: txid, status: "answered", answer: body, grind });

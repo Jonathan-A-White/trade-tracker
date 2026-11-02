@@ -24,6 +24,8 @@ export interface LookupClient {
   send(request: LookupRequest): Promise<string>;
   /** Polls (every 20 s) until the mill's answer arrives; rejects with an AbortError when the signal aborts. */
   awaitAnswer(txid: string, signal: AbortSignal): Promise<GristAnswer>;
+  /** Reads the backend once for the mill's answer: it, or null when the mill has sent none. */
+  findAnswer(txid: string): Promise<GristAnswer | null>;
 }
 
 export interface LookupRunnerOptions {
@@ -78,6 +80,8 @@ async function requestOf(lookup: PendingLookup): Promise<LookupRequest> {
  * `giveUpAfterMs` before the line says it did not come back. The limits are read from the stored
  * times (sentAt, resentAt), so closing the app, hiding the page or going offline does not restart
  * them: a lookup found past both limits is sent once more and marked not come back in one write.
+ * At each limit the backend is read first, and an answer already there fills the line: the line says
+ * the answer did not come back only once the backend has been read and holds none (mw-31qug1.19).
  * The runner goes on listening for a lookup that did not come back, so a late answer still fills its line.
  */
 export class LookupRunner {
@@ -266,8 +270,9 @@ export class LookupRunner {
   }
 
   /**
-   * The wait for an answer ran out: the first time the lookup is sent again, the second time the line
-   * says the answer did not come back. Listening goes on either way (the pass after this one starts it).
+   * The wait for an answer ran out: the backend is read once, and an answer there fills the line; with
+   * none, the first time the lookup is sent again, the second time the line says the answer did not come
+   * back. Listening goes on either way (the pass after this one starts it).
    */
   private async pastLimit(client: LookupClient, id: string): Promise<void> {
     this.dropWaiter(id);
@@ -275,7 +280,20 @@ export class LookupRunner {
     try {
       const lookup = await this.repo.getById(id);
       if (this.stopped || this.client !== client) return;
-      if (!lookup || lookup.status !== "at-the-factory" || lookup.notBack) return;
+      if (!lookup || lookup.status !== "at-the-factory" || lookup.notBack || !lookup.gristTxid) return;
+      let found: GristAnswer | null;
+      try {
+        found = await client.findAnswer(lookup.gristTxid);
+      } catch {
+        // the backend could not be read: nothing is said of the limit until it can be
+        this.backOff();
+        return;
+      }
+      if (this.stopped || this.client !== client) return;
+      if (found) {
+        await this.settle(id, found);
+        return;
+      }
       if (lookup.resentAt) {
         await this.repo.markNotBack(id);
         return;

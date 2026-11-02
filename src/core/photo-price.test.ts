@@ -29,11 +29,11 @@ describe("priceLookupNote", () => {
     });
   });
 
-  it("a lookup sent long ago says it did not come back, from the stored send time", () => {
+  it("a lookup sent long ago is still waiting until the runner has read the backend and found no answer (mw-31qug1.19)", () => {
     const long = Date.now() - 45 * 60_000;
     expect(priceLookupNote(lookup({ sentAt: long, createdAt: long }))).toEqual({
-      kind: "not-back",
-      text: "The factory did not send this back",
+      kind: "waiting",
+      text: "Waiting on the factory",
     });
   });
 });

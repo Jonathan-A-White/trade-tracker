@@ -22,13 +22,11 @@ export type PriceLookupNote =
 /**
  * `notSent` is why the phone is not sending (the text from sendHoldText), or null when nothing holds
  * it back: a lookup not yet sent says so instead of 'Waiting on the factory', which is only for one
- * the factory has. Whether the answer did not come back is read from the lookup's stored send time
- * against `now`.
+ * the factory has. The answer did not come back only once the runner has read the backend and found none.
  */
 export function priceLookupNote(
   lookup: PendingLookup | undefined,
   notSent: string | null = null,
-  now: number = Date.now(),
 ): PriceLookupNote | null {
   if (!lookup) return null;
   if (lookup.status === "failed") {
@@ -40,6 +38,6 @@ export function priceLookupNote(
   if (lookup.status === "waiting-to-send") {
     return { kind: "waiting", text: notSent ?? "Sending to the factory" };
   }
-  if (lookupNotBack(lookup, now)) return { kind: "not-back", text: "The factory did not send this back" };
+  if (lookupNotBack(lookup)) return { kind: "not-back", text: "The factory did not send this back" };
   return { kind: "waiting", text: "Waiting on the factory" };
 }

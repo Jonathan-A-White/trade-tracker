@@ -33,17 +33,17 @@ describe("lookup wait, read from stored times", () => {
     expect(notBackAt(lookup({ resentAt: 5000 }), LIMITS)).toBe(5500);
   });
 
-  it("is not come back at its time, and before it is not", () => {
-    expect(lookupNotBack(lookup(), 2499, LIMITS)).toBe(false);
-    expect(lookupNotBack(lookup(), 2500, LIMITS)).toBe(true);
+  it("is not come back by its stored times alone: nobody has read the backend for its answer (mw-31qug1.19)", () => {
+    expect(lookupNotBack(lookup())).toBe(false);
+    expect(lookupNotBack(lookup({ resentAt: 1500 }))).toBe(false);
   });
 
-  it("is come back whenever the runner marked it", () => {
-    expect(lookupNotBack(lookup({ notBack: true }), 1001, LIMITS)).toBe(true);
+  it("is not come back once the runner marked it so, having read the backend and found no answer", () => {
+    expect(lookupNotBack(lookup({ notBack: true }))).toBe(true);
   });
 
   it("only a lookup at the factory can be not come back", () => {
-    expect(lookupNotBack(lookup({ status: "waiting-to-send" }), 1e9, LIMITS)).toBe(false);
-    expect(lookupNotBack(lookup({ status: "failed" }), 1e9, LIMITS)).toBe(false);
+    expect(lookupNotBack(lookup({ status: "waiting-to-send", notBack: true }))).toBe(false);
+    expect(lookupNotBack(lookup({ status: "failed", notBack: true }))).toBe(false);
   });
 });

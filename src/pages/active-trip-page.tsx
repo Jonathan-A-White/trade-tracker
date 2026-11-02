@@ -10,8 +10,6 @@ import { countGuessedPrices } from "@/core/pricing";
 import { countsTowardTotal } from "@/core/trip-totals";
 import { useTripLines } from "@/trips/use-trip-lines";
 import { photoPricePath, priceLookupNote } from "@/core/photo-price";
-import { notBackAt } from "@/core/lookup-wait";
-import { useNowAt } from "@/hooks/use-now-at";
 import { sendHoldText, useSendHold } from "@/factory/send-hold";
 import { PageHeader } from "@/components/layout/page-header";
 import { TripItemRow } from "@/components/data-display/trip-item-row";
@@ -74,12 +72,6 @@ export default function ActiveTripPage() {
   } = useTripLines(trip?.id);
   const sendHold = useSendHold();
   const notSent = sendHold ? sendHoldText(sendHold) : null;
-  // a price lookup past its limits by its stored send time says so, open page or not
-  const now = useNowAt(
-    Object.values(priceLookups)
-      .filter((l) => !l.notBack)
-      .map((l) => notBackAt(l)),
-  );
   const storeName = store?.name ?? (trip && !loading ? "Unknown Store" : undefined);
 
   const elapsed = useElapsedTime(trip?.startedAt);
@@ -360,7 +352,7 @@ export default function ActiveTripPage() {
                   onEditQuantity={handleEditQuantity}
                   onRemove={handleRemove}
                   onClearPriceFlag={handleClearPriceFlag}
-                  priceLookupNote={priceLookupNote(priceLookups[ti.itemId], notSent, now)}
+                  priceLookupNote={priceLookupNote(priceLookups[ti.itemId], notSent)}
                   onPhotoPrice={
                     item ? () => navigate(photoPricePath(item)) : undefined
                   }

@@ -63,5 +63,6 @@ export function makeLookupClient(
         clientId: request.clientId,
       }),
     awaitAnswer: (txid, signal) => mill.awaitAnswer(txid, signal),
+    findAnswer: (txid) => mill.findAnswer(txid),
   };
 }
