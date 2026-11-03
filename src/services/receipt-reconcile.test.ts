@@ -7,6 +7,7 @@ import type { GristAnswer } from "@/factory/mill";
 import {
   addReceiptLineAsItem,
   applyReceiptAnswer,
+  settleReceipt,
   buildReceiptRequest,
   reconcileReceipt,
 } from "./receipt-reconcile";
@@ -429,5 +430,139 @@ describe("reconcileReceipt", () => {
     const outcome = await reconcileReceipt(client, request, [], { timeoutMs: 20 });
     expect(outcome).toMatchObject({ ok: false });
     expect(!outcome.ok && outcome.error).toContain("did not answer in time");
+  });
+});
+
+describe("settleReceipt: trip lines filled in after the receipt was sent", () => {
+  beforeEach(async () => {
+    await Promise.all(db.tables.map((table) => table.clear()));
+  });
+
+  /**
+   * His 2026-10-30 trip: the receipt went out while most lines were still pending factory
+   * lookups, which the request leaves out. The lookups then landed (a guessed price each), so the
+   * grist could not have matched them and every one came back 'Not matched'.
+   */
+  async function sentWhileLookupsPending(lateLines: Array<[string, number]>) {
+    const trip = await seedTrip();
+    const bananas = await addLine(trip.id, "0001", "Bananas", 1.07, 1);
+    const late: Record<string, { itemId: string; lineId: string }> = {};
+    for (const [index, [name, price]] of lateLines.entries()) {
+      const { item, line } = await addLine(trip.id, `10${index}`, name, price, 1);
+      await tripItemRepo.update(line.id, { guess: { basis: "The factory's estimate." } });
+      late[name] = { itemId: item.id, lineId: line.id };
+    }
+    await db.trips.update(trip.id, {
+      receiptPending: {
+        txid: "direct:tx1",
+        sentAt: Date.now(),
+        request: { store: "Trader Joe's", lines: [[bananas.line.id, "Bananas", 1.07, 1, null]] },
+      },
+    });
+    return { trip, bananas, late };
+  }
+
+  function record(lines: ReceiptReconcileAnswerLine[]): GristAnswer {
+    return { status: "answered", answer: answer(lines, 20), reason: null } as unknown as GristAnswer;
+  }
+
+  it("matches HOL VANILLA SUGAR to Trader Joe's Vanilla Sugar and replaces the guessed price", async () => {
+    const { trip, bananas, late } = await sentWhileLookupsPending([
+      ["Trader Joe's Vanilla Sugar", 2.99],
+      ["Trader Joe's Maple & Brown Sugar Instant Oatmeal", 2.99],
+    ]);
+
+    await settleReceipt(
+      trip.id,
+      "direct:tx1",
+      record([
+        receiptLine(bananas.line.id, 1.07, { text: "BANANAS" }),
+        receiptLine(null, 3.99, { text: "HOL VANILLA SUGAR" }),
+      ]),
+    );
+
+    const kept = (await db.trips.get(trip.id))?.receiptReconcile;
+    expect(kept?.unmatched).toHaveLength(0);
+    const sugar = late["Trader Joe's Vanilla Sugar"];
+    expect(kept?.matchedTripItemIds).toContain(sugar.lineId);
+    const saved = await db.tripItems.get(sugar.lineId);
+    expect(saved?.price).toBe(3.99);
+    expect(saved?.guess).toBeUndefined();
+    expect(kept?.changes.find((change) => change.tripItemId === sugar.lineId)).toMatchObject({
+      oldPrice: 2.99,
+      newPrice: 3.99,
+      wasGuess: true,
+    });
+    // the other guessed line is untouched
+    const oatmeal = late["Trader Joe's Maple & Brown Sugar Instant Oatmeal"];
+    expect((await db.tripItems.get(oatmeal.lineId))?.price).toBe(2.99);
+  });
+
+  it("matches each Skyr flavour to its own line, with the receipt's count", async () => {
+    const { trip, late } = await sentWhileLookupsPending([
+      ["Trader Joe's Icelandic Style Skyr Lowfat Yogurt Cherry", 1.19],
+      ["Trader Joe's Icelandic Style Skyr Lowfat Yogurt Vanilla", 1.19],
+    ]);
+
+    await settleReceipt(
+      trip.id,
+      "direct:tx1",
+      record([
+        receiptLine(null, 2.38, { text: "YOGURT SKYR CHERRY 5.3 O", quantity: 2 }),
+        receiptLine(null, 2.38, { text: "YOGURT SKYR VANILLA 5.3", quantity: 2 }),
+      ]),
+    );
+
+    const kept = (await db.trips.get(trip.id))?.receiptReconcile;
+    expect(kept?.unmatched).toHaveLength(0);
+    const cherry = late["Trader Joe's Icelandic Style Skyr Lowfat Yogurt Cherry"];
+    const vanilla = late["Trader Joe's Icelandic Style Skyr Lowfat Yogurt Vanilla"];
+    expect(kept?.matchedTripItemIds).toEqual(expect.arrayContaining([cherry.lineId, vanilla.lineId]));
+    expect((await db.tripItems.get(cherry.lineId))?.quantity).toBe(2);
+  });
+
+  it("still asks when two late lines fit a receipt line equally (two Skyr yogurts)", async () => {
+    const { trip, late } = await sentWhileLookupsPending([
+      ["Trader Joe's Icelandic Style Skyr Lowfat Yogurt Cherry", 1.19],
+      ["Trader Joe's Icelandic Style Skyr Lowfat Yogurt Vanilla", 1.19],
+    ]);
+
+    await settleReceipt(
+      trip.id,
+      "direct:tx1",
+      record([receiptLine(null, 1.19, { text: "YOGURT SKYR 5.3 OZ" })]),
+    );
+
+    const kept = (await db.trips.get(trip.id))?.receiptReconcile;
+    expect(kept?.unmatched.map((line) => line.text)).toEqual(["YOGURT SKYR 5.3 OZ"]);
+    for (const { lineId } of Object.values(late)) {
+      expect((await db.tripItems.get(lineId))?.price).toBe(1.19);
+    }
+  });
+
+  it("does not match a line the grist saw and left unmatched", async () => {
+    const { trip, bananas } = await sentWhileLookupsPending([]);
+    const { line: seen } = await addLine(trip.id, "0777", "Organic Bananas Bunch", 1.5, 1);
+    await db.trips.update(trip.id, {
+      receiptPending: {
+        txid: "direct:tx1",
+        sentAt: Date.now(),
+        request: {
+          store: "Trader Joe's",
+          lines: [
+            [bananas.line.id, "Bananas", 1.07, 1, null],
+            [seen.id, "Organic Bananas Bunch", 1.5, 1, null],
+          ],
+        },
+      },
+    });
+
+    await settleReceipt(
+      trip.id,
+      "direct:tx1",
+      record([receiptLine(null, 2.32, { text: "BANANA ORG EACH" })]),
+    );
+
+    expect((await db.trips.get(trip.id))?.receiptReconcile?.unmatched).toHaveLength(1);
   });
 });

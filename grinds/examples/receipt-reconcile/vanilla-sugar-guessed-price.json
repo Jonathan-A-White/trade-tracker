@@ -1,0 +1,29 @@
+{
+  "description": "A receipt prints HOL VANILLA SUGAR at $3.99; the trip has Trader Joe's Vanilla Sugar at $2.99, a price the shopper only guessed: the name fits and nothing else on the trip does, so the line matches and the receipt's $3.99 is reported.",
+  "schemaVersion": "2.0",
+  "request": {
+    "store": "Trader Joe's",
+    "lines": [
+      ["ti-vsugar", "Trader Joe's Vanilla Sugar", 2.99, 1, null],
+      ["ti-bananas", "Bananas", 1.07, 1, null],
+      ["ti-spinach", "Organic Baby Spinach", 3.29, 1, null],
+      ["ti-salted", "Salted Butter", 3.49, 1, null],
+      ["ti-unsalted", "Unsalted Butter", 3.49, 1, null],
+      ["ti-honey", "Honey Greek Yogurt", 4.49, 1, null]
+    ]
+  },
+  "photos": [
+    "vanilla-sugar-receipt.jpg"
+  ],
+  "expect": {
+    "lines.0.tripItemId": {
+      "equals": "ti-vsugar"
+    },
+    "lines.0.price": {
+      "equals": 3.99
+    },
+    "total": {
+      "equals": 15.33
+    }
+  }
+}

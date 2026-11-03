@@ -15,6 +15,7 @@ import type {
   TripItem,
 } from "@/contracts/types";
 import { parseReceiptAnswer } from "@/services/receipt-answer";
+import { matchByName } from "@/core/receipt-name-match";
 
 /** The grind the receipt reconcile runs: grinds/receipt-reconcile.json, version 2.0 of its input (the compact rows), 1.0 of its answer. */
 export const RECEIPT_KIND = "receipt-reconcile";
@@ -251,7 +252,9 @@ export async function settleReceipt(
     return;
   }
   try {
-    const applied = await applyReceiptAnswer(tripId, parsed.answer);
+    const applied = await applyReceiptAnswer(tripId, parsed.answer, {
+      sentLineIds: new Set(pending.request.lines.map((row) => row[0])),
+    });
     if (applied.total !== null && (await db.trips.get(tripId))?.status === "completed") {
       await db.trips.update(tripId, { actualTotal: applied.total, updatedAt: Date.now() });
     }
@@ -403,17 +406,52 @@ async function foldRepeatedLines(
 }
 
 /**
+ * A trip line the receipt request did not carry (a lookup still pending when it went out, filled
+ * in since) could not be matched by the factory. A receipt line left unmatched whose printed name
+ * fits exactly one such line (and no other receipt line claims that line) is given that line, so
+ * its price replaces the line's guess. Lines the factory saw are left as it answered. Must be
+ * called inside a read transaction over tripItems and items.
+ */
+async function matchLinesNotSent(
+  tripId: string,
+  lines: ReceiptReconcileAnswerLine[],
+  sentLineIds: ReadonlySet<string>,
+): Promise<ReceiptReconcileAnswerLine[]> {
+  const taken = new Set(lines.flatMap((line) => (line.tripItemId ? [line.tripItemId] : [])));
+  const candidates: Array<{ id: string; name: string }> = [];
+  for (const line of await db.tripItems.where("tripId").equals(tripId).toArray()) {
+    if (line.pending || sentLineIds.has(line.id) || taken.has(line.id)) continue;
+    const item = await db.items.get(line.itemId);
+    if (item) candidates.push({ id: line.id, name: item.name });
+  }
+  if (candidates.length === 0) return lines;
+
+  const picks = lines.map((line) =>
+    line.tripItemId === null ? matchByName(line.text, candidates) : null,
+  );
+  return lines.map((line, index) => {
+    const pick = picks[index];
+    // two receipt lines picking the same trip line: neither is sure
+    return pick !== null && picks.filter((other) => other === pick).length === 1
+      ? { ...line, tripItemId: pick }
+      : line;
+  });
+}
+
+/**
  * Applies a checked receipt answer to the trip, in one transaction. For each
  * receipt line matched to one of the trip's lines whose price (or count, or a
  * per-pound weight) differs, the trip line takes the receipt's figures and,
  * when the unit price moved, the item's currentPrice and one priceHistory entry
  * follow. The receipt's line price is for the whole line, so the unit price is
  * the line price over the weight (a per-pound line with a weight) or the count.
- * Barcode, name and category are never touched.
+ * Barcode, name and category are never touched. With `sentLineIds` (the trip lines the request
+ * carried), unmatched receipt lines are also matched by name to the trip lines it did not.
  */
 export async function applyReceiptAnswer(
   tripId: string,
   answer: ReceiptReconcileAnswer,
+  options: { sentLineIds?: ReadonlySet<string> } = {},
 ): Promise<ReceiptApplyResult> {
   const changes: ReceiptChange[] = [];
   const unmatched: ReceiptReconcileAnswerLine[] = [];
@@ -423,7 +461,10 @@ export async function applyReceiptAnswer(
     const now = Date.now();
     const claimed = new Set<string>();
 
-    const lines = await foldRepeatedLines(tripId, answer.lines);
+    const named = options.sentLineIds
+      ? await matchLinesNotSent(tripId, answer.lines, options.sentLineIds)
+      : answer.lines;
+    const lines = await foldRepeatedLines(tripId, named);
     for (const receiptLine of lines) {
       const line = receiptLine.tripItemId
         ? await db.tripItems.get(receiptLine.tripItemId)

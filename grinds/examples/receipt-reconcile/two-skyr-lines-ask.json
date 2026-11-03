@@ -1,0 +1,26 @@
+{
+  "description": "A receipt prints SKYR YOGURT once at $1.49; the trip has two Skyr yogurts of different flavours at that price: the receipt line does not say which, so it stays unmatched for the shopper to place, while Bananas still matches.",
+  "schemaVersion": "2.0",
+  "request": {
+    "store": "Trader Joe's",
+    "lines": [
+      ["ti-skyr-vanilla", "Skyr Yogurt Vanilla", 1.49, 1, null],
+      ["ti-skyr-strawberry", "Skyr Yogurt Strawberry", 1.49, 1, null],
+      ["ti-bananas", "Bananas", 1.07, 1, null]
+    ]
+  },
+  "photos": [
+    "skyr-receipt.jpg"
+  ],
+  "expect": {
+    "lines.0.tripItemId": {
+      "is_null": true
+    },
+    "lines.1.tripItemId": {
+      "equals": "ti-bananas"
+    },
+    "total": {
+      "equals": 2.56
+    }
+  }
+}
