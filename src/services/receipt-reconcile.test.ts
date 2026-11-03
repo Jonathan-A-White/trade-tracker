@@ -8,6 +8,7 @@ import {
   addReceiptLineAsItem,
   applyReceiptAnswer,
   settleReceipt,
+  matchLateReceiptLines,
   buildReceiptRequest,
   reconcileReceipt,
 } from "./receipt-reconcile";
@@ -564,5 +565,97 @@ describe("settleReceipt: trip lines filled in after the receipt was sent", () =>
     );
 
     expect((await db.trips.get(trip.id))?.receiptReconcile?.unmatched).toHaveLength(1);
+  });
+});
+
+describe("matchLateReceiptLines", () => {
+  beforeEach(async () => {
+    await Promise.all(db.tables.map((table) => table.clear()));
+  });
+
+  /** A receipt answered while two Skyr lines were pending; both are filled by the time it is asked. */
+  async function answeredWithTwoFilled() {
+    const trip = await seedTrip();
+    const { line: cherry } = await addLine(
+      trip.id,
+      "201",
+      "Trader Joe's Icelandic Style Skyr Lowfat Yogurt Cherry",
+      1.19,
+      1,
+    );
+    const { line: vanilla } = await addLine(
+      trip.id,
+      "202",
+      "Trader Joe's Icelandic Style Skyr Lowfat Yogurt Vanilla",
+      1.19,
+      1,
+    );
+    await db.trips.update(trip.id, {
+      receiptReconcile: {
+        changes: [],
+        unmatched: [receiptLine(null, 1.29, { text: "YOGURT SKYR 5.3 OZ" })],
+        added: [],
+        matchedTripItemIds: [],
+        stillAtFactoryIds: [cherry.id, vanilla.id],
+        total: 20,
+        unreadable: null,
+      },
+    });
+    return { trip, cherry, vanilla };
+  }
+
+  it("asks, and changes nothing, when two filled lines fit a receipt line equally", async () => {
+    const { trip, cherry, vanilla } = await answeredWithTwoFilled();
+
+    expect(await matchLateReceiptLines(trip.id)).toBe(0);
+
+    expect((await db.trips.get(trip.id))?.receiptReconcile?.unmatched).toHaveLength(1);
+    expect((await db.tripItems.get(cherry.id))?.price).toBe(1.19);
+    expect((await db.tripItems.get(vanilla.id))?.price).toBe(1.19);
+  });
+
+  it("skips a line already matched, and one still pending", async () => {
+    const { trip, cherry, vanilla } = await answeredWithTwoFilled();
+    await db.trips.update(trip.id, (t) => {
+      t.receiptReconcile!.matchedTripItemIds = [cherry.id];
+    });
+    await db.tripItems.update(vanilla.id, { pending: true });
+
+    expect(await matchLateReceiptLines(trip.id)).toBe(0);
+    expect((await db.tripItems.get(cherry.id))?.price).toBe(1.19);
+  });
+
+  it("does nothing for a receipt answered with no line at the factory", async () => {
+    const trip = await seedTrip();
+    await db.trips.update(trip.id, {
+      receiptReconcile: {
+        changes: [],
+        unmatched: [receiptLine(null, 1)],
+        added: [],
+        matchedTripItemIds: [],
+        total: null,
+        unreadable: null,
+      },
+    });
+    expect(await matchLateReceiptLines(trip.id)).toBe(0);
+  });
+});
+
+describe("applyReceiptAnswer: lines still at the factory", () => {
+  beforeEach(async () => {
+    await Promise.all(db.tables.map((table) => table.clear()));
+  });
+
+  it("records the trip lines still pending when the answer applied", async () => {
+    const trip = await seedTrip();
+    const { line: pendingLine } = await addLine(trip.id, "301", "Pending thing", 0, 1);
+    await tripItemRepo.update(pendingLine.id, { pending: true });
+    const { line: sent } = await addLine(trip.id, "302", "Milk", 3.99, 1);
+
+    await applyReceiptAnswer(trip.id, answer([receiptLine(sent.id, 3.99)]), {
+      sentLineIds: new Set([sent.id]),
+    });
+
+    expect((await db.trips.get(trip.id))?.receiptReconcile?.stillAtFactoryIds).toEqual([pendingLine.id]);
   });
 });

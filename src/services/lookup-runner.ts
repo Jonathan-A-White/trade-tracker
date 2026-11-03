@@ -7,6 +7,7 @@ import { GROCERY_CATEGORIES } from "@/core/categories";
 import { PendingLookupRepository } from "@/db/repositories/pending-lookup-repository";
 import { GIVE_UP_AFTER_MS, RESEND_AFTER_MS, notBackAt, resendDueAt, type LookupWaitLimits } from "@/core/lookup-wait";
 import { parseItemAnswer } from "@/services/lookup-answer";
+import { matchLateReceiptLines } from "@/services/receipt-reconcile";
 
 /** What one lookup sends: the app's input (schemas/item-from-photos-input-1.0) plus its photos. */
 export interface LookupRequest {
@@ -323,6 +324,16 @@ export class LookupRunner {
     this.waiters.delete(id);
   }
 
+  /** A lookup that landed after the receipt's answer gets its chance to match a receipt line left over. */
+  private async matchLateReceipt(id: string): Promise<void> {
+    try {
+      const lookup = await this.repo.getById(id);
+      if (lookup && lookup.mode !== "price-only") await matchLateReceiptLines(lookup.tripId);
+    } catch (err) {
+      console.error("Failed to match the receipt to a lookup that landed:", err);
+    }
+  }
+
   private async settle(id: string, record: GristAnswer): Promise<void> {
     try {
       if (record.status !== "answered") {
@@ -340,7 +351,9 @@ export class LookupRunner {
         id,
         err instanceof Error && err.message ? err.message : DEFAULT_REASON,
       );
+      return;
     }
+    await this.matchLateReceipt(id);
   }
 
   private abortWaiters(): void {

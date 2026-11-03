@@ -483,12 +483,16 @@ export async function applyReceiptAnswer(
       if (change) changes.push(change);
     }
 
+    const stillAtFactory = (await db.tripItems.where("tripId").equals(tripId).toArray())
+      .filter((line) => line.pending && !options.sentLineIds?.has(line.id))
+      .map((line) => line.id);
     await db.trips.update(tripId, {
       receiptReconcile: {
         changes,
         unmatched,
         added: [],
         matchedTripItemIds: [...claimed],
+        ...(stillAtFactory.length > 0 ? { stillAtFactoryIds: stillAtFactory } : {}),
         total: answer.total,
         unreadable: answer.unreadable,
       },
@@ -500,6 +504,62 @@ export async function applyReceiptAnswer(
 }
 
 const RECEIPT_TABLES = [db.tripItems, db.trips, db.items, db.priceHistory];
+
+/**
+ * A lookup has landed on a trip whose receipt was answered while the lookup was still at the
+ * factory: the receipt lines left unmatched are tried against the lines that were pending then and
+ * are filled now. The same rule as when the lookup lands first: a receipt line takes a trip line
+ * only when its printed name fits exactly that one line and no other receipt line fits it too, and
+ * a line already matched (by the factory, by name or by hand) is not touched. Returns how many
+ * receipt lines were placed.
+ */
+export async function matchLateReceiptLines(tripId: string): Promise<number> {
+  return db.transaction("rw", RECEIPT_TABLES, async () => {
+    const trip = await db.trips.get(tripId);
+    const record = trip?.receiptReconcile;
+    if (!trip || !record?.stillAtFactoryIds || record.unmatched.length === 0) return 0;
+
+    const candidates: Array<{ id: string; name: string }> = [];
+    for (const id of record.stillAtFactoryIds) {
+      if (record.matchedTripItemIds.includes(id)) continue;
+      const line = await db.tripItems.get(id);
+      if (!line || line.tripId !== tripId || line.pending) continue;
+      const item = await db.items.get(line.itemId);
+      if (item) candidates.push({ id, name: item.name });
+    }
+    if (candidates.length === 0) return 0;
+
+    const picks = record.unmatched.map((line) =>
+      line.tripItemId === null ? matchByName(line.text, candidates) : null,
+    );
+    const now = Date.now();
+    const changes = [...record.changes];
+    const matched = [...record.matchedTripItemIds];
+    const placed = new Set<number>();
+    for (const [index, pick] of picks.entries()) {
+      // two receipt lines picking the same trip line: neither is sure
+      if (pick === null || picks.filter((other) => other === pick).length !== 1) continue;
+      const line = await db.tripItems.get(pick);
+      const item = line ? await db.items.get(line.itemId) : undefined;
+      if (!line || !item) continue;
+      const change = await applyToLine(record.unmatched[index], line, item, trip, now);
+      if (change) changes.push(change);
+      matched.push(line.id);
+      placed.add(index);
+    }
+    if (placed.size === 0) return 0;
+
+    await db.trips.update(tripId, {
+      receiptReconcile: {
+        ...record,
+        changes,
+        unmatched: record.unmatched.filter((_, index) => !placed.has(index)),
+        matchedTripItemIds: matched,
+      },
+    });
+    return placed.size;
+  });
+}
 
 /**
  * He places an unmatched receipt line (by its place in the trip's record) on

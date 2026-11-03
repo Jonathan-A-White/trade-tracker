@@ -86,6 +86,12 @@ export function ReceiptReconcileCard({ tripId, onTotal }: ReceiptReconcileCardPr
       price: line.price,
     }));
   }, [tripId]);
+  // trip lines that were at the factory when the receipt's answer applied and have not come back
+  const atFactory = useLiveQuery(async () => {
+    const trip = await db.trips.get(tripId);
+    const ids = trip?.receiptReconcile?.stillAtFactoryIds ?? [];
+    return (await db.tripItems.bulkGet(ids)).filter((line) => line?.pending).length;
+  }, [tripId]);
   const [matching, setMatching] = useState<number | null>(null);
   const fileInput = useRef<HTMLInputElement>(null);
   const [notice, setNotice] = useState<string | null>(null);
@@ -333,6 +339,13 @@ export function ReceiptReconcileCard({ tripId, onTotal }: ReceiptReconcileCardPr
         <div className="space-y-3 border-t dark:border-gray-700 pt-3">
           {result.unreadable && (
             <p className="text-sm text-amber-600 dark:text-amber-400">{result.unreadable}</p>
+          )}
+          {(atFactory ?? 0) > 0 && (
+            <p role="status" className="text-sm text-amber-600 dark:text-amber-400">
+              {atFactory === 1 ? "1 line is" : `${atFactory} lines are`} still at the factory. When{" "}
+              {atFactory === 1 ? "it comes" : "they come"} back, a receipt line left under Not
+              matched that fits {atFactory === 1 ? "it" : "one of them"} is placed for you.
+            </p>
           )}
           <div>
             <h3 className="text-sm font-semibold text-gray-900 dark:text-gray-100">What changed</h3>

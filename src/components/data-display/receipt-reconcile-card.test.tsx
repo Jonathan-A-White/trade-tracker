@@ -8,6 +8,7 @@ import { ReceiptReconcileCard } from "./receipt-reconcile-card";
 import { FactoryProvider, useFactory } from "@/contexts/factory-context";
 import { db } from "@/db/database";
 import type { PasskeyPort } from "@/services/passkey";
+import type { TripItem } from "@/contracts/types";
 
 const PRF_SECRET = new Uint8Array(32).fill(7);
 const checkedAt = "2026-10-05T00:00:00.000Z";
@@ -174,5 +175,65 @@ describe("Check against the receipt: the factory notice", () => {
     expect(
       await screen.findByText("Not checking for the answer: checking the licence"),
     ).toBeInTheDocument();
+  });
+});
+
+describe("Check against the receipt: lines still at the factory", () => {
+  beforeEach(async () => {
+    await Promise.all(db.tables.map((table) => table.clear()));
+    localStorage.clear();
+  });
+
+  async function seedAnswered(stillAtFactoryIds: string[]) {
+    await db.trips.put({
+      id: "t1",
+      storeId: "s1",
+      status: "active",
+      startedAt: 1,
+      createdAt: 1,
+      updatedAt: 1,
+      receiptReconcile: {
+        changes: [],
+        unmatched: [
+          { text: "HOL VANILLA SUGAR", price: 3.99, quantity: 1, weightLbs: null, tripItemId: null, confidence: "low" },
+        ],
+        added: [],
+        matchedTripItemIds: [],
+        stillAtFactoryIds,
+        total: 20,
+        unreadable: null,
+      },
+    } as never);
+  }
+
+  const pendingLine = (id: string): TripItem => ({
+    id,
+    tripId: "t1",
+    itemId: `pending:${id}`,
+    price: 0,
+    quantity: 1,
+    lineTotal: 0,
+    onSale: false,
+    pending: true,
+    addedAt: 1,
+  });
+
+  it("says how many lines are still at the factory while they are", async () => {
+    await seedAnswered(["l1", "l2"]);
+    await db.tripItems.bulkPut([pendingLine("l1"), pendingLine("l2")]);
+    renderCard(fakePort(), async () => held);
+
+    expect(
+      await screen.findByText(/2 lines are still at the factory\. When they come back/),
+    ).toBeInTheDocument();
+  });
+
+  it("says nothing once those lines have come back", async () => {
+    await seedAnswered(["l1"]);
+    await db.tripItems.put({ ...pendingLine("l1"), pending: undefined });
+    renderCard(fakePort(), async () => held);
+
+    expect(await screen.findByText("Not matched: 1")).toBeInTheDocument();
+    expect(screen.queryByText(/still at the factory/)).not.toBeInTheDocument();
   });
 });

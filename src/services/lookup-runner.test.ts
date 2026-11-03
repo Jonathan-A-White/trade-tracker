@@ -9,6 +9,7 @@ import { TripRepository } from "@/db/repositories/trip-repository";
 import { TripItemRepository } from "@/db/repositories/trip-item-repository";
 import { PriceHistoryRepository } from "@/db/repositories/price-history-repository";
 import { ItemRepository } from "@/db/repositories/item-repository";
+import { matchReceiptLine, settleReceipt } from "./receipt-reconcile";
 import {
   LookupRunner,
   type LookupClient,
@@ -862,5 +863,138 @@ describe("LookupRunner a lookup the factory never answers", () => {
 
     await waitFor(async () => expect((await lookups.getById(lookup.id))?.status).toBe("failed"));
     expect((await lookups.getById(lookup.id))?.error).toBe("The backend refused the grist.");
+  });
+});
+
+describe("LookupRunner a lookup that lands after the receipt's answer", () => {
+  /**
+   * His 2026-10-30 trip, the other order: the receipt went out with a lookup still at the factory
+   * (the request leaves it out), the receipt's answer applied while the line was still pending, and
+   * only then did the lookup land. The receipt line stayed 'Not matched'.
+   */
+  async function receiptAnsweredWithLookupsPending(barcodes: string[], receiptTexts: string[]) {
+    const trip = await startTrip();
+    const bananas = await itemRepo.create({ barcode: "0001", name: "Bananas", currentPrice: 1.07, unitType: "each" });
+    const bananaLine = await tripItemRepo.addToTrip({
+      tripId: trip.id,
+      itemId: bananas.id,
+      price: 1.07,
+      quantity: 1,
+      onSale: false,
+    });
+    const made = [];
+    for (const barcode of barcodes) made.push(await queueLookup(trip.id, barcode));
+    await db.trips.update(trip.id, {
+      receiptPending: {
+        txid: "direct:receipt",
+        sentAt: Date.now(),
+        request: { store: "Shop", lines: [[bananaLine.id, "Bananas", 1.07, 1, null]] },
+      },
+    });
+    const line = (text: string, price: number) => ({
+      text,
+      price,
+      quantity: 1,
+      weightLbs: null,
+      tripItemId: null,
+      confidence: "low" as const,
+    });
+    const record = {
+      re: "direct:receipt",
+      status: "answered",
+      grind,
+      answer: {
+        store: "Shop",
+        date: null,
+        subtotal: null,
+        tax: null,
+        total: 20,
+        lines: [
+          { ...line("BANANAS", 1.07), tripItemId: bananaLine.id, confidence: "high" as const },
+          ...receiptTexts.map((text) => line(text, 3.99)),
+        ],
+        unreadable: null,
+      },
+    } as unknown as GristAnswer;
+    await settleReceipt(trip.id, "direct:receipt", record);
+    return { trip, lookups: made, bananaLine };
+  }
+
+  const sugar = { ...goodAnswer, name: "Trader Joe's Vanilla Sugar", price: null, estimatedPrice: 2.99 };
+
+  async function landing(fake: ReturnType<typeof fakeClient>, lookupId: string, txid: string, answer: object) {
+    await waitFor(() => expect(fake.waiting.has(txid)).toBe(true));
+    fake.waiting.get(txid)!.resolve(answered(txid, answer));
+    await waitFor(async () => {
+      expect((await lookups.getById(lookupId))?.status).toBe("applied");
+    });
+  }
+
+  it("gives the receipt line the trip line and its price replaces the guess", async () => {
+    const { trip, lookups: made } = await receiptAnsweredWithLookupsPending(["0044"], ["HOL VANILLA SUGAR"]);
+    expect((await db.trips.get(trip.id))?.receiptReconcile?.unmatched).toHaveLength(1);
+    const fake = fakeClient();
+    makeRunner(fake.client);
+
+    await landing(fake, made[0].id, "direct:tx1", sugar);
+
+    await waitFor(async () => {
+      expect((await db.trips.get(trip.id))?.receiptReconcile?.unmatched).toHaveLength(0);
+    });
+    const kept = (await db.trips.get(trip.id))?.receiptReconcile;
+    const late = (await tripItemRepo.getByTrip(trip.id)).find((line) => line.price !== 1.07);
+    expect(late).toMatchObject({ price: 3.99 });
+    expect(late?.guess).toBeUndefined();
+    expect(kept?.matchedTripItemIds).toContain(late!.id);
+    expect(kept?.changes.find((change) => change.tripItemId === late!.id)).toMatchObject({
+      oldPrice: 2.99,
+      newPrice: 3.99,
+      wasGuess: true,
+    });
+    expect((await itemRepo.findByBarcode("0044"))?.currentPrice).toBe(3.99);
+  });
+
+  it("still asks when two receipt lines fit the one line that landed", async () => {
+    const { trip, lookups: made } = await receiptAnsweredWithLookupsPending(
+      ["0044"],
+      ["HOL VANILLA SUGAR", "VANILLA SUGAR 8 OZ"],
+    );
+    const fake = fakeClient();
+    makeRunner(fake.client);
+
+    await landing(fake, made[0].id, "direct:tx1", sugar);
+
+    const kept = (await db.trips.get(trip.id))?.receiptReconcile;
+    expect(kept?.unmatched).toHaveLength(2);
+    const late = (await tripItemRepo.getByTrip(trip.id)).find((line) => line.price !== 1.07);
+    expect(late).toMatchObject({ price: 2.99 });
+    expect(late?.guess).toBeDefined();
+  });
+
+  it("leaves a receipt line he already placed by hand alone", async () => {
+    const { trip, lookups: made, bananaLine } = await receiptAnsweredWithLookupsPending(
+      ["0044"],
+      ["HOL VANILLA SUGAR"],
+    );
+    // he places the unmatched receipt line on another line before the lookup lands
+    const other = await itemRepo.create({ barcode: "0002", name: "Oat Milk", currentPrice: 2, unitType: "each" });
+    const otherLine = await tripItemRepo.addToTrip({
+      tripId: trip.id,
+      itemId: other.id,
+      price: 2,
+      quantity: 1,
+      onSale: false,
+    });
+    expect(await matchReceiptLine(trip.id, 0, otherLine.id)).toBe(true);
+    const fake = fakeClient();
+    makeRunner(fake.client);
+
+    await landing(fake, made[0].id, "direct:tx1", sugar);
+
+    const lines = await tripItemRepo.getByTrip(trip.id);
+    const late = lines.find((line) => line.id !== bananaLine.id && line.id !== otherLine.id);
+    expect(late).toMatchObject({ price: 2.99 });
+    expect(late?.guess).toBeDefined();
+    expect((await db.trips.get(trip.id))?.receiptReconcile?.matchedTripItemIds).not.toContain(late!.id);
   });
 });

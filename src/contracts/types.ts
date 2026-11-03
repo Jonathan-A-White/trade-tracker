@@ -206,6 +206,11 @@ export interface ReceiptReconcileRecord {
   added: ReceiptAddedLine[];
   /** The trip lines a receipt line is, so the others are 'Not on receipt'. */
   matchedTripItemIds: string[];
+  /**
+   * The trip lines that were still pending factory lookups when the answer was applied, so the
+   * request never carried them. When one lands, an unmatched receipt line that fits it is placed.
+   */
+  stillAtFactoryIds?: string[];
   total: number | null;
   unreadable: string | null;
 }
