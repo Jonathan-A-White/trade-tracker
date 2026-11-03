@@ -8,6 +8,7 @@ import { FamilyRepository } from "@/db/repositories/family-repository";
 import { YnabRepository } from "@/db/repositories/ynab-repository";
 import { ALERT_POLL_MS, makeAlertsClient } from "@/family/alerts-client";
 import type { FamilyAlert } from "@/family/alerts-client";
+import { readLastMail, rememberLastMail } from "@/family/last-mail";
 import { whenLine } from "@/sort/waiting";
 import { setFamilyOn, useFamilyOn, useYnabOn } from "../connections";
 import { SETTINGS_PATH } from "../registry";
@@ -32,7 +33,7 @@ interface Confirmation {
 /** What the feed shows of the family's mail so far; null until the feed has answered once. */
 interface FeedSeen {
   confirmation: Confirmation | null;
-  /** the latest card or order alert: proof that forwarding works. `when` is its time, if it has one. */
+  /** the latest card or order alert, in the feed now or seen on this device before: proof that forwarding works. `when` is its time, if it has one. */
   lastMail: { when?: string } | null;
 }
 
@@ -50,16 +51,19 @@ function recipe(confirmation: Confirmation | null): string[] {
   ];
 }
 
-/** Reads one page of the feed into what the section keeps: the latest confirmation and the latest card or order alert. */
+/**
+ * Reads one page of the feed into what the section keeps: the latest confirmation and the latest card or order alert.
+ * A sorted alert leaves the feed, so the latest alert is also kept on this device and read back from there.
+ */
 function readFeed(before: FeedSeen | null, alerts: FamilyAlert[]): FeedSeen {
   let confirmation = before?.confirmation ?? null;
-  let lastMail = before?.lastMail ?? null;
+  let lastMail = before?.lastMail ?? readLastMail();
   for (const alert of alerts) {
     if (alert.kind === "forward-confirm") {
       const link = alert.link && CONFIRM_LINK.test(alert.link) ? alert.link : undefined;
       if (link || alert.code) confirmation = { link, code: alert.code };
     } else if (alert.kind === "charge" || alert.kind === "amazon") {
-      lastMail = { when: alert.when };
+      lastMail = rememberLastMail({ when: alert.when });
     }
   }
   return { confirmation, lastMail };

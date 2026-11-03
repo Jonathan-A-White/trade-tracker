@@ -215,6 +215,81 @@ describe("Settings > Family", () => {
     expect(within(row).queryByText(/Forwarding works/)).not.toBeInTheDocument();
   });
 
+  it("a card alert seen once and then sorted away still says forwarding works, with its time, also after the switch goes off and on", async () => {
+    const seen = backend.receive({ kind: "charge", amount: "9.99", merchant: "Somewhere", last4: "1234", when: "2026-10-30T18:14:00Z" });
+    const user = userEvent.setup();
+    const { container } = renderSettings();
+    await makeKeyAndTurnOn(user, container);
+    const row = family(container);
+    expect(await within(row).findByText(/Forwarding works/)).toBeInTheDocument();
+
+    // the Sort sheet claims the alert: the feed no longer holds it
+    backend.feed.splice(backend.feed.indexOf(seen), 1);
+    await user.click(within(row).getByRole("switch", { name: "Family alerts" }));
+    await user.click(within(row).getByRole("switch", { name: "Family alerts" }));
+
+    expect(await within(row).findByText(/Forwarding works/)).toBeInTheDocument();
+    expect(row).toHaveTextContent(/the last one came Oct 30/);
+    expect(within(row).queryByText(/No mail has come yet/)).not.toBeInTheDocument();
+  });
+
+  it("an order alert seen once and gone from the feed is remembered too, and after a reload and unlock", async () => {
+    const seen = backend.receive({ kind: "amazon", when: "2026-10-31T12:00:00Z" });
+    const user = userEvent.setup();
+    const first = renderSettings();
+    await user.click(screen.getByRole("button", { name: "Make key" }));
+    await screen.findByText(/Key made/);
+    const words = screen.getByTestId("recovery-phrase").textContent ?? "";
+    await screen.findByText("Held");
+    await user.click(within(family(first.container)).getByRole("switch", { name: "Family alerts" }));
+    await within(family(first.container)).findByText(/Forwarding works/);
+    backend.feed.splice(backend.feed.indexOf(seen), 1);
+    first.unmount();
+
+    // a reload: Family stays On, the key is locked until the 12 words open it, and the feed is empty
+    const second = renderSettings();
+    const row = family(second.container);
+    await user.type(await screen.findByLabelText("12 words"), words);
+    await user.click(screen.getByRole("button", { name: "Unlock" }));
+    expect(await within(row).findByText(/Forwarding works/)).toBeInTheDocument();
+    expect(row).toHaveTextContent(/the last one came Oct 31/);
+    expect(within(row).queryByText(/No mail has come yet/)).not.toBeInTheDocument();
+  });
+
+  it("a newer alert replaces the remembered time; an older one does not", async () => {
+    vi.useFakeTimers({ toFake: ["setInterval", "clearInterval"] });
+    backend.receive({ kind: "charge", when: "2026-10-30T18:14:00Z" });
+    const user = userEvent.setup();
+    const { container } = renderSettings();
+    await makeKeyAndTurnOn(user, container);
+    const row = family(container);
+    await within(row).findByText(/the last one came Oct 30/);
+
+    backend.receive({ kind: "charge", when: "2026-10-31T09:00:00Z" });
+    await vi.advanceTimersByTimeAsync(ALERT_POLL_MS);
+    await waitFor(() => expect(row).toHaveTextContent(/the last one came Oct 31/));
+
+    backend.receive({ kind: "charge", when: "2026-10-29T09:00:00Z" });
+    await vi.advanceTimersByTimeAsync(ALERT_POLL_MS);
+    expect(row).toHaveTextContent(/the last one came Oct 31/);
+  });
+
+  it("an unread alert seen and gone leaves no record: the neutral line stays", async () => {
+    const seen = backend.receive({ kind: "unread", subject: "Gmail Forwarding Confirmation" });
+    const user = userEvent.setup();
+    const { container } = renderSettings();
+    await makeKeyAndTurnOn(user, container);
+    const row = family(container);
+    await within(row).findByText(/No mail has come yet/);
+
+    backend.feed.splice(backend.feed.indexOf(seen), 1);
+    await user.click(within(row).getByRole("switch", { name: "Family alerts" }));
+    await user.click(within(row).getByRole("switch", { name: "Family alerts" }));
+
+    expect(await within(row).findByText(/No mail has come yet/)).toBeInTheDocument();
+    expect(within(row).queryByText(/Forwarding works/)).not.toBeInTheDocument();
+  });
+
   it("a code that comes is still shown with Copy, and step 4 then speaks of the code", async () => {
     backend.receive({ kind: "forward-confirm", code: "112233" });
     const user = userEvent.setup();
