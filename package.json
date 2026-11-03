@@ -15,7 +15,7 @@
   "dependencies": {
     "@tailwindcss/vite": "^4.2.1",
     "barcode-detector": "^3.1.1",
-    "bsv-kit": "github:Jonathan-A-White/bsv-kit#812b27445b6e950d82e20fdc590555aad0beb11c",
+    "bsv-kit": "github:Jonathan-A-White/bsv-kit#4dbd874edc1f5d6c151b0980ccaa9fcc60799d6a",
     "dexie": "^4.3.0",
     "dexie-react-hooks": "^4.2.0",
     "pwa-kit": "github:Jonathan-A-White/pwa-kit#8c57c518f504817818382789e431f52bc3c1f0d1",
