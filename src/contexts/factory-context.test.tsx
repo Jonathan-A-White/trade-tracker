@@ -1,3 +1,4 @@
+import { endTheDay } from "@/test/end-the-day";
 import { render, screen, waitFor } from "@testing-library/react";
 import userEvent from "@testing-library/user-event";
 import { MemoryRouter } from "react-router";
@@ -133,6 +134,7 @@ describe("Settings > Factory", () => {
     const first = renderSettings();
     const words = await makeKey(user);
     first.unmount();
+    await endTheDay();
 
     // a new launch: only the public key is in localStorage, nothing is in memory
     renderSettings();
@@ -152,6 +154,7 @@ describe("Settings > Factory", () => {
     const first = renderSettings();
     await makeKey(user);
     first.unmount();
+    await endTheDay();
     const before = { ...localStorage };
     const other = (await vault.generate()).phrase;
 
@@ -168,6 +171,7 @@ describe("Settings > Factory", () => {
     const first = renderSettings();
     await makeKey(user);
     first.unmount();
+    await endTheDay();
 
     renderSettings();
     await user.type(screen.getByLabelText("12 words"), "not twelve real words");
@@ -211,6 +215,7 @@ describe("Settings > Factory", () => {
     const first = renderSettings();
     await makeKey(user);
     first.unmount();
+    await endTheDay();
 
     renderSettings();
     expect(await screen.findByText("None")).toBeInTheDocument();
@@ -263,6 +268,7 @@ describe("Settings > Factory", () => {
     const words = await makeKey(user);
     expect(await screen.findByText("Held")).toBeInTheDocument();
     first.unmount();
+    await endTheDay();
 
     renderSettings(async () => {
       throw new Error("WhatsOnChain answered 404 Not Found");

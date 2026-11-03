@@ -1,3 +1,4 @@
+import { endTheDay } from "@/test/end-the-day";
 import { render, screen, waitFor } from "@testing-library/react";
 import userEvent from "@testing-library/user-event";
 import { MemoryRouter } from "react-router";
@@ -104,6 +105,7 @@ describe("Settings > Factory > fingerprint", () => {
     const first = renderSettings(fakePort());
     await makeKey(user);
     first.unmount();
+    await endTheDay();
 
     const getPrfSecret = vi.fn(async () => PRF_SECRET.buffer.slice(0));
     renderSettings(fakePort({ getPrfSecret }));
@@ -159,6 +161,7 @@ describe("Settings > Factory > fingerprint", () => {
     const first = renderSettings(fakePort());
     const words = await makeKey(user);
     first.unmount();
+    await endTheDay();
 
     renderSettings(
       fakePort({
@@ -183,6 +186,7 @@ describe("Settings > Factory > fingerprint", () => {
     expect(screen.queryByRole("button", { name: "Use fingerprint" })).not.toBeInTheDocument();
     expect(localStorage.getItem(FINGERPRINT_KEY)).toBeNull();
     first.unmount();
+    await endTheDay();
 
     renderSettings(port);
     expect(screen.queryByRole("button", { name: "Unlock with fingerprint" })).not.toBeInTheDocument();
@@ -196,6 +200,7 @@ describe("Settings > Factory > fingerprint", () => {
     const words = await makeKey(user);
     const copy = localStorage.getItem(FINGERPRINT_KEY);
     first.unmount();
+    await endTheDay();
 
     renderSettings(fakePort());
     await typeWordsAndUnlock(user, words);
@@ -208,6 +213,7 @@ describe("Settings > Factory > fingerprint", () => {
     const first = renderSettings(fakePort({ isAvailable: () => false }));
     const words = await makeKey(user);
     first.unmount();
+    await endTheDay();
 
     renderSettings(fakePort());
     expect(screen.queryByRole("button", { name: "Unlock with fingerprint" })).not.toBeInTheDocument();
@@ -231,6 +237,7 @@ describe("Settings > Factory > fingerprint", () => {
     expect(localStorage.getItem(PUBLIC_KEY)).toBe(publicKey);
     expect(await screen.findByRole("button", { name: "Use fingerprint" })).toBeInTheDocument();
     first.unmount();
+    await endTheDay();
 
     renderSettings(fakePort());
     expect(screen.getByTestId("door")).toHaveTextContent("locked");
@@ -255,12 +262,14 @@ describe("Settings > Factory > fingerprint", () => {
     expect(Array.from(fromSecond)).toEqual(Array.from(made.key));
     expect(localStorage.getItem(VAULT_KEY)).toBe(oldCopy);
     first.unmount();
+    await endTheDay();
 
     // a new launch: the fingerprint opens it, and so do the 12 words
     const again = renderSettings(fakePort());
     await user.click(screen.getByRole("button", { name: "Unlock with fingerprint" }));
     await waitFor(() => expect(screen.getByTestId("door")).toHaveTextContent("unlocked"));
     again.unmount();
+    await endTheDay();
 
     renderSettings(fakePort());
     await typeWordsAndUnlock(user, made.phrase);
@@ -275,6 +284,7 @@ describe("Settings > Factory > fingerprint", () => {
     await user.click(await screen.findByRole("button", { name: "Use fingerprint" }));
     await screen.findByRole("button", { name: "Remove fingerprint" });
     first.unmount();
+    await endTheDay();
 
     renderSettings(fakePort());
     await typeWordsAndUnlock(user, "correct horse");
@@ -286,6 +296,7 @@ describe("Settings > Factory > fingerprint", () => {
     const first = renderSettings(fakePort({ isAvailable: () => false }));
     const words = await makeKey(user);
     first.unmount();
+    await endTheDay();
 
     renderSettings(fakePort({ getPrfSecret: async () => null }));
     await typeWordsAndUnlock(user, words);

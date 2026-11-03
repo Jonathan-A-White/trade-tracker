@@ -1,3 +1,4 @@
+import { endTheDay } from "@/test/end-the-day";
 import { render, screen, waitFor, within } from "@testing-library/react";
 import userEvent from "@testing-library/user-event";
 import { MemoryRouter } from "react-router";
@@ -245,6 +246,7 @@ describe("Settings > Family", () => {
     await within(family(first.container)).findByText(/Forwarding works/);
     backend.feed.splice(backend.feed.indexOf(seen), 1);
     first.unmount();
+    await endTheDay();
 
     // a reload: Family stays On, the key is locked until the 12 words open it, and the feed is empty
     const second = renderSettings();

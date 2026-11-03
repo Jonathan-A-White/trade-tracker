@@ -43,23 +43,35 @@ export interface KeySession {
   enableFingerprint(): Promise<void>;
   /** Deletes the fingerprint copy only. */
   removeFingerprint(): Promise<void>;
-  /** The unlocked key, held in memory only; null while locked or without a key. */
+  /** The unlocked key; null while locked or without a key. */
   getKey(): Uint8Array | null;
+  /** When the day's unlock ends (epoch ms); null while locked. A relaunch within the day keeps it. */
+  expiresAt(): number | null;
+  /** Ends the unlock here and on this device, so the next launch asks again. */
+  lock(): Promise<void>;
 }
 
-/** The key session: the 12 words, the fingerprint copy and the day-long in-memory session. */
-export function useKeySession(opts: { storage: vault.Storage; passkeyPort: PasskeyPort }): KeySession {
-  const { storage, passkeyPort } = opts;
+/** The key session: the 12 words, the fingerprint copy and the day-long session. */
+export function useKeySession(opts: {
+  storage: vault.Storage;
+  passkeyPort: PasskeyPort;
+  /** The clock in epoch ms; Date.now unless a test sets it. */
+  now?: () => number;
+}): KeySession {
+  const { storage, passkeyPort, now } = opts;
   const [hasFingerprint, setHasFingerprint] = useState(() => hasFingerprintCopy());
-  // The unlocked key lives in memory only, for a day.
-  const [session] = useState(() => vault.createKeySession());
+  // The unlocked key is held for a day from unlocking; bsv-kit keeps it, wrapped under a device key
+  // that cannot be read out, so a relaunch within the day takes it back (resume, below).
+  const [session] = useState(() => vault.createKeySession({ now }));
   const [unlocked, setUnlocked] = useState(false);
   const [publicKeyHex, setPublicKeyHex] = useState<string | null>(() => storedPublicKeyHex());
 
-  useEffect(
-    () => session.onChange(() => setUnlocked(session.getKey() !== null)),
-    [session],
-  );
+  useEffect(() => {
+    const stop = session.onChange(() => setUnlocked(session.getKey() !== null));
+    // On launch: take back the unlock kept from earlier today, if there is one (onChange tells us).
+    void session.resume();
+    return stop;
+  }, [session]);
 
   const makeKey = useCallback(async (): Promise<MadeKeyResult> => {
     const made = await makeStoredKey(storage);
@@ -114,6 +126,8 @@ export function useKeySession(opts: { storage: vault.Storage; passkeyPort: Passk
   }, [storage]);
 
   const getKey = useCallback(() => session.getKey(), [session]);
+  const expiresAt = useCallback(() => session.expiresAt(), [session]);
+  const lock = useCallback(() => session.lock(), [session]);
 
   let state: FactoryDoorState = "no-key";
   if (publicKeyHex) state = unlocked ? "unlocked" : "locked";
@@ -128,5 +142,7 @@ export function useKeySession(opts: { storage: vault.Storage; passkeyPort: Passk
     enableFingerprint,
     removeFingerprint,
     getKey,
+    expiresAt,
+    lock,
   };
 }

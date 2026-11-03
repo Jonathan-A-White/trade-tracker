@@ -1,5 +1,6 @@
 // The card's factory notice, with the real FactoryProvider: it says whether the key is missing,
 // locked or without a licence, and a locked key is unlocked right on the card.
+import { endTheDay } from "@/test/end-the-day";
 import { render, screen, waitFor } from "@testing-library/react";
 import userEvent from "@testing-library/user-event";
 import { MemoryRouter, Route, Routes } from "react-router";
@@ -45,6 +46,7 @@ async function seedLockedKey(port: PasskeyPort) {
   await user.click(screen.getByRole("button", { name: "make the key" }));
   await waitFor(() => expect(localStorage.getItem("tradetracker-factory-fingerprint")).toBeTruthy());
   first.unmount();
+  await endTheDay();
 }
 
 function renderCard(port: PasskeyPort, checkLicence: () => Promise<licence.LicenceStatus>) {
