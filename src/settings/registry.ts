@@ -92,7 +92,7 @@ export const ROWS: readonly SettingsRow<SectionId>[] = rowsInOrder<SectionId, Se
     section: "family",
     label: "Family",
     hint: "Share one mail address so the family's card alerts come here.",
-    help: "Off until you turn it on. It gives the family one alert address on the backend, with the Gmail filter that forwards your bank's alerts to it, Gmail's confirmation code when it arrives, and the cards you tell it about: whose each is and which YNAB account it maps to.",
+    help: "Off until you turn it on. It gives the family one alert address on the backend, with the Gmail filter that forwards your bank's alerts to it, Gmail's confirmation link when it arrives, and the cards you tell it about: whose each is and which YNAB account it maps to.",
   },
   {
     key: "storage",

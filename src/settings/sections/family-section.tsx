@@ -7,6 +7,8 @@ import { useFactory } from "@/factory";
 import { FamilyRepository } from "@/db/repositories/family-repository";
 import { YnabRepository } from "@/db/repositories/ynab-repository";
 import { ALERT_POLL_MS, makeAlertsClient } from "@/family/alerts-client";
+import type { FamilyAlert } from "@/family/alerts-client";
+import { whenLine } from "@/sort/waiting";
 import { setFamilyOn, useFamilyOn, useYnabOn } from "../connections";
 import { SETTINGS_PATH } from "../registry";
 import { OUTLINE_BUTTON_CLASS, ErrorNote, SectionCard, SectionNote } from "../parts";
@@ -18,14 +20,50 @@ const INPUT_CLASS =
 const SMALL_BUTTON_CLASS = `${OUTLINE_BUTTON_CLASS} shrink-0 !px-3 !py-1.5`;
 const HEADING_CLASS = "text-sm font-medium text-gray-700 dark:text-gray-300";
 
-/** The Gmail filter that forwards the bank's alerts to the family's address, in five short lines. */
-const RECIPE = [
-  "In Gmail, open Settings > See all settings > Filters and Blocked Addresses > Create a new filter.",
-  "In From, put the addresses your Chase and Citi alerts come from, then choose Create filter.",
-  "Tick Forward it to, choose Add forwarding address, and paste the address above.",
-  "Gmail mails a confirmation code to that address: it shows here, under Gmail's confirmation. Type it into Gmail.",
-  "Back in the filter, pick the address under Forward it to and save the filter.",
-];
+/** The only link drawn as a link to tap: Gmail's own confirm link, whole (the backend keeps no other, and this checks again). */
+const CONFIRM_LINK = /^https:\/\/mail\.google\.com\/mail\/vf-[A-Za-z0-9%._~+=-]+$/;
+
+/** What Gmail's confirmation mail carried: its link (the real mail has no code), or a code if one ever comes. */
+interface Confirmation {
+  link?: string;
+  code?: string;
+}
+
+/** What the feed shows of the family's mail so far; null until the feed has answered once. */
+interface FeedSeen {
+  confirmation: Confirmation | null;
+  /** the latest card or order alert: proof that forwarding works. `when` is its time, if it has one. */
+  lastMail: { when?: string } | null;
+}
+
+/** The Gmail steps that forward the bank's alerts to the family's address, in five short lines. Step 4 speaks of a code only when a code is what came. */
+function recipe(confirmation: Confirmation | null): string[] {
+  const code = confirmation?.code && !confirmation.link;
+  return [
+    "In Gmail, open Settings > See all settings > Filters and Blocked Addresses > Create a new filter.",
+    "In From, put the addresses your Chase and Citi alerts come from, then choose Create filter.",
+    "Tick Forward it to and choose Add forwarding address (it opens Forwarding and POP/IMAP > Add a forwarding address), then paste the address above.",
+    code
+      ? "Gmail mails a confirmation code to that address: it shows here, under Gmail's confirmation. Type it into Gmail."
+      : "Gmail mails a confirmation to that address: its link shows here, under Gmail's confirmation. Tap the link; it opens Gmail in a new tab, where you confirm.",
+    "Back in the filter, pick the address under Forward it to and save the filter.",
+  ];
+}
+
+/** Reads one page of the feed into what the section keeps: the latest confirmation and the latest card or order alert. */
+function readFeed(before: FeedSeen | null, alerts: FamilyAlert[]): FeedSeen {
+  let confirmation = before?.confirmation ?? null;
+  let lastMail = before?.lastMail ?? null;
+  for (const alert of alerts) {
+    if (alert.kind === "forward-confirm") {
+      const link = alert.link && CONFIRM_LINK.test(alert.link) ? alert.link : undefined;
+      if (link || alert.code) confirmation = { link, code: alert.code };
+    } else if (alert.kind === "charge" || alert.kind === "amazon") {
+      lastMail = { when: alert.when };
+    }
+  }
+  return { confirmation, lastMail };
+}
 
 function messageOf(err: unknown): string {
   return err instanceof Error ? err.message : "That did not work.";
@@ -171,18 +209,48 @@ function Cards() {
   );
 }
 
+/** Under Gmail's confirmation: the link to tap, or the code if one came; else what the feed says, never a wait with no end. */
+function Confirmed({ seen }: { seen: FeedSeen | null }) {
+  if (!seen) return <SectionNote>Looking for Gmail's confirmation…</SectionNote>;
+  const { confirmation, lastMail } = seen;
+  return (
+    <div className="space-y-2">
+      {confirmation?.link && (
+        <a
+          href={confirmation.link}
+          target="_blank"
+          rel="noopener noreferrer"
+          className="block rounded-lg border border-blue-600 dark:border-blue-400 px-3 py-2 text-center text-sm font-medium text-blue-600 dark:text-blue-400 underline"
+        >
+          Confirm the forwarding address in Gmail
+        </a>
+      )}
+      {confirmation?.code && <Copyable value={confirmation.code} copyLabel="Copy code" mono />}
+      {!confirmation &&
+        (lastMail ? (
+          <SectionNote>
+            Forwarding works: the last one came{whenLine(lastMail.when) ? ` ${whenLine(lastMail.when)}` : ""}.
+          </SectionNote>
+        ) : (
+          <SectionNote>No mail has come yet. If Gmail already said confirmed, there is nothing more to do.</SectionNote>
+        ))}
+    </div>
+  );
+}
+
 export function FamilySection() {
   const { door, getKey, backendUrl, publicKeyHex } = useFactory();
   const alive = useAlive();
   const on = useFamilyOn();
   const [address, setAddress] = useState<string | null>(null);
-  const [code, setCode] = useState<string | null>(null);
+  const [seen, setSeen] = useState<FeedSeen | null>(null);
   const [busy, setBusy] = useState(false);
   const [error, setError] = useState<string | null>(null);
   const [hint, setHint] = useState<string | null>(null);
   const cursor = useRef(0);
 
   const licensed = door === "licensed";
+  const confirmation = seen?.confirmation ?? null;
 
   // While the row is open and the phone may ask: the address once, then the feed every few seconds for Gmail's confirmation.
   useEffect(() => {
@@ -199,8 +267,7 @@ export function FamilySection() {
         const page = await client.list(cursor.current);
         if (!current) return;
         cursor.current = page.next;
-        const confirm = page.alerts.filter((a) => a.kind === "forward-confirm" && a.code).at(-1);
-        if (confirm?.code) setCode(confirm.code);
+        setSeen((before) => readFeed(before, page.alerts));
         setError(null);
       } catch (err) {
         if (current) setError(messageOf(err));
@@ -230,7 +297,7 @@ export function FamilySection() {
     setHint(null);
     if (on) {
       setAddress(null);
-      setCode(null);
+      setSeen(null);
       await setFamilyOn(false);
       return;
     }
@@ -297,7 +364,7 @@ export function FamilySection() {
               </SectionNote>
             )}
             <ol aria-label="Gmail filter recipe" className="list-decimal space-y-1 pl-5 text-xs text-gray-600 dark:text-gray-400">
-              {RECIPE.map((line) => (
+              {recipe(confirmation).map((line) => (
                 <li key={line}>{line}</li>
               ))}
             </ol>
@@ -306,7 +373,7 @@ export function FamilySection() {
           {licensed && (
             <div className="space-y-2">
               <h3 className={HEADING_CLASS}>Gmail's confirmation</h3>
-              {code ? <Copyable value={code} copyLabel="Copy code" mono /> : <SectionNote>Waiting for Gmail's confirmation</SectionNote>}
+              <Confirmed seen={seen} />
             </div>
           )}
 

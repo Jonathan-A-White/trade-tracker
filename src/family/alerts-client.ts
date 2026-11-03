@@ -17,8 +17,10 @@ export interface FamilyAlert {
   last4?: string;
   when?: string;
   subject?: string;
-  /** a forward-confirm alert's confirmation code */
+  /** a forward-confirm alert's confirmation code, if Gmail ever sends one */
   code?: string;
+  /** a forward-confirm alert's confirm link: https://mail.google.com/mail/vf-..., as Gmail's real mail carries it (no code) */
+  link?: string;
 }
 
 export interface AlertsPage {

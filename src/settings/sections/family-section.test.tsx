@@ -110,14 +110,14 @@ describe("Settings > Family", () => {
     expect(await navigator.clipboard.readText()).toBe(ADDRESS);
   });
 
-  it("waits for Gmail's confirmation, then shows the code with Copy when the forward-confirm alert arrives", async () => {
+  it("starts with no mail, then shows the code with Copy when the forward-confirm alert arrives", async () => {
     // only the poll's interval is a fake clock; the door's timeouts and the user's typing run on real ones
     vi.useFakeTimers({ toFake: ["setInterval", "clearInterval"] });
     const user = userEvent.setup();
     const { container } = renderSettings();
     await makeKeyAndTurnOn(user, container);
     const row = family(container);
-    expect(await within(row).findByText("Waiting for Gmail's confirmation")).toBeInTheDocument();
+    expect(await within(row).findByText(/No mail has come yet/)).toBeInTheDocument();
     expect(within(row).queryByRole("button", { name: "Copy code" })).not.toBeInTheDocument();
 
     backend.receive({ kind: "charge", amount: "9.99", merchant: "Somewhere", last4: "1234" });
@@ -140,6 +140,89 @@ describe("Settings > Family", () => {
     await makeKeyAndTurnOn(user, container);
     expect(await within(family(container)).findByText("112233")).toBeInTheDocument();
     expect(within(family(container)).getByRole("button", { name: "Copy code" })).toBeInTheDocument();
+  });
+
+  const LINK = "https://mail.google.com/mail/vf-%5BANGjdJ%5D-abc123";
+
+  it("shows Gmail's link as a link to tap, in a new tab, under Gmail's confirmation; no code to type", async () => {
+    backend.receive({ kind: "forward-confirm", link: LINK });
+    const user = userEvent.setup();
+    const { container } = renderSettings();
+    await makeKeyAndTurnOn(user, container);
+    const row = family(container);
+    const link = await within(row).findByRole("link", { name: /Confirm/ });
+    expect(link).toHaveAttribute("href", LINK);
+    expect(link).toHaveAttribute("target", "_blank");
+    expect(link.getAttribute("rel")).toContain("noopener");
+    expect(within(row).queryByRole("button", { name: "Copy code" })).not.toBeInTheDocument();
+    expect(within(row).queryByText(/Waiting for Gmail's confirmation/)).not.toBeInTheDocument();
+    // step 4 speaks of the link, not of a code or of typing
+    const recipe = within(row).getByRole("list", { name: "Gmail filter recipe" });
+    expect(recipe).not.toHaveTextContent(/code/i);
+    expect(recipe).not.toHaveTextContent(/type it/i);
+    expect(recipe).toHaveTextContent("Forwarding and POP/IMAP");
+    expect(recipe).toHaveTextContent("Chase and Citi");
+    expect(within(recipe).getAllByRole("listitem")[3]).toHaveTextContent(/link/i);
+  });
+
+  it("a link that is not Gmail's confirm link is not drawn as a link", async () => {
+    backend.receive({ kind: "forward-confirm", link: "https://evil.example.test/mail/vf-x" });
+    const user = userEvent.setup();
+    const { container } = renderSettings();
+    await makeKeyAndTurnOn(user, container);
+    const row = family(container);
+    await within(row).findByText(/no mail has come yet/i);
+    expect(within(row).queryByRole("link", { name: /Confirm/ })).not.toBeInTheDocument();
+  });
+
+  it("does not wait forever: a card alert in the feed and no confirmation says forwarding works and when the last came", async () => {
+    backend.receive({ kind: "charge", amount: "9.99", merchant: "Somewhere", last4: "1234", when: "2026-10-30T18:14:00Z" });
+    backend.receive({ kind: "unread", subject: "Gmail Forwarding Confirmation" });
+    const user = userEvent.setup();
+    const { container } = renderSettings();
+    await makeKeyAndTurnOn(user, container);
+    const row = family(container);
+    expect(await within(row).findByText(/Forwarding works/)).toBeInTheDocument();
+    expect(row).toHaveTextContent(/the last one came Oct 30/);
+    expect(within(row).queryByText(/Waiting for Gmail's confirmation/)).not.toBeInTheDocument();
+  });
+
+  it("an order alert counts as proof that forwarding works too", async () => {
+    backend.receive({ kind: "amazon", when: "2026-10-31T12:00:00Z" });
+    const user = userEvent.setup();
+    const { container } = renderSettings();
+    await makeKeyAndTurnOn(user, container);
+    expect(await within(family(container)).findByText(/Forwarding works/)).toBeInTheDocument();
+  });
+
+  it("does not wait forever: an empty feed says no mail has come yet, and that nothing more is needed if Gmail said confirmed", async () => {
+    const user = userEvent.setup();
+    const { container } = renderSettings();
+    await makeKeyAndTurnOn(user, container);
+    const row = family(container);
+    expect(await within(row).findByText(/No mail has come yet/)).toBeInTheDocument();
+    expect(row).toHaveTextContent(/if Gmail already said confirmed, there is nothing more to do/i);
+    expect(within(row).queryByText(/Waiting for Gmail's confirmation/)).not.toBeInTheDocument();
+  });
+
+  it("an unread alert alone is not proof that forwarding works", async () => {
+    backend.receive({ kind: "unread", subject: "(Gmail Forwarding Confirmation - Receive Mail from someone@gmail.com" });
+    const user = userEvent.setup();
+    const { container } = renderSettings();
+    await makeKeyAndTurnOn(user, container);
+    const row = family(container);
+    expect(await within(row).findByText(/No mail has come yet/)).toBeInTheDocument();
+    expect(within(row).queryByText(/Forwarding works/)).not.toBeInTheDocument();
+  });
+
+  it("a code that comes is still shown with Copy, and step 4 then speaks of the code", async () => {
+    backend.receive({ kind: "forward-confirm", code: "112233" });
+    const user = userEvent.setup();
+    const { container } = renderSettings();
+    await makeKeyAndTurnOn(user, container);
+    const row = family(container);
+    expect(await within(row).findByText("112233")).toBeInTheDocument();
+    expect(within(row).getByRole("list", { name: "Gmail filter recipe" })).toHaveTextContent(/code/i);
   });
 
   it("stays On after a reload; with the key locked it still shows the cards and says to unlock for the address", async () => {

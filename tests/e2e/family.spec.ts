@@ -84,13 +84,13 @@ test("Settings > Family: the address, the recipe, Gmail's code and two cards", a
   await toggle.click();
   await expect(row.getByText(ADDRESS)).toBeVisible();
   await expect(row.getByRole("list", { name: "Gmail filter recipe" }).getByRole("listitem")).toHaveCount(5);
-  await expect(row.getByText("Waiting for Gmail's confirmation")).toBeVisible();
+  await expect(row.getByText(/No mail has come yet/)).toBeVisible();
 
   // Gmail's mail lands at the family's address: the code appears within one poll
   feed.push({ id: "0000000000000001", seq: 1, kind: "forward-confirm", code: "493827" });
   await expect(row.getByText("493827")).toBeVisible({ timeout: 15_000 });
   await expect(row.getByRole("button", { name: "Copy code" })).toBeVisible();
-  await expect(row.getByText("Waiting for Gmail's confirmation")).toHaveCount(0);
+  await expect(row.getByText(/No mail has come yet/)).toHaveCount(0);
 
   // two cards
   const cards = row.getByRole("list", { name: "Cards" }).getByRole("listitem");
