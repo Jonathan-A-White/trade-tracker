@@ -34,3 +34,12 @@ export function rememberLastMail(seen: LastMail): LastMail {
   }
   return seen;
 }
+
+/** Forgets the remembered last mail (Clear All Data: it is data about the family's mail, not a setting). */
+export function forgetLastMail(): void {
+  try {
+    localStorage.removeItem(KEY);
+  } catch {
+    // storage refused: nothing more to do
+  }
+}

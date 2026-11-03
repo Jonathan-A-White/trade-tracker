@@ -256,6 +256,25 @@ describe("Settings > Family", () => {
     expect(within(row).queryByText(/No mail has come yet/)).not.toBeInTheDocument();
   });
 
+  it("Clear All Data forgets the last alert: an empty feed then says no mail has come yet", async () => {
+    const seen = backend.receive({ kind: "charge", amount: "9.99", merchant: "Somewhere", last4: "1234", when: "2026-10-30T18:14:00Z" });
+    const user = userEvent.setup();
+    const { container } = renderSettings();
+    await makeKeyAndTurnOn(user, container);
+    const row = family(container);
+    await within(row).findByText(/Forwarding works/);
+
+    // sorted away, so the feed is empty; then the Governor clears all data
+    backend.feed.splice(backend.feed.indexOf(seen), 1);
+    await user.click(screen.getByRole("button", { name: "Clear All Data" }));
+    await user.click(screen.getByRole("button", { name: "Delete Everything" }));
+    await screen.findByText("All data has been cleared.");
+
+    expect(await within(row).findByText(/No mail has come yet/)).toBeInTheDocument();
+    expect(within(row).queryByText(/Forwarding works/)).not.toBeInTheDocument();
+    expect(localStorage.getItem("tradetracker.family-last-mail")).toBeNull();
+  });
+
   it("a newer alert replaces the remembered time; an older one does not", async () => {
     vi.useFakeTimers({ toFake: ["setInterval", "clearInterval"] });
     backend.receive({ kind: "charge", when: "2026-10-30T18:14:00Z" });

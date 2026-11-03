@@ -9,6 +9,7 @@ import { YnabRepository } from "@/db/repositories/ynab-repository";
 import { ALERT_POLL_MS, makeAlertsClient } from "@/family/alerts-client";
 import type { FamilyAlert } from "@/family/alerts-client";
 import { readLastMail, rememberLastMail } from "@/family/last-mail";
+import { onDataCleared } from "../data-cleared";
 import { whenLine } from "@/sort/waiting";
 import { setFamilyOn, useFamilyOn, useYnabOn } from "../connections";
 import { SETTINGS_PATH } from "../registry";
@@ -254,6 +255,16 @@ export function FamilySection() {
   const cursor = useRef(0);
 
   const licensed = door === "licensed";
+
+  // Clear All Data forgets the last alert; the next read of the feed shows only what the feed itself still holds.
+  useEffect(
+    () =>
+      onDataCleared(() => {
+        cursor.current = 0;
+        setSeen((before) => (before ? { ...before, lastMail: null } : before));
+      }),
+    [],
+  );
   const confirmation = seen?.confirmation ?? null;
 
   // While the row is open and the phone may ask: the address once, then the feed every few seconds for Gmail's confirmation.
