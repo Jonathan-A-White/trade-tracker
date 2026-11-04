@@ -134,3 +134,21 @@ describe("Home: Waiting and Sorted today", () => {
     expect(screen.getByRole("heading", { name: "Waiting · 0" })).toBeInTheDocument();
   });
 });
+
+describe("Home: header and stat labels", () => {
+  it("says 'Track what you spend' under the title, with Family Off, and no longer says grocery", async () => {
+    renderHome({ me: "Jonathan" });
+    expect(await screen.findByText("Start New Trip")).toBeInTheDocument();
+    const header = screen.getByRole("banner");
+    expect(within(header).getByRole("heading", { name: "TradeTracker" })).toBeInTheDocument();
+    expect(within(header).getByText("Track what you spend")).toBeInTheDocument();
+    expect(header).not.toHaveTextContent(/grocery/i);
+    expect(header).not.toHaveTextContent(/ynab/i);
+  });
+
+  it("labels the stat that sums trips 'Spent on Trips'", async () => {
+    renderHome({ me: "Jonathan" });
+    expect(await screen.findByText("Spent on Trips")).toBeInTheDocument();
+    expect(screen.queryByText("Spent This Month")).not.toBeInTheDocument();
+  });
+});

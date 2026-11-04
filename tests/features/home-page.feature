@@ -36,3 +36,9 @@ Feature: Home Page
     Then I am navigated to the Items page
     When I tap the "Stores" stat card
     Then I am navigated to the Stores page
+
+  # From commit: Home says what the app is now, not only grocery
+  Scenario: Home header and trip spending label
+    When I navigate to the Home page
+    Then the blue header shows "TradeTracker" with "Track what you spend" under it
+    And the stat that sums trips is labelled "Spent on Trips"
