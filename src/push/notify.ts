@@ -5,8 +5,23 @@ import { door } from "bsv-kit/bsv";
 import { createPush, PushError, type Push, type PushStatus } from "pwa-kit/push";
 import { useFactory } from "@/factory";
 
+/** The line for a phone that has blocked notifications: the route to allow them depends on how the app runs. */
+function deniedLine(standalone: boolean): string {
+  return standalone
+    ? "Notifications are blocked for TradeTracker. Open your phone's recent apps (or press and hold the TradeTracker icon), tap App info, then Notifications, and choose Allow. Then come back here."
+    : "Notifications are blocked for this site. In Chrome, tap the three-dot menu, then Settings, Site settings, Notifications, find this site and choose Allow. Then come back here.";
+}
+
+function runsStandalone(): boolean {
+  return typeof window.matchMedia === "function" && window.matchMedia("(display-mode: standalone)").matches;
+}
+
 export function makeNotify(backendUrl: string, key: Uint8Array, publicKeyHex: string): Push {
-  return createPush({ signer: new door.Door({ baseUrl: backendUrl, key }), publicKeyHex });
+  return createPush({
+    signer: new door.Door({ baseUrl: backendUrl, key }),
+    publicKeyHex,
+    words: { denied: deniedLine(runsStandalone()) },
+  });
 }
 
 export interface Notify {
@@ -45,6 +60,28 @@ export function useNotify(enabled: boolean): Notify {
       current = false;
     };
   }, [enabled, licensed, getKey, backendUrl, publicKeyHex]);
+
+  // He allows notifications in the phone's settings and comes back to this same open page: read the permission again then.
+  useEffect(() => {
+    if (!push) return;
+    let current = true;
+    const reread = () => {
+      if (document.visibilityState === "hidden") return;
+      push
+        .status()
+        .then((found) => {
+          if (current) setStatus(found);
+        })
+        .catch(() => {});
+    };
+    document.addEventListener("visibilitychange", reread);
+    window.addEventListener("focus", reread);
+    return () => {
+      current = false;
+      document.removeEventListener("visibilitychange", reread);
+      window.removeEventListener("focus", reread);
+    };
+  }, [push]);
 
   const turnOn = useCallback(async () => {
     if (!push) return;
