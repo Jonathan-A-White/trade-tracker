@@ -63,7 +63,7 @@ export function HomePage() {
       <header className="bg-blue-600 text-white px-4 py-6">
         <h1 className="text-2xl font-bold">TradeTracker</h1>
         <p className="text-blue-100 text-sm mt-1">
-          Track your grocery spending
+          Track what you spend
         </p>
       </header>
 
@@ -89,7 +89,7 @@ export function HomePage() {
         <div className="grid grid-cols-2 gap-3">
           <StatCard label="Trips This Month" value={tripsCount} to="/trips/history" />
           <StatCard
-            label="Spent This Month"
+            label="Spent on Trips"
             value={formatCurrency(spentThisMonth)}
             to="/reports/spending"
           />

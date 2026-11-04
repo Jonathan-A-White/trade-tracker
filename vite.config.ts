@@ -50,7 +50,7 @@ export default defineConfig({
       manifest: {
         name: "TradeTracker",
         short_name: "TradeTracker",
-        description: "Local-first grocery price tracking",
+        description: "Local-first spending tracking",
         theme_color: "#0f172a",
         background_color: "#0f172a",
         display: "fullscreen",
