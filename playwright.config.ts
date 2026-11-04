@@ -1,9 +1,9 @@
 import { defineConfig, devices } from "@playwright/test";
 import { browserEnv } from "./tests/support/browser-env";
-import { previewPort, reuseExistingPreview } from "./tests/support/preview-port";
+import { resolvePreviewPort, reuseExistingPreview } from "./tests/support/preview-port";
 
-// One preview server per worktree: see tests/support/preview-port.ts.
-const PREVIEW_PORT = previewPort(process.cwd());
+// One preview server per worktree, on the first free port from its hash: see tests/support/preview-port.ts.
+const PREVIEW_PORT = resolvePreviewPort(process.cwd());
 
 export default defineConfig({
   testDir: "./tests/e2e",

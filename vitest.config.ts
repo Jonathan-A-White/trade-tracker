@@ -22,7 +22,7 @@ export default defineConfig({
     setupFiles: ["./src/test/setup.ts"],
     ...vitestTimeouts,
     // MW_TIMING=skip|only (with MW_TIMING_TESTS) leaves out or runs only the rig's timing tests; unset runs every test
-    ...timingFilter({ include: ["src/**/*.test.{ts,tsx}"] }),
+    ...timingFilter({ include: ["src/**/*.test.{ts,tsx}", "tests/support/**/*.test.ts"] }),
     passWithNoTests: true,
   },
 });
