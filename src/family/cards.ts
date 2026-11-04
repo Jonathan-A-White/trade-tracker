@@ -24,3 +24,8 @@ export function cardBook(cards: readonly FamilyCard[]): CardBook {
 export async function loadCardBook(repo: FamilyRepository = new FamilyRepository()): Promise<CardBook> {
   return cardBook(await repo.listCards());
 }
+
+/** Keeps the YNAB account a card goes with: the card's row takes it, or a last four with no row gets one owned by 'anyone'. */
+export async function rememberAccount(lastFour: string, accountId: string, repo: FamilyRepository = new FamilyRepository()): Promise<void> {
+  await repo.setAccount(lastFour, accountId, ANYONE);
+}
