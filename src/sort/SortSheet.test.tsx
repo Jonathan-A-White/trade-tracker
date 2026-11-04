@@ -20,6 +20,8 @@ import { keepReceiptShots, type ReceiptReader } from "./receipt-read";
 import type { ReceiptReconcileAnswer } from "@/contracts/types";
 import { readHistory, recordCharge, type SortChargeAnswer, type SortChargeAsk } from "./suggest";
 import { PENDING_CLAIMS_KEY } from "./useAlerts";
+import { cardBook } from "@/family/cards";
+import { waitingCharges } from "./waiting";
 
 vi.mock("@/scanner/capture-still", async (importOriginal) => ({
   ...(await importOriginal<typeof import("@/scanner/capture-still")>()),
@@ -569,5 +571,100 @@ describe("the Sort sheet with a photographed receipt", () => {
     const sheet = await screen.findByRole("dialog", { name: "$43.12 at Target" });
     await within(sheet).findByRole("radio", { name: /Groceries/ });
     expect(within(sheet).queryByRole("button", { name: "Photo the receipt" })).not.toBeInTheDocument();
+  });
+});
+
+describe("the account chosen on the sheet is remembered by the card", () => {
+  const cardsOf = (lastFour: string) => db.familyCards.where("lastFour").equals(lastFour).toArray();
+
+  async function chooseAccount(user: ReturnType<typeof userEvent.setup>, sheet: HTMLElement, id: string) {
+    await user.selectOptions(await within(sheet).findByLabelText("YNAB account"), id);
+  }
+
+  it("a card with a row and no account: Done puts the account on the row, and the next charge asks nothing and writes to it", async () => {
+    const user = userEvent.setup();
+    await new FamilyRepository().addCard({ lastFour: "4321", owner: "Jonathan" });
+    const first = backend.receive({ kind: "charge", amount: "10.00", merchant: "Farm Stand", last4: "4321", when: WHEN });
+    const second = backend.receive({ kind: "charge", amount: "12.00", merchant: "Bakery", last4: "4321", when: WHEN });
+    renderPhone(`/sort/${first.id}`);
+    const sheet = await screen.findByRole("dialog", { name: "$10.00 at Farm Stand" });
+    await chooseAccount(user, sheet, "a2");
+    await user.click(await within(sheet).findByRole("radio", { name: /Groceries/ }));
+    await user.click(within(sheet).getByRole("button", { name: "Done" }));
+    await waitFor(() => expect(where()).toBe("/"));
+
+    const [row] = await cardsOf("4321");
+    expect(row).toMatchObject({ lastFour: "4321", owner: "Jonathan", accountId: "a2" });
+
+    await user.click(await screen.findByRole("link", { name: /Bakery/ }));
+    const next = await screen.findByRole("dialog", { name: "$12.00 at Bakery" });
+    await within(next).findByRole("radio", { name: /Groceries/ });
+    expect(within(next).queryByLabelText("YNAB account")).not.toBeInTheDocument();
+    expect(within(next).getByText("Citi Double")).toBeInTheDocument();
+    await user.click(within(next).getByRole("radio", { name: /Groceries/ }));
+    await user.click(within(next).getByRole("button", { name: "Done" }));
+    await waitFor(() => expect(create).toHaveBeenCalledTimes(2));
+    expect(create).toHaveBeenLastCalledWith(expect.objectContaining({ accountId: "a2", amount: 12 }), { localId: `alert-${second.id}` });
+  });
+
+  it("a last four with no row: Done adds a row with owner 'anyone' and the account, and who is pinged does not change", async () => {
+    const user = userEvent.setup();
+    const alert = backend.receive({ kind: "charge", amount: "131.22", merchant: "JONES FAMILY FARMS", last4: "8235", when: WHEN });
+    const pinged = async () => {
+      const book = cardBook(await new FamilyRepository().listCards());
+      return ["Jonathan", "Sarah", null].map((me) => waitingCharges([alert], book, me, new Set())[0]!.mine);
+    };
+    const before = await pinged();
+    renderPhone(`/sort/${alert.id}`);
+    const sheet = await screen.findByRole("dialog", { name: "$131.22 at JONES FAMILY FARMS" });
+    await chooseAccount(user, sheet, "a1");
+    await user.click(await within(sheet).findByRole("radio", { name: /Groceries/ }));
+    await user.click(within(sheet).getByRole("button", { name: "Done" }));
+    await waitFor(() => expect(where()).toBe("/"));
+
+    const rows = await cardsOf("8235");
+    expect(rows).toHaveLength(1);
+    expect(rows[0]).toMatchObject({ lastFour: "8235", owner: "anyone", accountId: "a1" });
+    expect(await pinged()).toEqual(before);
+    expect(before).toEqual([true, true, true]);
+  });
+
+  it("Later and Not mine save no account", async () => {
+    const user = userEvent.setup();
+    await new FamilyRepository().addCard({ lastFour: "4321", owner: "Jonathan" });
+    const known = backend.receive({ kind: "charge", amount: "10.00", merchant: "Farm Stand", last4: "4321", when: WHEN });
+    const unknown = backend.receive({ kind: "charge", amount: "12.00", merchant: "Bakery", last4: "8235", when: WHEN });
+    renderPhone(`/sort/${known.id}`);
+    let sheet = await screen.findByRole("dialog", { name: "$10.00 at Farm Stand" });
+    await chooseAccount(user, sheet, "a2");
+    await user.click(within(sheet).getByRole("button", { name: "Later" }));
+    await waitFor(() => expect(where()).toBe("/"));
+    await user.click(await screen.findByRole("link", { name: /Bakery/ }));
+    sheet = await screen.findByRole("dialog", { name: "$12.00 at Bakery" });
+    await chooseAccount(user, sheet, "a1");
+    await user.click(within(sheet).getByRole("button", { name: "Not mine" }));
+    await waitFor(() => expect(where()).toBe("/"));
+
+    expect((await cardsOf("4321"))[0]?.accountId).toBeUndefined();
+    expect(await cardsOf("8235")).toEqual([]);
+    expect(create).not.toHaveBeenCalled();
+    expect(unknown.id).toBeTruthy();
+  });
+
+  it("choosing an account and leaving without Done saves nothing", async () => {
+    const user = userEvent.setup();
+    await new FamilyRepository().addCard({ lastFour: "4321", owner: "Jonathan" });
+    const known = backend.receive({ kind: "charge", amount: "10.00", merchant: "Farm Stand", last4: "4321", when: WHEN });
+    const unknown = backend.receive({ kind: "charge", amount: "12.00", merchant: "Bakery", last4: "8235", when: WHEN });
+    for (const [alert, name, id] of [[known, "$10.00 at Farm Stand", "a2"], [unknown, "$12.00 at Bakery", "a1"]] as const) {
+      const view = renderPhone(`/sort/${alert.id}`);
+      const sheet = await screen.findByRole("dialog", { name });
+      await chooseAccount(user, sheet, id);
+      await user.keyboard("{Escape}");
+      await waitFor(() => expect(where()).toBe("/"));
+      view.unmount();
+    }
+    expect((await cardsOf("4321"))[0]?.accountId).toBeUndefined();
+    expect(await cardsOf("8235")).toEqual([]);
   });
 });
