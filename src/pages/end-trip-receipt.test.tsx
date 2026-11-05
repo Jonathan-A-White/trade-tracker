@@ -568,6 +568,8 @@ describe("End Trip: Photograph receipt", () => {
       const client: ReceiptClient = {
         send: vi.fn(async (call) => {
           sent.push({ input: call.input, photos: call.photos });
+          // a real send takes a while to return its txid, and the trip is marked only after that
+          await new Promise((resolve) => setTimeout(resolve, 300));
           return `direct:tx${sent.length}`;
         }),
         awaitAnswer: vi.fn(() => new Promise<GristAnswer>(() => {})),
@@ -581,6 +583,11 @@ describe("End Trip: Photograph receipt", () => {
     await user.click(screen.getByRole("button", { name: "Send receipt" }));
     expect(await screen.findByRole("status")).toHaveTextContent("Waiting for the factory");
     await waitFor(() => expect(sent).toHaveLength(1));
+    // The client has the call, but the trip is marked waiting, and the card done sending, only once the
+    // send returns: until then the mark would be written after this test's own and with the moved clock,
+    // and Send again would be disabled. The photos leave the card when the send is over (mw-mr4xgrw.46).
+    await waitFor(() => expect(screen.queryByText(/photos? ready/)).not.toBeInTheDocument(), { timeout: 5000 });
+    expect((await db.trips.toArray())[0].receiptPending).toBeDefined();
 
     // eleven minutes on: the wait has run out
     const now = Date.now();
