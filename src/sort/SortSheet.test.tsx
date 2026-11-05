@@ -394,7 +394,7 @@ describe("the Sort sheet with the AI's suggestion", () => {
     expect(within(sheet).queryByText("Usual.")).not.toBeInTheDocument();
   });
 
-  it("the mill slow past its deadline: the sheet says so, works by hand, and the late answer is not applied", async () => {
+  it("the mill slow past its deadline: the sheet says so and works by hand, and the wait goes on", async () => {
     const user = userEvent.setup();
     const alert = backend.receive({ kind: "charge", amount: "8.50", merchant: "Dunkin'", last4: "1234" });
     let signal: AbortSignal | undefined;
@@ -405,12 +405,41 @@ describe("the Sort sheet with the AI's suggestion", () => {
     renderPhone(`/sort/${alert.id}`, { suggest, suggestTimeoutMs: 300 });
     const sheet = await screen.findByRole("dialog", { name: "$8.50 at Dunkin'" });
     expect(await within(sheet).findByText("The suggestion is taking too long. Choose by hand.")).toBeInTheDocument();
-    expect(signal?.aborted).toBe(true);
+    expect(signal?.aborted).toBe(false);
     expect(within(sheet).queryByText("Asking for a suggestion…")).not.toBeInTheDocument();
     await user.click(within(sheet).getByRole("radio", { name: /Eating Out/ }));
     await user.click(within(sheet).getByRole("button", { name: "Done" }));
     await waitFor(() => expect(create).toHaveBeenCalled());
     expect(create.mock.calls[0]![0]).toMatchObject({ categoryId: "c2" });
+  });
+
+  it("an answer after the deadline, with nothing chosen, still fills the sheet and clears the notice (mw-mr4xgrw.40)", async () => {
+    const alert = backend.receive({ kind: "charge", amount: "131.22", merchant: "JONES FAMILY FARMS, LL SHELTON USA", last4: "8235" });
+    let answer: (a: SortChargeAnswer) => void = () => {};
+    const suggest = vi.fn<SortChargeAsk>(() => new Promise<SortChargeAnswer>((resolve) => (answer = resolve)));
+    renderPhone(`/sort/${alert.id}`, { suggest, suggestTimeoutMs: 300 });
+    const sheet = await screen.findByRole("dialog", { name: "$131.22 at JONES FAMILY FARMS, LL SHELTON USA" });
+    expect(await within(sheet).findByText("The suggestion is taking too long. Choose by hand.")).toBeInTheDocument();
+    answer({ category: "Groceries", why: "A farm; food." });
+    await waitFor(() => expect(within(sheet).queryByText("The suggestion is taking too long. Choose by hand.")).not.toBeInTheDocument());
+    expect(within(sheet).getByRole("radio", { name: /Groceries/ })).toHaveAttribute("aria-checked", "true");
+    expect(within(sheet).getByText("A farm; food.")).toBeInTheDocument();
+  });
+
+  it("an answer after the deadline, after he has chosen, does not touch his choice (mw-mr4xgrw.40)", async () => {
+    const user = userEvent.setup();
+    const alert = backend.receive({ kind: "charge", amount: "8.50", merchant: "Dunkin'", last4: "1234" });
+    let answer: (a: SortChargeAnswer) => void = () => {};
+    const suggest = vi.fn<SortChargeAsk>(() => new Promise<SortChargeAnswer>((resolve) => (answer = resolve)));
+    renderPhone(`/sort/${alert.id}`, { suggest, suggestTimeoutMs: 300 });
+    const sheet = await screen.findByRole("dialog", { name: "$8.50 at Dunkin'" });
+    expect(await within(sheet).findByText("The suggestion is taking too long. Choose by hand.")).toBeInTheDocument();
+    await user.click(within(sheet).getByRole("radio", { name: /Eating Out/ }));
+    answer({ category: "Groceries", why: "Usual." });
+    await waitFor(() => expect(within(sheet).queryByText("The suggestion is taking too long. Choose by hand.")).not.toBeInTheDocument());
+    expect(within(sheet).getByRole("radio", { name: /Eating Out/ })).toHaveAttribute("aria-checked", "true");
+    expect(within(sheet).getByRole("radio", { name: /Groceries/ })).toHaveAttribute("aria-checked", "false");
+    expect(within(sheet).queryByText("Usual.")).not.toBeInTheDocument();
   });
 
   it("no licence: the mill refuses with NotAllowed and nothing is shown of it", async () => {
