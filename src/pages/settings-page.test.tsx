@@ -28,6 +28,11 @@ const noWebAuthn: PasskeyPort = {
   getPrfSecret: async () => null,
 };
 
+/** The import pickers in page order: items, trips, the AI trip. Move's Unpack picker (labelled Pack file) is not one of them. */
+function importInputs(container: HTMLElement): HTMLInputElement[] {
+  return [...container.querySelectorAll<HTMLInputElement>('input[type="file"]')].filter((i) => i.getAttribute("aria-label") !== "Pack file");
+}
+
 function renderSettings(checkLicence: FactoryLicenceChecker = async () => none) {
   return render(
     <MemoryRouter>
@@ -196,7 +201,7 @@ describe("SettingsPage confirm dialogs", () => {
   it("asks before importing items from a valid file, and Cancel closes it", async () => {
     const user = userEvent.setup();
     const { container } = renderSettings();
-    const input = container.querySelectorAll('input[type="file"]')[0] as HTMLInputElement;
+    const input = importInputs(container)[0] as HTMLInputElement;
     await user.upload(input, new File([JSON.stringify({ type: "items", items: [] })], "items.json"));
     expect(await screen.findByRole("heading", { name: "Import Items?" })).toBeInTheDocument();
     expect(screen.getByRole("button", { name: "Import" })).toBeInTheDocument();
@@ -207,7 +212,7 @@ describe("SettingsPage confirm dialogs", () => {
   it("imports items on Import and reports the counts", async () => {
     const user = userEvent.setup();
     const { container } = renderSettings();
-    const input = container.querySelectorAll('input[type="file"]')[0] as HTMLInputElement;
+    const input = importInputs(container)[0] as HTMLInputElement;
     await user.upload(input, new File([JSON.stringify({ type: "items", items: [] })], "items.json"));
     await user.click(await screen.findByRole("button", { name: "Import" }));
     expect(await screen.findByText(/Added 0 items\./)).toBeInTheDocument();
@@ -216,7 +221,7 @@ describe("SettingsPage confirm dialogs", () => {
   it("asks before importing trips from a valid file", async () => {
     const user = userEvent.setup();
     const { container } = renderSettings();
-    const input = container.querySelectorAll('input[type="file"]')[1] as HTMLInputElement;
+    const input = importInputs(container)[1] as HTMLInputElement;
     const trips = { type: "trips", stores: [], trips: [], tripItems: [], priceHistory: [] };
     await user.upload(input, new File([JSON.stringify(trips)], "trips.json"));
     expect(await screen.findByRole("heading", { name: "Import Trips?" })).toBeInTheDocument();
@@ -225,7 +230,7 @@ describe("SettingsPage confirm dialogs", () => {
   it("refuses an items file of the wrong type", async () => {
     const user = userEvent.setup();
     const { container } = renderSettings();
-    const input = container.querySelectorAll('input[type="file"]')[0] as HTMLInputElement;
+    const input = importInputs(container)[0] as HTMLInputElement;
     await user.upload(input, new File([JSON.stringify({ type: "trips", items: [] })], "x.json"));
     expect(await screen.findByText(/^Invalid file: File type must be "items"/)).toBeInTheDocument();
   });
@@ -233,7 +238,7 @@ describe("SettingsPage confirm dialogs", () => {
   it("rejects a trips file that is not JSON", async () => {
     const user = userEvent.setup();
     const { container } = renderSettings();
-    const inputs = container.querySelectorAll('input[type="file"]');
+    const inputs = importInputs(container);
     const tripsInput = inputs[1] as HTMLInputElement;
     await user.upload(tripsInput, new File(["not json"], "trips.json", { type: "application/json" }));
     expect(
@@ -243,7 +248,7 @@ describe("SettingsPage confirm dialogs", () => {
 
   it("rejects an AI trip file that is not JSON", async () => {
     const { user, container } = await renderLicensed();
-    const inputs = container.querySelectorAll('input[type="file"]');
+    const inputs = importInputs(container);
     const aiInput = inputs[2] as HTMLInputElement;
     await user.upload(aiInput, new File(["nope"], "trip.json", { type: "application/json" }));
     expect(await screen.findByText("Could not parse file. Make sure it is valid JSON.")).toBeInTheDocument();

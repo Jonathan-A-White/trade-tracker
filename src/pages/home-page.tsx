@@ -2,6 +2,8 @@ import { useLiveQuery } from "dexie-react-hooks";
 import { Link, Outlet } from "react-router";
 import { db } from "@/db/database";
 import { formatCurrency } from "@/core/pricing";
+import { UnpackFile, UnpackedNote } from "@/move/unpack-file";
+import { storedPublicKeyHex } from "@/services/factory-service";
 import { StatCard } from "@/components/data-display/stat-card";
 import { TripCard } from "@/components/data-display/trip-card";
 import { useFamilyFeed } from "@/sort/sort-context";
@@ -57,6 +59,8 @@ export function HomePage() {
       : 0;
 
   const recentTrips = (completedTrips ?? []).slice(0, 3);
+  // a phone with no key yet may be a phone that has just moved here: offer the file the old address packed
+  const noKeyYet = storedPublicKeyHex() === null;
 
   return (
     <div className="flex flex-col min-h-full">
@@ -68,6 +72,21 @@ export function HomePage() {
       </header>
 
       <div className="flex-1 px-4 py-4 space-y-6">
+        <UnpackedNote />
+        {noKeyYet && (
+          <UnpackFile
+            trigger={(open, busy) => (
+              <button
+                type="button"
+                disabled={busy}
+                onClick={open}
+                className="block w-full min-h-[44px] rounded-lg border border-dashed border-blue-300 dark:border-blue-600 px-4 py-2 text-center text-sm font-medium text-blue-600 dark:text-blue-400 disabled:opacity-50"
+              >
+                {busy ? "Unpacking…" : "Moving from the old address? Unpack"}
+              </button>
+            )}
+          />
+        )}
         <WaitingCard family={family} />
 
         {activeTrip ? (

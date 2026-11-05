@@ -7,11 +7,14 @@ import { db } from "@/db/database";
 import { FamilyRepository } from "@/db/repositories/family-repository";
 import { makeAlertsClient, type AlertsClient } from "@/family/alerts-client";
 import { fakeAlerts, type FakeAlerts } from "@/family/fake-alerts";
+import { reloadPage } from "@/move/reload";
 import { appRoutes } from "@/routes";
 import type { PasskeyPort } from "@/services/passkey";
 import { setFamilyOn } from "@/settings/connections";
 import { SortProvider, type SortSeams } from "@/sort/sort-context";
 import { ME_KEY } from "@/sort/waiting";
+
+vi.mock("@/move/reload", () => ({ reloadPage: vi.fn() }));
 
 const BACKEND = "https://backend.example.test";
 const noWebAuthn: PasskeyPort = {
@@ -150,5 +153,62 @@ describe("Home: header and stat labels", () => {
     renderHome({ me: "Jonathan" });
     expect(await screen.findByText("Spent on Trips")).toBeInTheDocument();
     expect(screen.queryByText("Spent This Month")).not.toBeInTheDocument();
+  });
+});
+
+describe("Home: Moving from the old address", () => {
+  const LINE = "Moving from the old address? Unpack";
+  const packFile = () =>
+    new File(
+      [
+        JSON.stringify({
+          version: 1,
+          app: "trade-tracker",
+          from: "http://old.example",
+          when: "2026-11-05T20:00:00.000Z",
+          db: { schema: db.verno, tables: { stores: [{ id: "n1", name: "Aldi", createdAt: 1, updatedAt: 1 }] } },
+          storage: { "tradetracker-factory-public": "02aabb" },
+        }),
+      ],
+      "tradetracker-move-2026-11-05.json",
+      { type: "application/json" },
+    );
+
+  beforeEach(() => {
+    vi.mocked(reloadPage).mockClear();
+    sessionStorage.clear();
+  });
+
+  it("offers the line, 44 px tall, while the phone has no key", async () => {
+    renderHome({ me: "Jonathan" });
+    const line = await screen.findByRole("button", { name: LINE });
+    expect(line.className).toMatch(/min-h-\[44px\]/);
+    expect(screen.getByLabelText("Pack file")).toHaveAttribute("accept", ".json");
+  });
+
+  it("draws nothing of it once the phone has a key", async () => {
+    localStorage.setItem("tradetracker-factory-public", "02aabb");
+    renderHome({ me: "Jonathan" });
+    expect(await screen.findByText("Start New Trip")).toBeInTheDocument();
+    expect(screen.queryByRole("button", { name: LINE })).not.toBeInTheDocument();
+    expect(screen.queryByLabelText("Pack file")).not.toBeInTheDocument();
+  });
+
+  it("restores the picked file (after asking, since this phone holds cards), keeps its key and reloads; Home then has no line", async () => {
+    const user = userEvent.setup();
+    const first = renderHome({ me: "Jonathan" });
+    await screen.findByRole("button", { name: LINE });
+    await user.upload(screen.getByLabelText("Pack file"), packFile());
+    await user.click(await screen.findByRole("button", { name: "Unpack" }));
+    await waitFor(() => expect(reloadPage).toHaveBeenCalledTimes(1));
+    expect((await db.stores.toArray()).map((s) => s.id)).toEqual(["n1"]);
+    expect(await db.familyCards.count()).toBe(0);
+    expect(localStorage.getItem("tradetracker-factory-public")).toBe("02aabb");
+    first.unmount();
+
+    // the app reloaded: the ordinary Home, with one line of what came
+    renderHome({ me: "Jonathan" });
+    expect(await screen.findByText(/Unpacked: 1 stores, 0 items, 0 trips, 0 prices, 0 photos\./)).toBeInTheDocument();
+    expect(screen.queryByRole("button", { name: LINE })).not.toBeInTheDocument();
   });
 });
