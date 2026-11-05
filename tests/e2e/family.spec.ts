@@ -69,15 +69,16 @@ test("Settings > Family: the address, the recipe, Gmail's code and two cards", a
   await expect(row.getByText("My cards")).toHaveCount(0);
   expect(await row.innerText()).not.toContain(ADDRESS);
 
-  // make the key, hold the licence for it, and come back to it unlocked by the fingerprint
+  // make the key, hold the licence for it, and come back to it still unlocked
   await page.getByRole("button", { name: "Make key" }).click();
   await expect(page.getByTestId("recovery-phrase")).toBeVisible();
   await page.evaluate(() => {
     const publicKeyHex = localStorage.getItem("tradetracker-factory-public");
     localStorage.setItem("bsv-kit.licence", JSON.stringify({ publicKeyHex, at: Date.now() }));
   });
+  // making the key unlocked it and the day's unlock is kept on the device (mw-mr4xgrw.32), so the reload resumes
+  // it and no fingerprint is asked for: the door is open as soon as the page is back
   await page.reload();
-  await page.getByRole("button", { name: "Unlock with fingerprint" }).click();
   await expect(page.getByText("Key unlocked for today.")).toBeVisible();
 
   await row.scrollIntoViewIfNeeded();

@@ -131,7 +131,7 @@ test("Home's Waiting, the Sort sheet and a split at 390x844 and 360x740", async 
   await page.addInitScript(() => localStorage.setItem("pwa-kit:tapSettleMs", "0"));
   await virtualFingerprint(page);
 
-  // the key, the licence, and the key unlocked by the fingerprint
+  // the key, the licence, and the key, still unlocked after the reload
   await page.goto("settings");
   await page.getByRole("button", { name: "Make key" }).click();
   await expect(page.getByTestId("recovery-phrase")).toBeVisible();
@@ -140,8 +140,9 @@ test("Home's Waiting, the Sort sheet and a split at 390x844 and 360x740", async 
     localStorage.setItem("bsv-kit.licence", JSON.stringify({ publicKeyHex, at: Date.now() }));
     localStorage.setItem("tradetracker-family-me", "Jonathan");
   });
+  // making the key unlocked it and the day's unlock is kept on the device (mw-mr4xgrw.32), so the reload resumes
+  // it and no fingerprint is asked for: the door is open as soon as the page is back
   await page.reload();
-  await page.getByRole("button", { name: "Unlock with fingerprint" }).click();
   await expect(page.getByText("Key unlocked for today.")).toBeVisible();
 
   // YNAB connected
