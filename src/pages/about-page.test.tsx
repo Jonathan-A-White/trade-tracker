@@ -49,6 +49,15 @@ describe("What's new", () => {
   });
 });
 
+describe("Address", () => {
+  it("names trade.allmymind.org as the app's address and the old one as retired", () => {
+    renderAbout();
+    expect(screen.getByRole("heading", { name: "Address" })).toBeInTheDocument();
+    expect(screen.getByRole("link", { name: "trade.allmymind.org" })).toHaveAttribute("href", "https://trade.allmymind.org");
+    expect(screen.getByText(/The old address, https:\/\/jonathan-a-white\.github\.io\/trade-tracker\/, is retired after the move/)).toBeInTheDocument();
+  });
+});
+
 describe("AboutPage", () => {
   it("opens with Newton's line, attributed, before the credits", () => {
     renderAbout();

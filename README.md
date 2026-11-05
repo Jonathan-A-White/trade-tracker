@@ -41,6 +41,8 @@ No form without a tutor. Each of the app's three forms has a **Let the tutor do 
 
 ## Moving to a new address
 
+The app's address is https://trade.allmymind.org. The old one, https://jonathan-a-white.github.io/trade-tracker/, is retired after the move: until both phones have unpacked, the Pages workflow (`.github/workflows/deploy.yml`) keeps publishing it with `VITE_MOVED_TO=https://trade.allmymind.org`, and a build with that set shows a banner on every screen (`src/move/MovedBanner.tsx`) saying the app has moved, with **Pack up** (opens Settings > Move) and **Later** (hides it until the next launch). A build without it, such as the new address's, has no banner.
+
 Everything the app holds is on the phone, per address, so a new address is a new empty app. **Settings > Move > Pack up this phone** (`src/settings/sections/move-section.tsx`) writes one file, `tradetracker-move-<date>.json`, that the new address unpacks (`src/move/unpack.ts`).
 
 **The steps, on each phone** (his, then hers; the two phones share nothing but the backend's alert feed, so each packs and unpacks itself):

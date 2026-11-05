@@ -25,7 +25,12 @@ jobs:
           node-version: 22
           cache: npm
       - run: npm ci
+      # The app now lives at https://trade.allmymind.org. This workflow keeps publishing the old GitHub Pages address only until both
+      # phones have unpacked there: VITE_MOVED_TO makes this build show a "has moved" banner (src/move/MovedBanner.tsx). Retire this
+      # workflow once both phones have moved.
       - run: npm run build
+        env:
+          VITE_MOVED_TO: https://trade.allmymind.org
       - uses: actions/configure-pages@v5
       - uses: actions/upload-pages-artifact@v3
         with:

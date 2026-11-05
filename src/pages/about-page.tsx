@@ -7,6 +7,9 @@ import changelog from "../../CHANGELOG.md?raw";
 // What's new is CHANGELOG.md's own lines, bundled with the build (an installed app reads it offline).
 const ENTRIES = changelogEntries(changelog);
 
+const NEW_ADDRESS = "https://trade.allmymind.org";
+const OLD_ADDRESS = "https://jonathan-a-white.github.io/trade-tracker/";
+
 const linkClass = "text-blue-600 dark:text-blue-400 underline";
 
 export default function AboutPage() {
@@ -27,6 +30,17 @@ export default function AboutPage() {
         <section className="space-y-2">
           <h2 className="text-sm font-medium text-gray-700 dark:text-gray-300">What&apos;s new</h2>
           <WhatsNewList entries={ENTRIES} className="text-sm text-gray-700 dark:text-gray-300" />
+        </section>
+
+        <section className="space-y-2">
+          <h2 className="text-sm font-medium text-gray-700 dark:text-gray-300">Address</h2>
+          <p className="text-sm text-gray-700 dark:text-gray-300">
+            The app lives at{" "}
+            <a href={NEW_ADDRESS} className={linkClass}>
+              trade.allmymind.org
+            </a>{" "}
+            ({NEW_ADDRESS}). The old address, {OLD_ADDRESS}, is retired after the move.
+          </p>
         </section>
 
         {CREDIT_GROUPS.map((group) => (
