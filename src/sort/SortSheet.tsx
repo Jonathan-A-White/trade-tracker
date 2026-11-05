@@ -12,7 +12,7 @@ import { YnabRepository } from "@/db/repositories/ynab-repository";
 import type { YnabCategory, YnabTransactionInput } from "@/contracts/types";
 import { ANYONE, rememberAccount } from "@/family/cards";
 import { useYnabOn } from "@/settings/connections";
-import { CategoryPicker } from "./CategoryPicker";
+import { AvailableLines, CategoryPicker } from "./CategoryPicker";
 import { SplitEditor } from "./SplitEditor";
 import { newPart, partCents, remainderCents, splitReady, type SplitPart } from "./split";
 import { dropReceiptShots, receiptShotsOf, type ReceiptReader } from "./receipt-read";
@@ -251,7 +251,7 @@ type ReceiptStatus =
   | { phase: "off" }
   | { phase: "reading" | "grouping" | "slow" }
   | { phase: "failed"; message: string }
-  | { phase: "done"; why: string; line: string | null };
+  | { phase: "done"; why: string; line: string | null; parts: { categoryId: string; amount: number }[] };
 
 /** The parts a photographed receipt makes of the charge, as the sheet's own category ids and typed dollars. */
 interface ReceiptParts {
@@ -322,7 +322,7 @@ function useReceipt(opts: {
         chargeCents: Math.round(c.amount * 100),
       });
       if (!split.ok) return fail(split.line);
-      setStatus({ phase: "done", why: resolved.why, line: split.line });
+      setStatus({ phase: "done", why: resolved.why, line: split.line, parts: split.rows.map((r) => ({ categoryId: r.categoryId, amount: r.cents / 100 })) });
       if (split.rows.length === 1) onParts({ categoryId: split.rows[0]!.categoryId });
       else onParts({ parts: split.rows.map((r) => ({ categoryId: r.categoryId, amount: (r.cents / 100).toFixed(2) })) });
     };
@@ -648,13 +648,17 @@ function ChargeSheet({ family, charge, onClose }: { family: FamilyFeed; charge: 
                 {receipt.status.why}
               </p>
               {receipt.status.line && <p className="mt-1 font-medium">{receipt.status.line}</p>}
+              {categories && <AvailableLines categories={categories} parts={receipt.status.parts} />}
             </div>
           )}
           {suggestedShown && (
-            <p role="status" className="rounded-lg bg-blue-50 dark:bg-blue-950 px-3 py-2 text-sm text-gray-800 dark:text-gray-100">
-              <span className="font-semibold">Suggested · </span>
-              {suggestion.why}
-            </p>
+            <div role="status" className="rounded-lg bg-blue-50 dark:bg-blue-950 px-3 py-2 text-sm text-gray-800 dark:text-gray-100">
+              <p>
+                <span className="font-semibold">Suggested · </span>
+                {suggestion.why}
+              </p>
+              {categories && <AvailableLines categories={categories} parts={"parts" in suggestion ? suggestion.parts : [{ categoryId: suggestion.categoryId, amount }]} />}
+            </div>
           )}
           {changedTo && (
             <div className="space-y-1">
