@@ -350,6 +350,35 @@ describe("the Sort sheet with the AI's suggestion", () => {
     expect(readHistory("Trader Joe's")[0]).toEqual({ amount: 43.12, category: "Groceries" });
   });
 
+  it("the suggestion says how much is available in its category with no tap, in the words of the category row (mw-mr4xgrw.47)", async () => {
+    const alert = backend.receive({ kind: "charge", amount: "43.12", merchant: "Dunkin'", last4: "1234" });
+    renderPhone(`/sort/${alert.id}`, { suggest: ask({ category: "Groceries", why: "Usual." }) });
+    const sheet = await screen.findByRole("dialog", { name: "$43.12 at Dunkin'" });
+    // already chosen in the list, and the banner carries the same figure the row does
+    const banner = (await within(sheet).findByText("Usual.")).closest("[role=status]") as HTMLElement;
+    expect(within(sheet).getByRole("radio", { name: "Groceries · $212 left" })).toHaveAttribute("aria-checked", "true");
+    expect(banner).toHaveTextContent("Groceries · $212 left");
+  });
+
+  it("a suggested category the charge would overspend says short by in the banner too (mw-mr4xgrw.47)", async () => {
+    const alert = backend.receive({ kind: "charge", amount: "43.12", merchant: "Dunkin'", last4: "1234" });
+    renderPhone(`/sort/${alert.id}`, { suggest: ask({ category: "Eating Out", why: "Coffee." }) });
+    const sheet = await screen.findByRole("dialog", { name: "$43.12 at Dunkin'" });
+    const banner = (await within(sheet).findByText("Coffee.")).closest("[role=status]") as HTMLElement;
+    expect(within(sheet).getByRole("radio", { name: "Eating Out · $8 left · short by $35.12" })).toHaveAttribute("aria-checked", "true");
+    expect(banner).toHaveTextContent("Eating Out · $8 left · short by $35.12");
+  });
+
+  it("a split suggestion says what is available in each of its categories (mw-mr4xgrw.47)", async () => {
+    const alert = backend.receive({ kind: "charge", amount: "43.12", merchant: "Target", last4: "1234" });
+    const split = [{ category: "Groceries", amount: 30 }, { category: "Eating Out", amount: 13.12 }];
+    renderPhone(`/sort/${alert.id}`, { suggest: ask({ split, why: "Food and a coffee." }) });
+    const sheet = await screen.findByRole("dialog", { name: "$43.12 at Target" });
+    const banner = (await within(sheet).findByText("Food and a coffee.")).closest("[role=status]") as HTMLElement;
+    expect(banner).toHaveTextContent("Groceries · $212 left");
+    expect(banner).toHaveTextContent("Eating Out · $8 left · short by $5.12");
+  });
+
   it("a tap on another category changes the suggestion", async () => {
     const user = userEvent.setup();
     const alert = backend.receive({ kind: "charge", amount: "8.50", merchant: "Dunkin'", last4: "1234" });
@@ -670,6 +699,10 @@ describe("the Sort sheet with a photographed receipt", () => {
     expect(where()).toBe(`/sort/${alert.id}`);
     expect(await within(back).findByText(/From the receipt/)).toBeInTheDocument();
     expect(within(back).getByText(/the paper towels to Household/)).toBeInTheDocument();
+    // and what is available in each category the receipt went to (mw-mr4xgrw.47)
+    const fromReceipt = within(back).getByText(/the paper towels to Household/).closest("[role=status]") as HTMLElement;
+    expect(fromReceipt).toHaveTextContent("Groceries · $212 left");
+    expect(fromReceipt).toHaveTextContent("Household · $61 left");
     expect(readReceipt).toHaveBeenCalledWith("Target", expect.any(Array), expect.any(AbortSignal));
     // the sheet's own suggestion asked first, without lines; the receipt's grouping asked with them
     expect(suggest.mock.calls[0]![0].lines).toBeUndefined();

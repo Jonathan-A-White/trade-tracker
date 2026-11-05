@@ -15,6 +15,44 @@ export interface CategoryPickerProps {
   onSelect: (categoryId: string) => void;
 }
 
+/** What is available in a category for `amount`, in the row's own words: ' · $212 left', and ' · short by $x' in red. */
+export function CategoryFigure({ category, amount }: { category: YnabCategory; amount: number }) {
+  const short = shortBy(category, amount);
+  return (
+    <>
+      {category.balance !== undefined && <span className="text-gray-600 dark:text-gray-300"> · {leftLine(category.balance)}</span>}
+      {short !== null && (
+        <>
+          <span className="text-gray-600 dark:text-gray-300"> · </span>
+          <span className="font-medium text-red-600 dark:text-red-400">short by {money(short)}</span>
+        </>
+      )}
+    </>
+  );
+}
+
+/**
+ * The categories a suggestion went to, each with what is available in it for its part of the charge, so the figure is seen
+ * without opening the list: 'Utilities · nothing left · short by $151.27'.
+ */
+export function AvailableLines({ categories, parts }: { categories: readonly YnabCategory[]; parts: readonly { categoryId: string; amount: number }[] }) {
+  const lines = parts.flatMap((part) => {
+    const category = categories.find((c) => c.id === part.categoryId);
+    return category ? [{ category, amount: part.amount }] : [];
+  });
+  if (lines.length === 0) return null;
+  return (
+    <ul aria-label="Available" className="mt-1 space-y-0.5 font-medium">
+      {lines.map(({ category, amount }, index) => (
+        <li key={`${index}-${category.id}`}>
+          <span className="text-gray-900 dark:text-gray-100">{category.name}</span>
+          <CategoryFigure category={category} amount={amount} />
+        </li>
+      ))}
+    </ul>
+  );
+}
+
 export function CategoryPicker({ categories, amount, selected, onSelect }: CategoryPickerProps) {
   const findId = useId();
   const [find, setFind] = useState("");
@@ -47,7 +85,6 @@ export function CategoryPicker({ categories, amount, selected, onSelect }: Categ
           <div key={group} className="space-y-1">
             <p className="px-1 text-xs font-medium uppercase tracking-wide text-gray-500 dark:text-gray-400">{group}</p>
             {rows.map((category) => {
-              const short = shortBy(category, amount);
               const chosen = selected === category.id;
               return (
                 <button
@@ -63,15 +100,7 @@ export function CategoryPicker({ categories, amount, selected, onSelect }: Categ
                   }`}
                 >
                   <span className="font-medium text-gray-900 dark:text-gray-100">{category.name}</span>
-                  {category.balance !== undefined && (
-                    <span className="text-gray-600 dark:text-gray-300"> · {leftLine(category.balance)}</span>
-                  )}
-                  {short !== null && (
-                    <>
-                      <span className="text-gray-600 dark:text-gray-300"> · </span>
-                      <span className="font-medium text-red-600 dark:text-red-400">short by {money(short)}</span>
-                    </>
-                  )}
+                  <CategoryFigure category={category} amount={amount} />
                 </button>
               );
             })}
