@@ -1,4 +1,4 @@
-import { endTheDay } from "@/test/end-the-day";
+import { endTheDay, waitForDayKept } from "@/test/end-the-day";
 import { render, screen, waitFor } from "@testing-library/react";
 import userEvent from "@testing-library/user-event";
 import { MemoryRouter } from "react-router";
@@ -259,6 +259,36 @@ describe("Settings > Factory > fingerprint", () => {
     await waitFor(() => expect(screen.getByTestId("door")).toHaveTextContent("unlocked"));
   });
 
+  it("a slow write of the day's unlock cannot outlive the end of the day: the next launch finds the door locked (mw-mr4xgrw.46)", async () => {
+    const user = userEvent.setup();
+    const first = renderSettings(fakePort());
+    const words = await makeKey(user);
+    first.unmount();
+    await endTheDay();
+
+    // The door says "unlocked" the moment the key is held; the unlock kept on the device is written a
+    // moment later (a device key is made and the key wrapped under it). On a loaded host that moment
+    // is long, so slow it here: a test that ends the day at once would have the write land after it.
+    const encrypt = crypto.subtle.encrypt.bind(crypto.subtle);
+    const slow = vi.spyOn(crypto.subtle, "encrypt").mockImplementation(async (...args) => {
+      await new Promise((resolve) => setTimeout(resolve, 300));
+      return encrypt(...args);
+    });
+    const again = renderSettings(fakePort());
+    await user.click(screen.getByRole("button", { name: "Unlock with fingerprint" }));
+    await waitFor(() => expect(screen.getByTestId("door")).toHaveTextContent("unlocked"));
+    await waitForDayKept();
+    again.unmount();
+    await endTheDay();
+    slow.mockRestore();
+
+    // A relaunch takes back an unlock still kept (resume, a moment after the first draw), so typing
+    // the words and finding the Unlock button is what shows the door was locked.
+    renderSettings(fakePort());
+    await typeWordsAndUnlock(user, words);
+    await waitFor(() => expect(screen.getByTestId("door")).toHaveTextContent("unlocked"));
+  });
+
   it("a key made with a passphrase: the passphrase unlocks it, Use fingerprint is then offered, and the 12 words work from then on", async () => {
     const user = userEvent.setup();
     const made = await seedPassphraseKey("correct horse");
@@ -267,6 +297,7 @@ describe("Settings > Factory > fingerprint", () => {
     const first = renderSettings(fakePort());
     await typeWordsAndUnlock(user, "correct horse");
     await waitFor(() => expect(screen.getByTestId("door")).toHaveTextContent("unlocked"));
+    await waitForDayKept();
 
     await clickWhenEnabled(user, "Use fingerprint");
     await screen.findByRole("button", { name: "Remove fingerprint" });
@@ -281,6 +312,7 @@ describe("Settings > Factory > fingerprint", () => {
     const again = renderSettings(fakePort());
     await user.click(screen.getByRole("button", { name: "Unlock with fingerprint" }));
     await waitFor(() => expect(screen.getByTestId("door")).toHaveTextContent("unlocked"));
+    await waitForDayKept();
     again.unmount();
     await endTheDay();
 
@@ -294,6 +326,7 @@ describe("Settings > Factory > fingerprint", () => {
     await seedPassphraseKey("correct horse");
     const first = renderSettings(fakePort());
     await typeWordsAndUnlock(user, "correct horse");
+    await waitForDayKept();
     await clickWhenEnabled(user, "Use fingerprint");
     await screen.findByRole("button", { name: "Remove fingerprint" });
     first.unmount();
