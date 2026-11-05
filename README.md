@@ -43,19 +43,42 @@ No form without a tutor. Each of the app's three forms has a **Let the tutor do 
 
 Everything the app holds is on the phone, per address, so a new address is a new empty app. **Settings > Move > Pack up this phone** (`src/settings/sections/move-section.tsx`) writes one file, `tradetracker-move-<date>.json`, that the new address unpacks (`src/move/unpack.ts`).
 
+**The steps, on each phone** (his, then hers; the two phones share nothing but the backend's alert feed, so each packs and unpacks itself):
+
+1. At the old address, Settings > Move > **Pack up this phone**. A file `tradetracker-move-<date>.json` lands in Downloads and the screen says what it holds and to open the new address and Unpack. Packing deletes nothing and unsubscribes the old address's push.
+2. Open `https://trade.allmymind.org` in Chrome and install it (Add to Home screen). On Android, open Settings > Apps > Trade Tracker > **Supported web addresses** and switch `trade.allmymind.org` ON, so links open the installed app.
+3. Home shows **Moving from the old address? Unpack** while the phone has no key yet (Settings > Move has **Unpack from a file** too, always). Tap it and pick the file. A phone that already holds something is asked before it is replaced. The app then reloads itself, and Home says what came ("Unpacked: 2 stores, 2 items, 1 trips, …").
+4. Settings > Factory shows the same public key, locked: unlock it with the 12 words, then tap **Use fingerprint** to enrol the new address's fingerprint. Notify me (on Home, with Family On) is offered again: tap it, and the phone's card list is posted again.
+5. The old app's icon can then be removed.
+
 **What the pack holds** (`src/move/pack.ts`):
 
 - every table of the database (`db.tables`, so a table added later is carried): stores, items, trips, trip lines, price history, pending lookups with their photos, the YNAB tables and My cards;
 - every localStorage key the app owns, from the one list in `src/move/keys.ts` (a test fails when the source uses a `tradetracker…` or `bsv-kit.` storage key that list lacks): the theme and switches, whose phone this is, the Sort data, the factory key's copies and public half, the sealed YNAB token (carried sealed, never opened) and bsv-kit's licence.
 
-The licence hangs off the factory key, not the address, so carrying the key carries the licence; the YNAB token is sealed under that key, so YNAB stays connected. Packing deletes nothing.
+The licence hangs off the factory key, not the address, so carrying the key carries the licence (the new address reads the same key's licence from the chain, nothing new is issued); the YNAB token is sealed under that key, so YNAB stays connected (it shows "Connected as <budget>" before the key is even unlocked, and refreshes once it is).
 
-**What it does not hold**, because the browser keeps it per address and it is set again at the new one:
+**What Unpack does** (`restoreFromPack` in `src/move/unpack.ts`): it refuses, in a plain sentence, a file that is not a Trade Tracker pack, one of a version it does not read, one made by a newer schema, and one packed at this same address ("This file was packed at this address"). Otherwise it empties every table and the app's own keys, writes the pack's rows and keys, drops the keys marked `perAddress` in `src/move/keys.ts` (the fingerprint's wrapped copy and credential id), unsubscribes any push subscription this address has, and returns the counts it shows. The database is replaced in one transaction, so a failure leaves the phone as it was.
 
-- the fingerprint unlock (a passkey is bound to the hostname);
-- notifications (a push subscription is bound to the origin; packing unsubscribes the old one, and the backend drops it on its next send);
-- bsv-kit's unlocked-key session (a non-extractable key in the browser's IndexedDB), so the new address asks for the 12 words or the fingerprint once;
+**What does not move**, because the browser keeps it per address and it is set again at the new one:
+
+- the fingerprint unlock (a passkey is bound to the hostname): Unpack drops the old credential, and the door enrols again after the 12 words open the key;
+- notifications (a push subscription is bound to the origin; packing unsubscribes the old one, and the backend drops it on its next send): Notify me is offered again;
+- bsv-kit's unlocked-key session (a non-extractable key in the browser's IndexedDB), so the new address asks for the 12 words once;
 - the service worker's caches, which fill again from the network.
+
+**What a phone that has unpacked but not yet enrolled the fingerprint sees** (every screen that assumes a key exists):
+
+| Screen | It shows |
+| --- | --- |
+| Settings > Factory | the restored public key, "A key is kept on this device. Unlock it with your 12 words.", the 12 words box; after Unlock, **Use fingerprint** |
+| Licence gate (receipt and lookup sends, `src/factory/send-hold.tsx`) | "Not sent: factory key is locked. Settings > Factory > Unlock" until the words are entered; the licence itself reads held for the restored key |
+| Receipt card (`src/factory/door-words.ts`) | "Locked. Unlock with your fingerprint to read a receipt." (it names the fingerprint, which is not yet enrolled: the words are the way in until it is) |
+| Home, Sort sheet (Family) | "Unlock the key" under Settings > Factory in place of the family's charges; Notify me waits for the unlocked, licensed key |
+| Settings > Family | the switch asks to "Unlock the key" first |
+| Settings > YNAB | "Connected as <budget>" at once; refreshing the cache or choosing a budget asks to unlock the key first |
+
+The two-origin proof is `tests/e2e/move.spec.ts` (`npm run e2e`): the build is served once and `http://localhost:<port>` and `http://127.0.0.1:<port>` are two origins to the browser, so the file packed at one is unpacked at the other.
 
 ## React Compiler
 
