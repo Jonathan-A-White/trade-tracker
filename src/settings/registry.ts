@@ -12,6 +12,7 @@ export type SectionId =
   | "ynab"
   | "family"
   | "storage"
+  | "move"
   | "plu-codes"
   | "tj-barcodes"
   | "tj-receipt"
@@ -33,6 +34,7 @@ export const SECTIONS: readonly SettingsSection<SectionId>[] = [
   { id: "ynab", title: "YNAB" },
   { id: "family", title: "Family" },
   { id: "storage", title: "Storage Usage" },
+  { id: "move", title: "Move" },
   { id: "plu-codes", title: "Produce PLU Codes" },
   { id: "tj-barcodes", title: "Trader Joe's Barcodes" },
   { id: "tj-receipt", title: "TJ's Receipt (03/14/2026)" },
@@ -51,8 +53,8 @@ export const GROUPS: readonly SettingsGroup<SectionId, GroupId>[] = [
   {
     id: "data",
     title: "Your data",
-    hint: "Storage, price lists, backups, imports and clearing.",
-    sections: ["storage", "plu-codes", "tj-barcodes", "tj-receipt", "items-transfer", "trips-transfer", "ai-trip", "danger-zone"],
+    hint: "Storage, moving, price lists, backups, imports and clearing.",
+    sections: ["storage", "move", "plu-codes", "tj-barcodes", "tj-receipt", "items-transfer", "trips-transfer", "ai-trip", "danger-zone"],
   },
   { id: "about", title: "About", hint: "Version and credits.", sections: ["about"] },
 ];
@@ -99,6 +101,13 @@ export const ROWS: readonly SettingsRow<SectionId>[] = rowsInOrder<SectionId, Se
     section: "storage",
     label: "Storage Usage",
     hint: "How much space the app uses on this device.",
+  },
+  {
+    key: "move",
+    section: "move",
+    label: "Move",
+    hint: "Pack up this phone into one file to carry it to a new address.",
+    help: "Writes one file with everything this phone holds: the stores, items, trips, prices and pending photos, the factory key, the licence and YNAB. Nothing is deleted. The fingerprint unlock and notifications are per address and are set again at the new one.",
   },
   {
     key: "plu-codes",

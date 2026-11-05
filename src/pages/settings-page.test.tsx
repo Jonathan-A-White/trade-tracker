@@ -65,6 +65,7 @@ describe("SettingsPage layout", () => {
       "YNAB",
       "Family",
       "Storage Usage",
+      "Move",
       "Produce PLU Codes",
       "Trader Joe's Barcodes",
       "TJ's Receipt (03/14/2026)",
@@ -89,6 +90,7 @@ describe("SettingsPage layout", () => {
     expect(screen.getByRole("switch", { name: "Toggle dark mode" })).toBeInTheDocument();
     expect(screen.getByText("Light mode")).toBeInTheDocument();
     expect(screen.getByRole("button", { name: "Make key" })).toBeInTheDocument();
+    expect(screen.getByRole("button", { name: "Pack up this phone" })).toBeInTheDocument();
     expect(screen.getByRole("button", { name: "Load PLU Codes" })).toBeInTheDocument();
     expect(screen.getByRole("button", { name: "Load TJ Barcodes" })).toBeInTheDocument();
     expect(screen.getByRole("button", { name: "Load Receipt Items" })).toBeInTheDocument();

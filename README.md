@@ -12,6 +12,7 @@ Currently, two official plugins are available:
 <!-- toc -->
 
 - [The forms tutor: Let the tutor do it](#the-forms-tutor-let-the-tutor-do-it)
+- [Moving to a new address](#moving-to-a-new-address)
 - [React Compiler](#react-compiler)
 - [Expanding the ESLint configuration](#expanding-the-eslint-configuration)
 - [Docs](#docs)
@@ -37,6 +38,24 @@ No form without a tutor. Each of the app's three forms has a **Let the tutor do 
 - The door is `src/tutor/form-door.tsx` (`FormDoor`); the forms and commands live in `src/tutor/form-commands.ts`, the request and the factory client in `src/tutor/form-talk.ts`. The forms come from `@voice-kit/forms` (the `voice-kit` package, pinned by commit).
 - Each command is a `confirm` command: its `send` is the page's own `onSubmit` (the modal's own save), so the form's Save and the door's Send run the same handler with the same values.
 - The tutor is the grind `grinds/form-talk.json` (instructions `grinds/form-talk.md`, schemas `schemas/form-talk-input-1.0.schema.json` and `schemas/form-talk-answer-1.0.schema.json`, examples under `grinds/examples/form-talk/`). It is reached through the factory (`FactoryProvider` gives the forms their way to ask only while the door is licensed); with no factory the button says so and the form works as it always did.
+
+## Moving to a new address
+
+Everything the app holds is on the phone, per address, so a new address is a new empty app. **Settings > Move > Pack up this phone** (`src/settings/sections/move-section.tsx`) writes one file, `tradetracker-move-<date>.json`, that the new address unpacks (`src/move/unpack.ts`).
+
+**What the pack holds** (`src/move/pack.ts`):
+
+- every table of the database (`db.tables`, so a table added later is carried): stores, items, trips, trip lines, price history, pending lookups with their photos, the YNAB tables and My cards;
+- every localStorage key the app owns, from the one list in `src/move/keys.ts` (a test fails when the source uses a `tradetracker…` or `bsv-kit.` storage key that list lacks): the theme and switches, whose phone this is, the Sort data, the factory key's copies and public half, the sealed YNAB token (carried sealed, never opened) and bsv-kit's licence.
+
+The licence hangs off the factory key, not the address, so carrying the key carries the licence; the YNAB token is sealed under that key, so YNAB stays connected. Packing deletes nothing.
+
+**What it does not hold**, because the browser keeps it per address and it is set again at the new one:
+
+- the fingerprint unlock (a passkey is bound to the hostname);
+- notifications (a push subscription is bound to the origin; packing unsubscribes the old one, and the backend drops it on its next send);
+- bsv-kit's unlocked-key session (a non-extractable key in the browser's IndexedDB), so the new address asks for the 12 words or the fingerprint once;
+- the service worker's caches, which fill again from the network.
 
 ## React Compiler
 

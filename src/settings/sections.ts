@@ -8,6 +8,7 @@ import { DangerZoneSection } from "./sections/danger-zone-section";
 import { FactorySection } from "./sections/factory-section";
 import { FamilySection } from "./sections/family-section";
 import { ItemsTransferSection } from "./sections/items-transfer-section";
+import { MoveSection } from "./sections/move-section";
 import { PluCodesSection } from "./sections/plu-codes-section";
 import { StorageSection } from "./sections/storage-section";
 import { TjBarcodesSection } from "./sections/tj-barcodes-section";
@@ -28,6 +29,7 @@ const COMPONENTS: Record<SectionId, () => JSX.Element> = {
   ynab: YnabSection,
   family: FamilySection,
   storage: StorageSection,
+  move: MoveSection,
   "plu-codes": PluCodesSection,
   "tj-barcodes": TjBarcodesSection,
   "tj-receipt": TjReceiptSection,
