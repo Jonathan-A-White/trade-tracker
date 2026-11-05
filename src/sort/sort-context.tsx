@@ -13,6 +13,7 @@ import { browserStorage } from "@/services/factory-service";
 import { useFamilyOn } from "@/settings/connections";
 import { createYnabClient } from "@/ynab/api";
 import { refreshCache } from "@/ynab/cache";
+import { refreshTally as readYnabTally } from "@/ynab/tally";
 import { openToken } from "@/ynab/token";
 import { createYnabWriter, type YnabWriter } from "@/ynab/writer";
 import { makeReceiptClient } from "@/services/lookup-client";
@@ -50,6 +51,8 @@ export interface SortSeams {
   me?: string | null;
   /** reads the category balances from YNAB into the cache */
   refreshBalances?: () => Promise<void>;
+  /** reads YNAB's tally of payees by category, when the one kept is old */
+  refreshTally?: () => Promise<void>;
   /** asks the mill where a charge goes; null asks nothing (the app's own is the factory's, only on a licensed key) */
   suggest?: SortChargeAsk | null;
   /** how long the sheet waits for the suggestion */
@@ -93,10 +96,10 @@ function useAppWriter(enabled: boolean): SortWriter | null {
 
 export function SortProvider({ children, ...seams }: SortSeams & { children: ReactNode }) {
   const appWriter = useAppWriter(seams.writer === undefined);
-  const { client, writer, me, refreshBalances, suggest, suggestTimeoutMs, readReceipt, receiptTimeoutMs, pollMs, feedTiming, balanceTiming } = seams;
+  const { client, writer, me, refreshBalances, refreshTally, suggest, suggestTimeoutMs, readReceipt, receiptTimeoutMs, pollMs, feedTiming, balanceTiming } = seams;
   const value = useMemo<SortSeams>(
-    () => ({ client, writer: writer === undefined ? appWriter : writer, me, refreshBalances, suggest, suggestTimeoutMs, readReceipt, receiptTimeoutMs, pollMs, feedTiming, balanceTiming }),
-    [client, writer, appWriter, me, refreshBalances, suggest, suggestTimeoutMs, readReceipt, receiptTimeoutMs, pollMs, feedTiming, balanceTiming],
+    () => ({ client, writer: writer === undefined ? appWriter : writer, me, refreshBalances, refreshTally, suggest, suggestTimeoutMs, readReceipt, receiptTimeoutMs, pollMs, feedTiming, balanceTiming }),
+    [client, writer, appWriter, me, refreshBalances, refreshTally, suggest, suggestTimeoutMs, readReceipt, receiptTimeoutMs, pollMs, feedTiming, balanceTiming],
   );
   return <SortContext.Provider value={value}>{children}</SortContext.Provider>;
 }
@@ -134,6 +137,8 @@ export interface FamilyFeed {
   book: CardBook;
   writer: SortWriter | null;
   refreshBalances: () => Promise<void>;
+  /** reads YNAB's tally of payees by category into the phone when the one kept is old (src/ynab/tally.ts) */
+  refreshTally: () => Promise<void>;
   balanceTiming?: LaunchTiming;
   /** asks the mill where a charge goes; null when the AI is not allowed (no licensed key), and then nothing is asked */
   suggest: SortChargeAsk | null;
@@ -208,13 +213,15 @@ export function useFamilyFeed(): FamilyFeed {
   );
   const sorted = useMemo(() => (on ? sortedToday(records) : []), [on, records]);
 
-  const appRefresh = useCallback(async () => {
+  const ynabClient = useCallback(async (what: string) => {
     const key = getKey();
-    if (!key) throw new Error("Unlock the key to read the balances from YNAB.");
+    if (!key) throw new Error(`Unlock the key to read ${what} from YNAB.`);
     const token = await openToken(browserStorage(), key);
     if (!token) throw new Error("The YNAB token could not be opened. Turn YNAB off and on again under Settings.");
-    await refreshCache(createYnabClient(token));
+    return createYnabClient(token);
   }, [getKey]);
+  const appRefresh = useCallback(async () => refreshCache(await ynabClient("the balances")), [ynabClient]);
+  const appRefreshTally = useCallback(async () => readYnabTally(await ynabClient("the history")), [ynabClient]);
 
   const { claim, forget } = feed;
   const sortedHere = useCallback(
@@ -268,6 +275,7 @@ export function useFamilyFeed(): FamilyFeed {
     book,
     writer: seams.writer ?? null,
     refreshBalances: seams.refreshBalances ?? appRefresh,
+    refreshTally: seams.refreshTally ?? appRefreshTally,
     balanceTiming: seams.balanceTiming,
     suggest: seams.suggest !== undefined ? seams.suggest : appSuggest,
     suggestTimeoutMs: seams.suggestTimeoutMs ?? SUGGEST_DEADLINE_MS,

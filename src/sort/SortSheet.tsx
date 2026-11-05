@@ -17,7 +17,21 @@ import { SplitEditor } from "./SplitEditor";
 import { newPart, partCents, remainderCents, splitReady, type SplitPart } from "./split";
 import { dropReceiptShots, receiptShotsOf, type ReceiptReader } from "./receipt-read";
 import { groupLines, receiptSplits } from "./receiptSplits";
-import { SUGGEST_LATE_MS, buildRequest, readHistory, recordCharge, resolveGrouping, resolveSuggestion, type SortChargeAsk, type Suggestion } from "./suggest";
+import {
+  SUGGEST_LATE_MS,
+  buildRequest,
+  learnChoice,
+  readHistory,
+  recordCharge,
+  resolveGrouping,
+  resolveSuggestion,
+  suggestAtOnce,
+  tallyFor,
+  type AtOnce,
+  type SortChargeAsk,
+  type Suggestion,
+} from "./suggest";
+import { readTally } from "@/ynab/tally";
 import type { FamilyFeed } from "./sort-context";
 import type { FeedPhase } from "./useAlerts";
 import { chargeDate, handOff, money, readSorted, takeBack, whenLine, type WaitingCharge } from "./waiting";
@@ -143,6 +157,33 @@ function useBalances(enabled: boolean, refresh: () => Promise<void>, timing: Lau
   return { phase, error, retry: () => setAttempt((n) => n + 1) };
 }
 
+/**
+ * Whether YNAB's tally can be read for the suggestion: at once when one is kept (a newer one is read meanwhile, for the next charge),
+ * else once this sheet's read of it has ended, whether it was read or not.
+ */
+function useTallyRead(enabled: boolean, refresh: () => Promise<void>): boolean {
+  const [kept] = useState(() => readTally() !== null);
+  const [ended, setEnded] = useState(false);
+  const refreshRef = useRef(refresh);
+  useEffect(() => {
+    refreshRef.current = refresh;
+  });
+  useEffect(() => {
+    if (!enabled) return;
+    let current = true;
+    refreshRef
+      .current()
+      .catch(() => {})
+      .finally(() => {
+        if (current) setEnded(true);
+      });
+    return () => {
+      current = false;
+    };
+  }, [enabled]);
+  return kept || ended;
+}
+
 /** Where the AI's suggestion stands: asking while the mill answers, slow when its deadline passed, quiet otherwise. */
 type SuggestStatus = "off" | "asking" | "slow" | "done";
 
@@ -171,7 +212,7 @@ function useSuggestion(opts: {
     const abort = new AbortController();
     let current = true;
     const owner = c.owner === ANYONE ? undefined : c.owner;
-    const request = buildRequest({ merchant: c.merchant, amount: c.amount, owner }, list, readHistory(c.merchant));
+    const request = buildRequest({ merchant: c.merchant, amount: c.amount, owner }, list, readHistory(c.merchant), undefined, tallyFor(c.alert.merchant ?? "", readTally(), list));
     let giveUp: ReturnType<typeof setTimeout> | undefined;
     const timer = setTimeout(() => {
       if (!current) return;
@@ -266,7 +307,7 @@ function useReceipt(opts: {
       if (lines.length === 0) return fail(read.answer.unreadable ?? "No lines could be read from the receipt. Take the photo again, or choose by hand.");
       setStatus({ phase: "grouping" });
       const owner = c.owner === ANYONE ? undefined : c.owner;
-      const request = buildRequest({ merchant: c.merchant, amount: c.amount, owner }, list, readHistory(c.merchant), lines);
+      const request = buildRequest({ merchant: c.merchant, amount: c.amount, owner }, list, readHistory(c.merchant), lines, tallyFor(c.alert.merchant ?? "", readTally(), list));
       const answer = await within(suggest(request, abort.signal));
       if (!current || abort.signal.aborted) return;
       const resolved = resolveGrouping(answer, list);
@@ -310,6 +351,7 @@ function ChargeSheet({ family, charge, onClose }: { family: FamilyFeed; charge: 
   const memoId = useId();
   const accountId = useId();
   const reasonId = useId();
+  const onceId = useId();
   const ynabOn = useYnabOn();
   const categories = useLiveQuery(
     async () => (await ynab.listCategories()).filter((c: YnabCategory) => !c.hidden && !NOT_FOR_CHARGES.has(c.groupName)),
@@ -335,11 +377,26 @@ function ChargeSheet({ family, charge, onClose }: { family: FamilyFeed; charge: 
   const [shots] = useState(() => receiptShotsOf(alert.id));
   useEffect(() => () => dropReceiptShots(alert.id), [alert.id]);
 
-  // the AI's suggestion fills the sheet in only while nothing has been chosen by hand; a receipt he photographed takes its place
+  // the suggestion fills the sheet in only while nothing has been chosen by hand; a receipt he photographed takes its place
   const touched = useRef(shots !== undefined);
   const [suggestion, setSuggestion] = useState<Suggestion | null>(null);
+  const suggesting = ynabOn && !shots;
+  // first what he taught, else what the merchant normally goes to, both at once with no grist; else the mill is asked
+  const tallyRead = useTallyRead(suggesting, family.refreshTally);
+  const [atOnce, setAtOnce] = useState<AtOnce | "ask" | null>(null);
+  if (atOnce === null && suggesting && tallyRead && categories && categories.length > 0) {
+    // the alert's own merchant: a charge with none ('A charge' on the sheet) has no tally and teaches nothing
+    const local = suggestAtOnce(alert.merchant ?? "", categories, readTally());
+    setAtOnce(local ?? "ask");
+    if (local && categoryId === null && !splitting) {
+      setSuggestion(local);
+      setCategoryId(local.categoryId);
+    }
+  }
+  // Done after he changed the suggestion to one category teaches it for the merchant, unless he says it is just this once
+  const [justOnce, setJustOnce] = useState(false);
   const suggestStatus = useSuggestion({
-    suggest: ynabOn && !shots ? family.suggest : null,
+    suggest: suggesting && atOnce === "ask" ? family.suggest : null,
     timeoutMs: family.suggestTimeoutMs,
     ready: !!categories && categories.length > 0 && ["ready", "failed", "retryable"].includes(balances.phase),
     charge,
@@ -355,6 +412,7 @@ function ChargeSheet({ family, charge, onClose }: { family: FamilyFeed; charge: 
     },
   });
   const suggestedShown = suggestion !== null && ("categoryId" in suggestion ? !splitting && categoryId === suggestion.categoryId : splitting);
+  const changedTo = suggestion !== null && !splitting && categoryId !== null && !suggestedShown ? categories?.find((c) => c.id === categoryId) : undefined;
   const receipt = useReceipt({
     shots: ynabOn ? shots : undefined,
     readReceipt: family.readReceipt,
@@ -430,6 +488,7 @@ function ChargeSheet({ family, charge, onClose }: { family: FamilyFeed; charge: 
         .map((p) => ({ category: nameOf(p.id), amount: p.amount }))
         .filter((p): p is { category: string; amount: number } => p.category !== undefined);
       recordCharge(charge.merchant, amount, sortedInto);
+      if (changedTo && !justOnce) learnChoice(alert.merchant ?? "", changedTo);
       onClose();
     } catch (err) {
       setSaveError(err instanceof Error && err.message ? err.message : "This phone could not keep the transaction. Try again.");
@@ -596,6 +655,25 @@ function ChargeSheet({ family, charge, onClose }: { family: FamilyFeed; charge: 
               <span className="font-semibold">Suggested · </span>
               {suggestion.why}
             </p>
+          )}
+          {changedTo && (
+            <div className="space-y-1">
+              <label className="flex min-h-12 items-center gap-3 text-base font-medium text-gray-800 dark:text-gray-100">
+                <input
+                  type="checkbox"
+                  checked={justOnce}
+                  onChange={(e) => setJustOnce(e.target.checked)}
+                  aria-describedby={onceId}
+                  className="h-6 w-6 shrink-0"
+                />
+                Just this once
+              </label>
+              <p id={onceId} className="text-sm text-gray-600 dark:text-gray-400">
+                {justOnce
+                  ? "Done sorts only this charge; the suggestion here stays as it was."
+                  : `Done also teaches the suggestion: ${changedTo.name} here from now on.`}
+              </p>
+            </div>
           )}
 
           {balances.phase !== "ready" && balances.phase !== "idle" && (

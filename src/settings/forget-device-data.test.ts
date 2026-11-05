@@ -6,6 +6,8 @@ const DATA = [
   "tradetracker-sort-handed",
   "tradetracker-sort-sorted",
   "tradetracker-sort-history",
+  "tradetracker-sort-learned",
+  "tradetracker-ynab-tally",
   "tradetracker-alerts-kept",
   "tradetracker-alerts-claims",
 ];
@@ -16,6 +18,7 @@ const SETTINGS = [
   "tradetracker-factory-key",
   "tradetracker-factory-backend",
   "tradetracker-ynab-busy-until",
+  "tradetracker-ynab-tally-failed-at",
   "bsv-kit.licence",
 ];
 
@@ -27,6 +30,17 @@ describe("forgetDeviceData", () => {
     forgetDeviceData();
     for (const key of DATA) expect(localStorage.getItem(key), key).toBeNull();
     for (const key of SETTINGS) expect(localStorage.getItem(key), key).toBe("x");
+  });
+
+  it("forgets the YNAB tally and what he taught the suggestion (mw-mr4xgrw.41)", async () => {
+    const { learnChoice, LEARNED_KEY } = await import("@/sort/suggest");
+    const { TALLY_KEY, readTally } = await import("@/ynab/tally");
+    learnChoice("Amazon", { id: "c3", name: "Household" });
+    localStorage.setItem(TALLY_KEY, JSON.stringify({ budgetId: "b1", since: "2024-11-05", readAt: 1, payees: { Amazon: { c3: 12 } } }));
+    expect(readTally()).not.toBeNull();
+    forgetDeviceData();
+    expect(localStorage.getItem(LEARNED_KEY)).toBeNull();
+    expect(readTally()).toBeNull();
   });
 
   it("forgets the last mail", () => {

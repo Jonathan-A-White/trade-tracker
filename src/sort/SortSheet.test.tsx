@@ -13,12 +13,14 @@ import { fakeAlerts, type FakeAlerts } from "@/family/fake-alerts";
 import { appRoutes } from "@/routes";
 import type { PasskeyPort } from "@/services/passkey";
 import { setFamilyOn, setYnabOn } from "@/settings/connections";
-import { accountOf, groupOf } from "@/ynab/fake-ynab";
+import { createYnabClient } from "@/ynab/api";
+import { accountOf, fakeYnab, groupOf, type FakeYnab, type FakeYnabTransaction } from "@/ynab/fake-ynab";
+import { refreshTally } from "@/ynab/tally";
 import { SortProvider, type SortSeams } from "./sort-context";
 import { NotAllowed } from "@/factory/mill";
 import { keepReceiptShots, type ReceiptReader } from "./receipt-read";
 import type { ReceiptReconcileAnswer } from "@/contracts/types";
-import { readHistory, recordCharge, type SortChargeAnswer, type SortChargeAsk } from "./suggest";
+import { LEARNED_KEY, readHistory, recordCharge, type SortChargeAnswer, type SortChargeAsk } from "./suggest";
 import { PENDING_CLAIMS_KEY } from "./useAlerts";
 import { cardBook } from "@/family/cards";
 import { waitingCharges } from "./waiting";
@@ -338,6 +340,7 @@ describe("the Sort sheet with the AI's suggestion", () => {
       owner: "Jonathan",
       categories: [{ name: "Eating Out", left: 8 }, { name: "Groceries", left: 212 }, { name: "Household", left: 60.5 }],
       history: [{ amount: 38, category: "Groceries" }],
+      tally: [],
     });
 
     await user.click(within(sheet).getByRole("button", { name: "Done" }));
@@ -477,6 +480,152 @@ describe("the Sort sheet with the AI's suggestion", () => {
     await waitFor(() => expect(within(sheet).queryByText("Asking for a suggestion…")).not.toBeInTheDocument());
     expect(within(sheet).queryByText("Anchors.")).not.toBeInTheDocument();
     expect(within(sheet).getByRole("button", { name: "Done" })).toBeDisabled();
+  });
+});
+
+describe("the Sort sheet suggests what a merchant NORMALLY goes to, and learns a change of his (mw-mr4xgrw.41)", () => {
+  let ynabBudget: FakeYnab;
+  let n = 0;
+  const charges = (count: number, payee: string, categoryId: string | null, over: Partial<FakeYnabTransaction> = {}): FakeYnabTransaction[] =>
+    Array.from({ length: count }, () => ({ id: `y${++n}`, account_id: "a1", date: "2026-06-01", amount: -20_000, payee_name: payee, category_id: categoryId, ...over }));
+  const seams = (suggest: SortChargeAsk): Partial<SortSeams> => ({
+    suggest,
+    refreshTally: () => refreshTally(createYnabClient("good", ynabBudget.fetch)),
+  });
+  const never = () => vi.fn<SortChargeAsk>(async () => ({ category: "Groceries", why: "From the mill." }));
+
+  beforeEach(() => {
+    ynabBudget = fakeYnab("good", [{ id: "b1", name: "Our Budget", categoryGroups: [], accounts: [], payees: [] }]);
+  });
+
+  it("one category holds most of the merchant's charges: it is suggested at once with the count, and no grist is sent", async () => {
+    const user = userEvent.setup();
+    // 12 to Household, then the newest one to Eating Out
+    ynabBudget.transactions.push(...charges(12, "Amazon", "c3", { date: "2026-03-01" }), ...charges(1, "Amazon", "c2", { date: "2026-11-01" }));
+    const alert = backend.receive({ kind: "charge", amount: "43.12", merchant: "AMAZON MKTPL*2X3Y4", last4: "1234" });
+    const suggest = never();
+    renderPhone(`/sort/${alert.id}`, seams(suggest));
+    const sheet = await screen.findByRole("dialog", { name: "$43.12 at AMAZON MKTPL*2X3Y4" });
+
+    expect(await within(sheet).findByText("12 of 13 here went to Household.")).toBeInTheDocument();
+    expect(within(sheet).getByRole("radio", { name: /Household/ })).toHaveAttribute("aria-checked", "true");
+    expect(within(sheet).queryByText("Asking for a suggestion…")).not.toBeInTheDocument();
+    // he keeps it: nothing is taught
+    expect(within(sheet).queryByRole("checkbox", { name: /Just this once/ })).not.toBeInTheDocument();
+    await user.click(within(sheet).getByRole("button", { name: "Done" }));
+    await waitFor(() => expect(create).toHaveBeenCalled());
+    expect(create.mock.calls[0]![0]).toMatchObject({ categoryId: "c3" });
+    expect(suggest).not.toHaveBeenCalled();
+    expect(localStorage.getItem(LEARNED_KEY)).toBeNull();
+  });
+
+  it("the alert's merchant meets YNAB's payee though they are written differently", async () => {
+    ynabBudget.transactions.push(...charges(3, "Jones Family Farms", "c1"), ...charges(4, "Family Dollar", "c3"));
+    const alert = backend.receive({ kind: "charge", amount: "131.22", merchant: "JONES FAMILY FARMS, LL SHELTON USA", last4: "1234" });
+    const suggest = never();
+    renderPhone(`/sort/${alert.id}`, seams(suggest));
+    const sheet = await screen.findByRole("dialog", { name: "$131.22 at JONES FAMILY FARMS, LL SHELTON USA" });
+    expect(await within(sheet).findByText("3 of 3 here went to Groceries.")).toBeInTheDocument();
+    expect(within(sheet).getByRole("radio", { name: /Groceries/ })).toHaveAttribute("aria-checked", "true");
+    expect(suggest).not.toHaveBeenCalled();
+  });
+
+  it("a mixed history asks the mill as before, carrying the tally and not this phone's newest-first history", async () => {
+    ynabBudget.transactions.push(...charges(2, "Costco", "c1"), ...charges(2, "Costco", "c3"));
+    recordCharge("Costco", 80, [{ category: "Eating Out", amount: 80 }]);
+    const alert = backend.receive({ kind: "charge", amount: "99.10", merchant: "COSTCO WHSE #0123", last4: "1234" });
+    const suggest = vi.fn<SortChargeAsk>(async () => ({ category: "Household", why: "Costco is mostly the house." }));
+    renderPhone(`/sort/${alert.id}`, seams(suggest));
+    const sheet = await screen.findByRole("dialog", { name: "$99.10 at COSTCO WHSE #0123" });
+    expect(await within(sheet).findByText("Costco is mostly the house.")).toBeInTheDocument();
+    expect(suggest).toHaveBeenCalledTimes(1);
+    expect(suggest.mock.calls[0]![0]).toMatchObject({
+      tally: [
+        { category: "Groceries", count: 2 },
+        { category: "Household", count: 2 },
+      ],
+      history: [],
+    });
+  });
+
+  it("a merchant with only Uncategorized still gets a suggestion, whatever is left in the category", async () => {
+    ynabBudget.transactions.push(...charges(5, "Jones Family Farms", null), ...charges(2, "Jones Family Farms", "unc", { category_name: "Uncategorized" }));
+    const alert = backend.receive({ kind: "charge", amount: "131.22", merchant: "JONES FAMILY FARMS, LL SHELTON USA", last4: "1234" });
+    const suggest = vi.fn<SortChargeAsk>(async () => ({ category: "Eating Out", why: "A farm stand; it is a guess." }));
+    renderPhone(`/sort/${alert.id}`, seams(suggest));
+    const sheet = await screen.findByRole("dialog", { name: "$131.22 at JONES FAMILY FARMS, LL SHELTON USA" });
+    expect(await within(sheet).findByText("A farm stand; it is a guess.")).toBeInTheDocument();
+    expect(suggest.mock.calls[0]![0].tally).toEqual([]);
+    // Eating Out has $8 left: it is suggested all the same
+    expect(within(sheet).getByRole("radio", { name: "Eating Out · $8 left · short by $123.22" })).toHaveAttribute("aria-checked", "true");
+  });
+
+  it("he changes the suggestion and taps Done: that merchant's suggestion is his category from then on, ahead of the tally, across a reload, until he changes it again", async () => {
+    const user = userEvent.setup();
+    ynabBudget.transactions.push(...charges(12, "Amazon", "c3"));
+    const first = backend.receive({ kind: "charge", amount: "43.12", merchant: "AMAZON MKTPL*2X3Y4", last4: "1234" });
+    const suggest = never();
+    const phone = renderPhone(`/sort/${first.id}`, seams(suggest));
+    let sheet = await screen.findByRole("dialog", { name: "$43.12 at AMAZON MKTPL*2X3Y4" });
+    await within(sheet).findByText("12 of 12 here went to Household.");
+    await user.click(within(sheet).getByRole("radio", { name: /Eating Out/ }));
+    const once = within(sheet).getByRole("checkbox", { name: /Just this once/ });
+    expect(once).not.toBeChecked();
+    await user.click(within(sheet).getByRole("button", { name: "Done" }));
+    await waitFor(() => expect(create).toHaveBeenCalledTimes(1));
+    expect(create.mock.calls[0]![0]).toMatchObject({ categoryId: "c2" });
+    phone.unmount();
+
+    // the app is opened again: the next Amazon charge is his category, ahead of 12 in Household, with no grist
+    const second = backend.receive({ kind: "charge", amount: "17.99", merchant: "AMAZON MKTPL*9Z8Q1", last4: "1234" });
+    const again = renderPhone(`/sort/${second.id}`, seams(suggest));
+    sheet = await screen.findByRole("dialog", { name: "$17.99 at AMAZON MKTPL*9Z8Q1" });
+    expect(await within(sheet).findByText("You chose Eating Out for this merchant.")).toBeInTheDocument();
+    expect(within(sheet).getByRole("radio", { name: /Eating Out/ })).toHaveAttribute("aria-checked", "true");
+    // he changes it again
+    await user.click(within(sheet).getByRole("radio", { name: /Household/ }));
+    await user.click(within(sheet).getByRole("button", { name: "Done" }));
+    await waitFor(() => expect(create).toHaveBeenCalledTimes(2));
+    again.unmount();
+
+    const third = backend.receive({ kind: "charge", amount: "5.00", merchant: "Amazon Mktpl*AB12", last4: "1234" });
+    renderPhone(`/sort/${third.id}`, seams(suggest));
+    sheet = await screen.findByRole("dialog", { name: "$5.00 at Amazon Mktpl*AB12" });
+    expect(await within(sheet).findByText("You chose Household for this merchant.")).toBeInTheDocument();
+    expect(suggest).not.toHaveBeenCalled();
+  });
+
+  it("a change of the mill's suggestion is learned too", async () => {
+    const user = userEvent.setup();
+    const alert = backend.receive({ kind: "charge", amount: "8.50", merchant: "Dunkin' #3321", last4: "1234" });
+    renderPhone(`/sort/${alert.id}`, seams(vi.fn<SortChargeAsk>(async () => ({ category: "Groceries", why: "A guess." }))));
+    const sheet = await screen.findByRole("dialog", { name: "$8.50 at Dunkin' #3321" });
+    await within(sheet).findByText("A guess.");
+    await user.click(within(sheet).getByRole("radio", { name: /Eating Out/ }));
+    await user.click(within(sheet).getByRole("button", { name: "Done" }));
+    await waitFor(() => expect(create).toHaveBeenCalled());
+    expect(JSON.parse(localStorage.getItem(LEARNED_KEY) ?? "{}")).toMatchObject({ dunkin: { categoryId: "c2", name: "Eating Out" } });
+  });
+
+  it("'Just this once' sorts this charge into his choice without teaching anything", async () => {
+    const user = userEvent.setup();
+    ynabBudget.transactions.push(...charges(12, "Amazon", "c3"));
+    const first = backend.receive({ kind: "charge", amount: "43.12", merchant: "AMAZON MKTPL*2X3Y4", last4: "1234" });
+    const phone = renderPhone(`/sort/${first.id}`, seams(never()));
+    let sheet = await screen.findByRole("dialog", { name: "$43.12 at AMAZON MKTPL*2X3Y4" });
+    await within(sheet).findByText("12 of 12 here went to Household.");
+    await user.click(within(sheet).getByRole("radio", { name: /Eating Out/ }));
+    await user.click(within(sheet).getByRole("checkbox", { name: /Just this once/ }));
+    await user.click(within(sheet).getByRole("button", { name: "Done" }));
+    await waitFor(() => expect(create).toHaveBeenCalled());
+    expect(create.mock.calls[0]![0]).toMatchObject({ categoryId: "c2" });
+    expect(localStorage.getItem(LEARNED_KEY)).toBeNull();
+    phone.unmount();
+
+    const second = backend.receive({ kind: "charge", amount: "17.99", merchant: "AMAZON MKTPL*9Z8Q1", last4: "1234" });
+    renderPhone(`/sort/${second.id}`, seams(never()));
+    sheet = await screen.findByRole("dialog", { name: "$17.99 at AMAZON MKTPL*9Z8Q1" });
+    expect(await within(sheet).findByText("12 of 12 here went to Household.")).toBeInTheDocument();
   });
 });
 
