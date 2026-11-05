@@ -32,6 +32,16 @@ export class FamilyRepository {
     });
   }
 
+  /**
+   * Remembers the YNAB account for a last four: a card the repository has keeps its owner and takes the account; a last four it
+   * does not have is added with `owner` (who the book answers for an unknown card).
+   */
+  async setAccount(lastFour: string, accountId: string, owner: string): Promise<FamilyCard> {
+    const four = lastFour.trim();
+    const existing = await db.familyCards.where("lastFour").equals(four).first();
+    return this.addCard({ lastFour: four, owner: existing?.owner ?? owner, accountId });
+  }
+
   async removeCard(id: string): Promise<void> {
     await db.familyCards.delete(id);
   }

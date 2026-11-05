@@ -1,6 +1,6 @@
 import { db } from "@/db/database";
 import { FamilyRepository } from "@/db/repositories/family-repository";
-import { ANYONE, cardBook, loadCardBook } from "./cards";
+import { ANYONE, cardBook, loadCardBook, rememberAccount } from "./cards";
 
 describe("cardBook", () => {
   const now = 1;
@@ -30,5 +30,28 @@ describe("cardBook", () => {
     expect(loaded.owner("1234")).toBe("Jonathan");
     expect(loaded.account("1234")).toBe("chase");
     expect(loaded.owner("5555")).toBe("anyone");
+  });
+});
+
+describe("rememberAccount", () => {
+  it("puts the account on a card's row and keeps its owner", async () => {
+    await db.familyCards.clear();
+    const repo = new FamilyRepository();
+    const before = await repo.addCard({ lastFour: "4321", owner: "Sarah" });
+    await rememberAccount("4321", "citi", repo);
+    const book = await loadCardBook(repo);
+    expect(book.account("4321")).toBe("citi");
+    expect(book.owner("4321")).toBe("Sarah");
+    expect((await repo.listCards())[0]?.id).toBe(before.id);
+  });
+
+  it("adds a row owned by 'anyone' for a last four with none", async () => {
+    await db.familyCards.clear();
+    const repo = new FamilyRepository();
+    await rememberAccount("8235", "chase", repo);
+    const book = await loadCardBook(repo);
+    expect(book.account("8235")).toBe("chase");
+    expect(book.owner("8235")).toBe(ANYONE);
+    expect(await repo.listCards()).toHaveLength(1);
   });
 });

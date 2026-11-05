@@ -10,7 +10,7 @@ import type { LaunchTiming } from "pwa-kit/launch-gate";
 import { useSettled, useTapGuard } from "pwa-kit/tap";
 import { YnabRepository } from "@/db/repositories/ynab-repository";
 import type { YnabCategory, YnabTransactionInput } from "@/contracts/types";
-import { ANYONE } from "@/family/cards";
+import { ANYONE, rememberAccount } from "@/family/cards";
 import { useYnabOn } from "@/settings/connections";
 import { CategoryPicker } from "./CategoryPicker";
 import { SplitEditor } from "./SplitEditor";
@@ -416,6 +416,8 @@ function ChargeSheet({ family, charge, onClose }: { family: FamilyFeed; charge: 
     }
     try {
       await family.writer.create(input, { localId: `alert-${alert.id}` });
+      // the account he chose for a card the book did not map is kept for its next charge; failing to keep it loses nothing sent
+      if (!cardAccount && chosenAccount && alert.last4) await rememberAccount(alert.last4, chosenAccount).catch(() => {});
       family.sortedHere(charge, taken === "claimed");
       const nameOf = (id: string) => categories?.find((c) => c.id === id)?.name;
       const sortedInto = (splitting ? parts.map((p) => ({ id: p.categoryId, amount: (partCents(p.amount) ?? 0) / 100 })) : [{ id: categoryId ?? "", amount }])
