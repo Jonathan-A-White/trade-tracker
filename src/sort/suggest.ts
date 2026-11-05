@@ -14,8 +14,15 @@ export const SORT_CHARGE_VERSION = "1.0";
 export const HEADROOM_BYTES = 1000;
 /** How many of a merchant's sorted charges go with the request. */
 export const HISTORY_SENT = 20;
-/** The longest the sheet waits for the mill's answer. */
+/** How long before the sheet says the suggestion is taking too long. */
 export const SUGGEST_DEADLINE_MS = 20_000;
+/** After that, how much longer the wait goes on: an answer that comes late still fills the sheet while nothing is chosen. */
+export const SUGGEST_LATE_MS = 240_000;
+/**
+ * How often the wait reads the backend. bsv-kit's 20 s equalled the deadline, so an answer the mill sent 6 s after the send was
+ * looked for at 20 s, after the sheet had given up (mw-mr4xgrw.40); the mill answers a sort-charge in about 4 s.
+ */
+export const SUGGEST_POLL_MS = 2_000;
 
 /** What was sorted at a merchant lately. Device-only. */
 export const HISTORY_KEY = "tradetracker-sort-history";
@@ -145,7 +152,7 @@ export function makeSortChargeAsk(backendUrl: string, key: Uint8Array, licence: 
   return async (request, signal) => {
     const input = fitToBudget(request, measure, MAX_PAYLOAD_BYTES - HEADROOM_BYTES);
     const txid = await mill.send({ kind: SORT_CHARGE_KIND, v: SORT_CHARGE_VERSION, input });
-    const reply = await mill.awaitAnswer<SortChargeAnswer>(txid, signal);
+    const reply = await mill.awaitAnswer<SortChargeAnswer>(txid, signal, { intervalMs: SUGGEST_POLL_MS });
     if (reply.status !== "answered" || !reply.answer) throw new Error(reply.reason || "The factory could not answer this one.");
     return reply.answer;
   };

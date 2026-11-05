@@ -1,11 +1,13 @@
 import { readFileSync } from "node:fs";
 import { resolve } from "node:path";
 import Ajv from "ajv";
+import { fakePostern } from "bsv-kit/testing";
 import type { YnabCategory } from "@/contracts/types";
 import { MAX_PAYLOAD_BYTES, NotAllowed, sealedRecordBytes } from "@/factory/mill";
 import {
   HEADROOM_BYTES,
   HISTORY_KEY,
+  SUGGEST_DEADLINE_MS,
   SORT_CHARGE_KIND,
   SORT_CHARGE_VERSION,
   buildRequest,
@@ -215,5 +217,42 @@ describe("the gated ask", () => {
     const request = buildRequest({ merchant: "Shell", amount: 20 }, cats, []);
     await expect(ask(request)).rejects.toBeInstanceOf(NotAllowed);
     expect(fetchSpy).not.toHaveBeenCalled();
+  });
+});
+
+// mw-mr4xgrw.40: 'The suggestion is taking too long' on a charge the mill answered in 4 s. The wait polled every 20 s (bsv-kit's
+// POLL_INTERVAL_MS) and the sheet's deadline is 20 s: a first read just after the send found nothing, and the next one fell
+// after the deadline, so an answer the mill sent 6 s in was never looked for in time.
+describe("the wait for the mill's answer (mw-mr4xgrw.40)", () => {
+  beforeEach(() => vi.useFakeTimers({ toFake: ["setTimeout", "clearTimeout", "Date"] }));
+  afterEach(() => {
+    vi.useRealTimers();
+    vi.unstubAllGlobals();
+  });
+
+  it("picks up an answer the mill sent 6 s after the send well inside the sheet's deadline", async () => {
+    const fake = fakePostern();
+    vi.stubGlobal("fetch", fake.fetch);
+    const ask = makeSortChargeAsk(fake.base, fake.appKey, () => "licensed");
+    const request = buildRequest({ merchant: "JONES FAMILY FARMS, LL SHELTON USA", amount: 131.22 }, cats, []);
+    const begun = Date.now();
+    let answeredAt: number | null = null;
+    const asked = ask(request).then((a) => {
+      answeredAt = Date.now() - begun;
+      return a;
+    });
+    // the mill's answer lands 6 s in, as the 17:39:52 one did after a 17:39:46 send
+    setTimeout(() => {
+      fake.reply({
+        re: `direct:${"a".repeat(64)}`,
+        status: "answered",
+        answer: { category: "Groceries", why: "A farm; food." },
+        grind: { app: "trade-tracker", kind: SORT_CHARGE_KIND, v: SORT_CHARGE_VERSION },
+      });
+    }, 6_000);
+    for (let t = 0; t < SUGGEST_DEADLINE_MS && answeredAt === null; t += 500) await vi.advanceTimersByTimeAsync(500);
+    expect(answeredAt).not.toBeNull();
+    expect(answeredAt!).toBeLessThan(SUGGEST_DEADLINE_MS);
+    expect((await asked).category).toBe("Groceries");
   });
 });

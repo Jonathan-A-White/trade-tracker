@@ -31,9 +31,10 @@ export interface AppMill {
   send(call: MillSend): Promise<string>;
   /**
    * Polls until the mill's answer arrives, reading from the grist's own place in the backend's index; rejects with an
-   * AbortError when the signal aborts.
+   * AbortError when the signal aborts. `intervalMs` is the wait between two reads (bsv-kit's 20 s unless the caller needs the
+   * answer sooner: a wait with a deadline near 20 s must read more often than that, or the answer lands between two reads).
    */
-  awaitAnswer<A = unknown>(txid: string, signal?: AbortSignal): Promise<GristAnswer<A>>;
+  awaitAnswer<A = unknown>(txid: string, signal?: AbortSignal, options?: { intervalMs?: number }): Promise<GristAnswer<A>>;
   /** Reads the backend once, from the grist's place to the head: the mill's answer, or null when it has sent none. */
   findAnswer<A = unknown>(txid: string, signal?: AbortSignal): Promise<GristAnswer<A> | null>;
 }
@@ -99,14 +100,15 @@ export function openMill(backendUrl: string, key: Uint8Array, licence: () => Mil
   return {
     send: async ({ kind, v, input, photos, clientId }) =>
       (await mill.send({ app: FACTORY_COLLECTION, kind, v, input, photos, clientId })).txid,
-    awaitAnswer: async <A = unknown>(txid: string, signal?: AbortSignal) => {
+    awaitAnswer: async <A = unknown>(txid: string, signal?: AbortSignal, options?: { intervalMs?: number }) => {
+      const intervalMs = options?.intervalMs ?? grist.POLL_INTERVAL_MS;
       const start = await startOf(txid, signal);
       let since = start.since;
       for (;;) {
         const page = await mill.read<A>(txid, { since, mill: start.millKey, signal });
         if (page.answer) return page.answer;
         since = page.next;
-        await pause(grist.POLL_INTERVAL_MS, signal);
+        await pause(intervalMs, signal);
       }
     },
     findAnswer: async <A = unknown>(txid: string, signal?: AbortSignal) => {
