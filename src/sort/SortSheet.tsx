@@ -17,7 +17,7 @@ import { SplitEditor } from "./SplitEditor";
 import { newPart, partCents, remainderCents, splitReady, type SplitPart } from "./split";
 import { dropReceiptShots, receiptShotsOf, type ReceiptReader } from "./receipt-read";
 import { groupLines, receiptSplits } from "./receiptSplits";
-import { buildRequest, readHistory, recordCharge, resolveGrouping, resolveSuggestion, type SortChargeAsk, type Suggestion } from "./suggest";
+import { SUGGEST_LATE_MS, buildRequest, readHistory, recordCharge, resolveGrouping, resolveSuggestion, type SortChargeAsk, type Suggestion } from "./suggest";
 import type { FamilyFeed } from "./sort-context";
 import type { FeedPhase } from "./useAlerts";
 import { chargeDate, handOff, money, readSorted, takeBack, whenLine, type WaitingCharge } from "./waiting";
@@ -147,8 +147,9 @@ function useBalances(enabled: boolean, refresh: () => Promise<void>, timing: Lau
 type SuggestStatus = "off" | "asking" | "slow" | "done";
 
 /**
- * Asks the mill where the charge goes once `ready` (the categories and their balances are in), with a deadline. The answer reaches
- * `onSuggestion` unless the deadline passed first; nothing is said of a refusal (no licence) or a failure: the sheet works by hand.
+ * Asks the mill where the charge goes once `ready` (the categories and their balances are in). Past the deadline the sheet says it is
+ * slow but the wait goes on for SUGGEST_LATE_MS more, so an answer that comes late still reaches `onSuggestion` (which leaves a choice
+ * already made alone) and clears the notice. Nothing is said of a refusal (no licence) or a failure: the sheet works by hand.
  */
 function useSuggestion(opts: {
   suggest: SortChargeAsk | null;
@@ -171,28 +172,33 @@ function useSuggestion(opts: {
     let current = true;
     const owner = c.owner === ANYONE ? undefined : c.owner;
     const request = buildRequest({ merchant: c.merchant, amount: c.amount, owner }, list, readHistory(c.merchant));
+    let giveUp: ReturnType<typeof setTimeout> | undefined;
     const timer = setTimeout(() => {
       if (!current) return;
       setResult("slow");
-      abort.abort();
+      giveUp = setTimeout(() => abort.abort(), SUGGEST_LATE_MS);
     }, timeoutMs);
+    const stopTimers = () => {
+      clearTimeout(timer);
+      clearTimeout(giveUp);
+    };
     suggest(request, abort.signal).then(
       (answer) => {
         if (!current || abort.signal.aborted) return;
-        clearTimeout(timer);
+        stopTimers();
         setResult("done");
         const suggestion = resolveSuggestion(answer, list, c.amount);
         if (suggestion) latest.current.onSuggestion(suggestion);
       },
       () => {
         if (!current || abort.signal.aborted) return;
-        clearTimeout(timer);
+        stopTimers();
         setResult("done");
       },
     );
     return () => {
       current = false;
-      clearTimeout(timer);
+      stopTimers();
       abort.abort();
     };
   }, [suggest, ready, timeoutMs]);
