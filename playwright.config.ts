@@ -33,7 +33,7 @@ export default defineConfig({
     },
   ],
   webServer: {
-    command: `npm run preview -- --port ${PREVIEW_PORT} --strictPort`,
+    command: `npm run preview -- --host 127.0.0.1 --port ${PREVIEW_PORT} --strictPort`,
     url: `http://localhost:${PREVIEW_PORT}/`,
     reuseExistingServer: reuseExistingPreview(),
     timeout: 60_000,
