@@ -4,11 +4,11 @@ import type { SectionId } from "./registry";
 // The app's connections (pwa-kit/settings, the connection kind): a service the app can talk to, behind one switch that is Off for a stranger.
 // The switch is kept on this device; what a connection holds (a token, a cache) is kept by the connection itself.
 
-const PREFIX = "tradetracker-setting-";
+export const SETTING_PREFIX = "tradetracker-setting-";
 
 export const settingsStore = createSettingsStore({
-  read: (key) => localStorage.getItem(PREFIX + key) ?? undefined,
-  write: (key, value) => localStorage.setItem(PREFIX + key, value),
+  read: (key) => localStorage.getItem(SETTING_PREFIX + key) ?? undefined,
+  write: (key, value) => localStorage.setItem(SETTING_PREFIX + key, value),
 });
 
 export const connections = createConnections<SectionId>(settingsStore);
