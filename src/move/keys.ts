@@ -35,6 +35,8 @@ export interface OwnedKey {
   note: string;
   /** The Governor's data (what he sorted, what the family's mail showed), which Clear All Data forgets; the rest is a setting or who this device is. */
   data?: true;
+  /** Bound to the address the app runs at (a passkey belongs to its hostname): the pack carries it, and the new address drops it and sets it up again. */
+  perAddress?: true;
 }
 
 export const OWNED_KEYS: readonly OwnedKey[] = [
@@ -44,8 +46,8 @@ export const OWNED_KEYS: readonly OwnedKey[] = [
   { key: FACTORY_VAULT_KEY, note: "The passphrase copy of the factory key (only a key made before the passphrase went away has one)." },
   { key: FACTORY_PUBLIC_KEY, note: "The factory key's public half, in the clear: who this device is, and what the licence hangs off." },
   { key: FACTORY_BACKEND_KEY, note: "Setting: the address of the factory backend." },
-  { key: FACTORY_FINGERPRINT_VAULT_KEY, note: "The factory key wrapped by the passkey's fingerprint secret; the passkey is per address, so it is enrolled again at a new one." },
-  { key: FACTORY_FINGERPRINT_CREDENTIAL_KEY, note: "The fingerprint passkey's credential id, beside its wrapped copy of the key." },
+  { key: FACTORY_FINGERPRINT_VAULT_KEY, perAddress: true, note: "The factory key wrapped by the passkey's fingerprint secret; the passkey is per address, so it is enrolled again at a new one." },
+  { key: FACTORY_FINGERPRINT_CREDENTIAL_KEY, perAddress: true, note: "The fingerprint passkey's credential id, beside its wrapped copy of the key." },
   { key: YNAB_TOKEN_KEY, note: "The YNAB personal access token, sealed under the factory key: ciphertext only, carried as it is." },
   { key: YNAB_BUSY_KEY, note: "YNAB's rate-limit wait: a service's clock." },
   { key: TALLY_KEY, data: true, note: "YNAB's tally of the Governor's payees and categories." },
@@ -75,6 +77,9 @@ export function ownsKey(key: string): boolean {
 export function ownedKeyNote(key: string): string | undefined {
   return entryFor(key)?.note;
 }
+
+/** The exact keys that belong to the address they were made at (the entries marked `perAddress`): Unpack drops them, so the new address enrols again. */
+export const PER_ADDRESS_KEYS: readonly string[] = OWNED_KEYS.filter((e) => e.perAddress).map((e) => e.key);
 
 /** The exact keys Clear All Data forgets (the entries marked `data`). */
 export const DATA_KEYS: readonly string[] = OWNED_KEYS.filter((e) => e.data).map((e) => e.key);
