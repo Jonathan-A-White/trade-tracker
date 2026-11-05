@@ -6,6 +6,7 @@ import { FactoryProvider } from "@/contexts/factory-context";
 import { ErrorBoundary } from "@/components/feedback/error-boundary";
 import { appRoutes } from "@/routes";
 import { SortProvider } from "@/sort/sort-context";
+import { CardListSync } from "@/push/CardListSync";
 
 const basename = import.meta.env.BASE_URL.replace(/\/$/, "") || "/";
 
@@ -19,6 +20,7 @@ export default function App() {
           <ToastProvider>
             <FactoryProvider>
               <SortProvider>
+                <CardListSync />
                 <RouterProvider router={router} />
               </SortProvider>
             </FactoryProvider>

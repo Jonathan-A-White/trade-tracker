@@ -3,7 +3,7 @@
 // and what it sorted.
 import { ANYONE, type CardBook } from "@/family/cards";
 import type { FamilyAlert } from "@/family/alerts-client";
-import type { YnabCategory } from "@/contracts/types";
+import type { FamilyCard, YnabCategory } from "@/contracts/types";
 
 /** Whose phone this is: one of the names the cards were added with. Device-only. */
 export const ME_KEY = "tradetracker-family-me";
@@ -89,6 +89,19 @@ export function people(owners: readonly string[]): string[] {
 export function otherPerson(owners: readonly string[], me: string | null): string | null {
   const others = people(owners).filter((name) => me === null || !same(name, me));
   return others.length === 1 ? others[0]! : null;
+}
+
+/** The most last fours the backend takes in a subscription's list (Postern's POST /api/push/subscribe). */
+export const MAX_OWN_CARDS = 32;
+
+/**
+ * The last fours this phone's person is pinged about with the amount and store: their own cards and the shared ones, never the
+ * other person's, and not a card owned by 'anyone' (the backend sends an unlisted card to every phone). `me` null: none.
+ */
+export function ownLastFours(cards: readonly FamilyCard[], me: string | null): string[] {
+  if (me === null) return [];
+  const own = cards.filter((card) => same(card.owner, me) || same(card.owner, SHARED)).map((card) => card.lastFour);
+  return [...new Set(own)].sort().slice(0, MAX_OWN_CARDS);
 }
 
 /** The YNAB date (YYYY-MM-DD, this phone's day) of a charge: when the alert says it happened, or today. */

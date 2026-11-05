@@ -1,8 +1,9 @@
 // The service worker's half of the ping: a push shows the charge's notification, and its tap opens the Sort sheet. The
 // generated worker loads this file with importScripts (vite.config.ts builds it to sw-push.js), so it imports nothing.
 //
-// Postern's push today is `{"class": "alert", "title": "New alert", "ts": ...}` and nothing more (its protocol.md 26: no
-// amount or merchant leaves the backend in a push); a push that carries the alert's id, amount and merchant is shown with them.
+// Postern's push is `{"class": "alert", "title": "New alert", "ts": ...}` for a phone that did not name the card, and carries the
+// alert's id, amount, merchant and last4 as well for a phone whose subscription lists that card (src/push/notify.ts posts the
+// list; his A on mw-mr4xgrw.17). A push is always shown: with the facts when it has them, else as a plain line.
 
 /** The message posted to an open page when a push comes, so it reads the feed at once (useAlerts' PUSH_MESSAGE). */
 export const PUSH_MESSAGE = "tradetracker-alert-push";
