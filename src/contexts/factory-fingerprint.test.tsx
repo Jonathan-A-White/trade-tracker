@@ -51,6 +51,19 @@ async function makeKey(user: ReturnType<typeof userEvent.setup>): Promise<string
   return screen.getByTestId("recovery-phrase").textContent ?? "";
 }
 
+/**
+ * Clicks a button once it can take the click. Settings draws "Use fingerprint" and "Remove fingerprint" the moment
+ * the key is held or the fingerprint copy is stored, but keeps them disabled until the action that did it has
+ * finished (busy), and user-event drops a click on a disabled button without an error. A findBy* that returns
+ * at once and a click straight after therefore clicks nothing on a loaded host, and the next findBy* waits for
+ * an effect that never comes (mw-mr4xgrw.43).
+ */
+async function clickWhenEnabled(user: ReturnType<typeof userEvent.setup>, name: string) {
+  const button = await screen.findByRole("button", { name });
+  await waitFor(() => expect(button).toBeEnabled());
+  await user.click(button);
+}
+
 const storage: vault.Storage = {
   get: (k) => localStorage.getItem(k),
   set: (k, v) => localStorage.setItem(k, v),
@@ -220,7 +233,7 @@ describe("Settings > Factory > fingerprint", () => {
     await typeWordsAndUnlock(user, words);
     await waitFor(() => expect(screen.getByTestId("door")).toHaveTextContent("unlocked"));
 
-    await user.click(await screen.findByRole("button", { name: "Use fingerprint" }));
+    await clickWhenEnabled(user, "Use fingerprint");
     expect(await screen.findByRole("button", { name: "Remove fingerprint" })).toBeInTheDocument();
     expect(localStorage.getItem(FINGERPRINT_KEY)).not.toBeNull();
   });
@@ -231,7 +244,7 @@ describe("Settings > Factory > fingerprint", () => {
     const words = await makeKey(user);
     const publicKey = localStorage.getItem(PUBLIC_KEY);
 
-    await user.click(await screen.findByRole("button", { name: "Remove fingerprint" }));
+    await clickWhenEnabled(user, "Remove fingerprint");
     await waitFor(() => expect(localStorage.getItem(FINGERPRINT_KEY)).toBeNull());
     expect(localStorage.getItem(CREDENTIAL_KEY)).toBeNull();
     expect(localStorage.getItem(PUBLIC_KEY)).toBe(publicKey);
@@ -255,7 +268,7 @@ describe("Settings > Factory > fingerprint", () => {
     await typeWordsAndUnlock(user, "correct horse");
     await waitFor(() => expect(screen.getByTestId("door")).toHaveTextContent("unlocked"));
 
-    await user.click(await screen.findByRole("button", { name: "Use fingerprint" }));
+    await clickWhenEnabled(user, "Use fingerprint");
     await screen.findByRole("button", { name: "Remove fingerprint" });
     const second = await vault.loadVault(storage, FINGERPRINT_KEY);
     const fromSecond = await vault.unwrap(second!, { prfSecret: PRF_SECRET });
@@ -281,7 +294,7 @@ describe("Settings > Factory > fingerprint", () => {
     await seedPassphraseKey("correct horse");
     const first = renderSettings(fakePort());
     await typeWordsAndUnlock(user, "correct horse");
-    await user.click(await screen.findByRole("button", { name: "Use fingerprint" }));
+    await clickWhenEnabled(user, "Use fingerprint");
     await screen.findByRole("button", { name: "Remove fingerprint" });
     first.unmount();
     await endTheDay();
@@ -300,7 +313,7 @@ describe("Settings > Factory > fingerprint", () => {
 
     renderSettings(fakePort({ getPrfSecret: async () => null }));
     await typeWordsAndUnlock(user, words);
-    await user.click(await screen.findByRole("button", { name: "Use fingerprint" }));
+    await clickWhenEnabled(user, "Use fingerprint");
     expect(await screen.findByText(/cannot unlock with a fingerprint here/)).toBeInTheDocument();
     expect(localStorage.getItem(FINGERPRINT_KEY)).toBeNull();
     expect(localStorage.getItem(CREDENTIAL_KEY)).toBeNull();
