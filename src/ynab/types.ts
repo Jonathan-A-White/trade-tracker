@@ -50,11 +50,14 @@ export interface YnabTransactionWire {
   account_id: string;
   date: string;
   amount: number;
-  payee_name?: string;
+  payee_name?: string | null;
   category_id?: string | null;
   memo?: string | null;
   cleared?: "cleared" | "uncleared" | "reconciled";
   approved?: boolean;
-  subtransactions?: { amount: number; category_id?: string | null; memo?: string | null }[];
+  subtransactions?: { amount: number; category_id?: string | null; memo?: string | null; category_name?: string | null; transfer_account_id?: string | null; deleted?: boolean }[];
   deleted?: boolean;
+  /** what YNAB answers on a read, never sent: the category's name ('Uncategorized'), and the account of a transfer */
+  category_name?: string | null;
+  transfer_account_id?: string | null;
 }

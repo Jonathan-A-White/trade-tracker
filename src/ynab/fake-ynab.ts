@@ -22,7 +22,10 @@ export interface FakeYnabTransaction {
   cleared?: string;
   approved?: boolean;
   import_id?: string | null;
-  subtransactions?: { amount: number; category_id?: string | null; memo?: string | null }[];
+  subtransactions?: { amount: number; category_id?: string | null; memo?: string | null; transfer_account_id?: string | null }[];
+  category_name?: string | null;
+  transfer_account_id?: string | null;
+  deleted?: boolean;
 }
 
 /** One request the fake received. */
