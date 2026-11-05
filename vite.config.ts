@@ -20,8 +20,23 @@ function swPush(): Plugin {
   };
 }
 
+/**
+ * VITE_MOVED_TO: an https URL, set only for the old address's build (the Pages workflow), which then shows the 'has moved' banner
+ * (src/move/MovedBanner.tsx reads it as import.meta.env.VITE_MOVED_TO). Unset or empty, no banner. Anything else fails the build.
+ */
+function checkMovedTo(): void {
+  const value = process.env.VITE_MOVED_TO;
+  if (!value) return;
+  if (!/^https:\/\/[^/\s]+/.test(value)) throw new Error(`VITE_MOVED_TO must be an https URL or unset, got '${value}'`);
+}
+
+checkMovedTo();
+
+// GITHUB_ACTIONS is the Pages build under /trade-tracker/; any other build is the new address, at the root.
+const onPages = Boolean(process.env.GITHUB_ACTIONS);
+
 export default defineConfig({
-  base: process.env.GITHUB_ACTIONS ? "/trade-tracker/" : "/",
+  base: onPages ? "/trade-tracker/" : "/",
   plugins: [
     react(),
     tailwindcss(),
@@ -56,8 +71,11 @@ export default defineConfig({
         display: "fullscreen",
         display_override: ["fullscreen", "standalone"],
         orientation: "portrait",
-        scope: process.env.GITHUB_ACTIONS ? "/trade-tracker/" : "/",
-        start_url: process.env.GITHUB_ACTIONS ? "/trade-tracker/" : "/",
+        // One identity for the installed app across updates at https://trade.allmymind.org. Not on the Pages build: its installed app keeps
+        // the id it has (the start_url), so the retiring address is not changed under the phones that have not yet moved.
+        ...(onPages ? {} : { id: "/" }),
+        scope: onPages ? "/trade-tracker/" : "/",
+        start_url: onPages ? "/trade-tracker/" : "/",
         icons: [
           { src: "icon-192.png", sizes: "192x192", type: "image/png" },
           { src: "icon-512.png", sizes: "512x512", type: "image/png" },

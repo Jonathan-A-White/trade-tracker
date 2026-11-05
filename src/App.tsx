@@ -7,6 +7,9 @@ import { ErrorBoundary } from "@/components/feedback/error-boundary";
 import { appRoutes } from "@/routes";
 import { SortProvider } from "@/sort/sort-context";
 import { CardListSync } from "@/push/CardListSync";
+import { MovedBanner } from "@/move/MovedBanner";
+import { link } from "pwa-kit/settings";
+import { SETTINGS_PATH } from "@/settings/registry";
 
 const basename = import.meta.env.BASE_URL.replace(/\/$/, "") || "/";
 
@@ -21,6 +24,7 @@ export default function App() {
             <FactoryProvider>
               <SortProvider>
                 <CardListSync />
+                <MovedBanner onPackUp={() => void router.navigate(link("move", SETTINGS_PATH))} />
                 <RouterProvider router={router} />
               </SortProvider>
             </FactoryProvider>

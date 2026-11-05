@@ -9,7 +9,7 @@ import {
   type WindowClientLike,
 } from "./sw-push";
 
-const SCOPE = "https://jonathan-a-white.github.io/trade-tracker/";
+const SCOPE = "https://trade.allmymind.org/";
 
 function fakeWorker(open: WindowClientLike[] = []) {
   const shown: { title: string; options: NotificationOptions }[] = [];
