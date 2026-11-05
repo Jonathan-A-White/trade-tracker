@@ -6,7 +6,7 @@ import type { YnabClient } from "./api";
 import type { YnabTransactionWire } from "./types";
 import { YNAB_BUSY_KEY } from "./writer";
 
-/** The tally, kept on this phone. Device-only; Clear All Data forgets it. */
+/** The tally, kept on this phone. Device-only; Clear All Data and turning YNAB Off forget it. */
 export const TALLY_KEY = "tradetracker-ynab-tally";
 /** When the last read failed: none is tried again for TALLY_RETRY_MS. A clock, not data. */
 export const TALLY_FAILED_KEY = "tradetracker-ynab-tally-failed-at";
@@ -81,6 +81,16 @@ export function readTally(): Tally | null {
   }
 }
 
+/** Forgets the tally and the note of a failed read: what YNAB said of his spending does not outlive his connection to it. */
+export function forgetTally(): void {
+  try {
+    localStorage.removeItem(TALLY_KEY);
+    localStorage.removeItem(TALLY_FAILED_KEY);
+  } catch {
+    // storage refused: nothing more to do
+  }
+}
+
 /** A day as YNAB writes it, YYYY-MM-DD, on this phone's calendar. */
 function day(ms: number): string {
   const d = new Date(ms);
@@ -116,6 +126,8 @@ export async function refreshTally(client: YnabClient, options: { now?: number }
     throw err;
   }
   const internal = new Set((await repo.listCategories()).filter((c) => c.groupName === INTERNAL_GROUP).map((c) => c.id));
+  // YNAB may have been turned Off (or another budget chosen) while the read was out: what it brought is then not kept.
+  if ((await repo.getConnection())?.budgetId !== connection.budgetId) return;
   const tally: Tally = { budgetId: connection.budgetId, since, readAt: now, payees: tallyTransactions(rows, internal) };
   try {
     localStorage.setItem(TALLY_KEY, JSON.stringify(tally));
