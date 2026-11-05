@@ -1,0 +1,16 @@
+{
+  "description": "A farm stand with no tally and no history, and Groceries already overspent: the answer is still Groceries, whatever is left in it.",
+  "schemaVersion": "1.1",
+  "request": {
+    "merchant": "JONES FAMILY FARMS, LL SHELTON USA",
+    "amount": 131.22,
+    "categories": [{"name":"Groceries","left":-12.5},{"name":"Eating Out","left":8},{"name":"Household","left":60.5},{"name":"Kids","left":31.25},{"name":"Gas","left":95}],
+    "history": [],
+    "tally": []
+  },
+  "expect": {
+    "category": "Groceries",
+    "split": { "present": false },
+    "why": { "present": true }
+  }
+}

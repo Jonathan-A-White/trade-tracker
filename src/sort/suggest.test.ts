@@ -7,18 +7,23 @@ import { MAX_PAYLOAD_BYTES, NotAllowed, sealedRecordBytes } from "@/factory/mill
 import {
   HEADROOM_BYTES,
   HISTORY_KEY,
+  LEARNED_KEY,
   SUGGEST_DEADLINE_MS,
   SORT_CHARGE_KIND,
   SORT_CHARGE_VERSION,
   buildRequest,
   fitToBudget,
+  learnChoice,
   makeSortChargeAsk,
   readHistory,
   recordCharge,
   resolveGrouping,
   resolveSuggestion,
+  suggestAtOnce,
+  tallyFor,
   type SortChargeRequest,
 } from "./suggest";
+import { tallyTransactions, type Tally } from "@/ynab/tally";
 
 const key = new Uint8Array(32).fill(5);
 const schema = (name: string) => JSON.parse(readFileSync(resolve(process.cwd(), "schemas", name), "utf8")) as object;
@@ -33,6 +38,19 @@ const category = (id: string, name: string, balance?: number): YnabCategory => (
 });
 
 const cats = [category("c1", "Groceries", 212), category("c2", "Eating Out", 8), category("c3", "Household", 60.5)];
+const spending = category("c4", "Jonathan's Spending", 40);
+const all = [...cats, spending];
+
+/** A tally kept from YNAB's transactions: [payee, category id, date] each one charge. */
+function tallyOf(rows: [string, string, string?][]): Tally {
+  const payees = tallyTransactions(
+    rows.map(([payee, categoryId, date], i) => ({ id: `t${i}`, account_id: "a1", date: date ?? "2026-01-01", amount: -10_000, payee_name: payee, category_id: categoryId })),
+    new Set(),
+  );
+  return { budgetId: "b1", since: "2024-11-05", readAt: 0, payees };
+}
+const times = (count: number, payee: string, categoryId: string, date?: string): [string, string, string?][] =>
+  Array.from({ length: count }, () => [payee, categoryId, date]);
 
 beforeEach(() => localStorage.clear());
 
@@ -65,7 +83,95 @@ describe("the history of sorted charges", () => {
   });
 });
 
+describe("what a merchant NORMALLY goes to, from YNAB's tally", () => {
+  it("Logos, 9 in Jonathan's Spending: the suggestion is Jonathan's Spending, with the count", () => {
+    const tally = tallyOf(times(9, "Logos", "c4"));
+    expect(suggestAtOnce("LOGOS BIBLE SOFTWARE", all, tally)).toEqual({ source: "tally", categoryId: "c4", why: "9 of 9 here went to Jonathan's Spending." });
+  });
+
+  it("Amazon, 12 in Household and then 1 in Jonathan's Spending as the newest: the suggestion is Household; the newest never outweighs the count", () => {
+    const tally = tallyOf([...times(12, "Amazon", "c3", "2026-03-01"), ["Amazon", "c4", "2026-11-01"]]);
+    expect(suggestAtOnce("AMAZON MKTPL*2X3Y4", all, tally)).toEqual({ source: "tally", categoryId: "c3", why: "12 of 13 here went to Household." });
+  });
+
+  it("meets the payee though the alert writes the merchant differently, and keeps another payee's charges apart", () => {
+    const tally = tallyOf([...times(3, "Jones Family Farms", "c1"), ...times(5, "Family Dollar", "c3")]);
+    expect(tallyFor("JONES FAMILY FARMS, LL SHELTON USA", tally, all)).toEqual({
+      payee: "Jones Family Farms",
+      counts: [{ categoryId: "c1", name: "Groceries", count: 3 }],
+      total: 3,
+    });
+    expect(suggestAtOnce("JONES FAMILY FARMS, LL SHELTON USA", all, tally)?.categoryId).toBe("c1");
+  });
+
+  it("joins the payees YNAB writes two ways, and counts only the categories the sheet offers", () => {
+    const tally = tallyOf([...times(2, "Trader Joe's", "c1"), ...times(2, "TRADER JOES", "c1"), ...times(9, "Trader Joe's", "gone")]);
+    expect(tallyFor("TRADER JOE S #552", tally, all)?.counts).toEqual([{ categoryId: "c1", name: "Groceries", count: 4 }]);
+  });
+
+  it.each([
+    ["one charge only", [["Logos", "c4"]]],
+    ["half and half", [...times(2, "Logos", "c4"), ...times(2, "Logos", "c3")]],
+    ["the most, but not over half", [...times(2, "Logos", "c4"), ...times(1, "Logos", "c3"), ...times(1, "Logos", "c1")]],
+    ["no history", []],
+  ] as [string, [string, string][]][])("with %s nothing is suggested at once (the mill is asked)", (_what, rows) => {
+    expect(suggestAtOnce("Logos", all, tallyOf(rows))).toBeNull();
+  });
+
+  it("at least 2 charges and over half is enough", () => {
+    expect(suggestAtOnce("Logos", all, tallyOf(times(2, "Logos", "c4")))?.categoryId).toBe("c4");
+    expect(suggestAtOnce("Logos", all, tallyOf([...times(3, "Logos", "c4"), ...times(2, "Logos", "c3")]))?.why).toBe("3 of 5 here went to Jonathan's Spending.");
+  });
+
+  it("with no tally kept nothing is suggested at once", () => {
+    expect(suggestAtOnce("Logos", all, null)).toBeNull();
+  });
+});
+
+describe("what he taught by changing the suggestion", () => {
+  it("is suggested ahead of the tally, from then on, until he changes it again", () => {
+    const tally = tallyOf(times(12, "Amazon", "c3"));
+    learnChoice("AMAZON MKTPL*2X3Y4", spending);
+    expect(suggestAtOnce("AMAZON MKTPL*9Z8Q1", all, tally)).toEqual({ source: "learned", categoryId: "c4", why: "You chose Jonathan's Spending for this merchant." });
+    learnChoice("Amazon Mktpl*AB12", cats[0]!);
+    expect(suggestAtOnce("AMAZON MKTPL*9Z8Q1", all, tally)?.categoryId).toBe("c1");
+  });
+
+  it("is kept on the phone, and found by the category's name when its id is gone", () => {
+    learnChoice("Logos", spending);
+    expect(JSON.parse(localStorage.getItem(LEARNED_KEY) ?? "{}")).toMatchObject({ logos: { categoryId: "c4", name: "Jonathan's Spending" } });
+    expect(suggestAtOnce("LOGOS", [...cats, { ...spending, id: "c44" }], null)?.categoryId).toBe("c44");
+    expect(suggestAtOnce("LOGOS", cats, null)).toBeNull();
+  });
+
+  it("is kept for the merchant, not for another that meets it by one common word", () => {
+    learnChoice("JONES FAMILY FARMS, LL SHELTON USA", cats[0]!);
+    expect(suggestAtOnce("FAMILY DOLLAR #12", all, null)).toBeNull();
+    expect(suggestAtOnce("Jones Family Farms", all, null)?.categoryId).toBe("c1");
+  });
+
+  it("is nothing for a charge with no merchant, or only a code", () => {
+    learnChoice("", spending);
+    learnChoice("#4471", spending);
+    expect(localStorage.getItem(LEARNED_KEY)).toBeNull();
+    expect(suggestAtOnce("", all, null)).toBeNull();
+  });
+
+  it("survives what is not JSON", () => {
+    localStorage.setItem(LEARNED_KEY, "{not json");
+    expect(suggestAtOnce("Logos", all, null)).toBeNull();
+    learnChoice("Logos", spending);
+    expect(suggestAtOnce("Logos", all, null)?.categoryId).toBe("c4");
+  });
+});
+
 describe("the request", () => {
+  it("is version 1.1 of the grind's input, the version that carries the tally, and the grind takes it", () => {
+    expect(SORT_CHARGE_VERSION).toBe("1.1");
+    const grind = JSON.parse(readFileSync(resolve(process.cwd(), "grinds", "sort-charge.json"), "utf8")) as { versions: string[] };
+    expect(grind.versions).toContain("1.1");
+  });
+
   it("names the charge, the categories with what is left and the history, with no YNAB ids", () => {
     const request = buildRequest({ merchant: "Dunkin'", amount: 8.5, owner: "Jonathan" }, cats, [{ amount: 5, category: "Eating Out" }]);
     expect(request).toEqual({
@@ -74,17 +180,31 @@ describe("the request", () => {
       owner: "Jonathan",
       categories: [{ name: "Groceries", left: 212 }, { name: "Eating Out", left: 8 }, { name: "Household", left: 60.5 }],
       history: [{ amount: 5, category: "Eating Out" }],
+      tally: [],
     });
     expect(JSON.stringify(request)).not.toMatch(/\bc[123]\b/);
   });
 
   it("leaves out the owner when none is named and the balance when it is not known", () => {
     const request = buildRequest({ merchant: "Shell", amount: 20 }, [category("c9", "Gas")], []);
-    expect(request).toEqual({ merchant: "Shell", amount: 20, categories: [{ name: "Gas" }], history: [] });
+    expect(request).toEqual({ merchant: "Shell", amount: 20, categories: [{ name: "Gas" }], history: [], tally: [] });
+  });
+
+  it("carries the merchant's tally by category name, most first, and then leaves out this phone's newest-first history", () => {
+    const tally = tallyOf([...times(2, "Costco", "c1"), ...times(2, "Costco", "c3"), ["Costco", "c2"]]);
+    const request = buildRequest({ merchant: "COSTCO WHSE #0123", amount: 99.1 }, cats, [{ amount: 5, category: "Eating Out" }], undefined, tallyFor("COSTCO WHSE #0123", tally, cats));
+    expect(request.tally).toEqual([
+      { category: "Groceries", count: 2 },
+      { category: "Household", count: 2 },
+      { category: "Eating Out", count: 1 },
+    ]);
+    expect(request.history).toEqual([]);
+    const validate = new Ajv({ strict: true }).compile(schema("sort-charge-input-1.1.schema.json"));
+    expect(validate(request), JSON.stringify(validate.errors)).toBe(true);
   });
 
   it("is valid against the grind's input schema", () => {
-    const validate = new Ajv({ strict: true }).compile(schema("sort-charge-input-1.0.schema.json"));
+    const validate = new Ajv({ strict: true }).compile(schema(`sort-charge-input-${SORT_CHARGE_VERSION}.schema.json`));
     const request = buildRequest({ merchant: "Costco", amount: 99.1, owner: "shared" }, cats, [
       { amount: 80, split: [{ category: "Groceries", amount: 50 }, { category: "Household", amount: 30 }] },
     ]);
@@ -96,7 +216,7 @@ describe("the request with a receipt's lines", () => {
   const lines = [{ text: "ORG BNNA", price: 1.99 }, { text: "PAPER TWL", price: 12.99 }];
 
   it("carries the lines, valid against the grind's input schema, and none when there are none", () => {
-    const validate = new Ajv({ strict: true }).compile(schema("sort-charge-input-1.0.schema.json"));
+    const validate = new Ajv({ strict: true }).compile(schema(`sort-charge-input-${SORT_CHARGE_VERSION}.schema.json`));
     const request = buildRequest({ merchant: "Costco", amount: 20 }, cats, [], lines);
     expect(request.lines).toEqual(lines);
     expect(validate(request), JSON.stringify(validate.errors)).toBe(true);
@@ -132,6 +252,7 @@ describe("the byte budget", () => {
       amount: 99999.99,
       split: Array.from({ length: 8 }, () => ({ category: long(i).slice(0, 60), amount: 99999.99 })),
     })),
+    tally: Array.from({ length: 20 }, (_, i) => ({ category: long(i).slice(0, 60), count: 99999 })),
   });
   const bytes = (request: SortChargeRequest) => sealedRecordBytes(key, SORT_CHARGE_KIND, SORT_CHARGE_VERSION, request, 0);
 
@@ -161,6 +282,13 @@ describe("the byte budget", () => {
   it("with no room even for the categories, sends them with no history rather than none", () => {
     const request = buildRequest({ merchant: "Aldi", amount: 30 }, cats, [{ amount: 5, category: "Groceries" }]);
     expect(fitToBudget(request, () => 1_000_000, 10)).toEqual({ ...request, history: [] });
+  });
+
+  it("sheds the tally's least-counted categories after the history, most-counted kept", () => {
+    const tally = { payee: "Costco", total: 6, counts: [{ categoryId: "c1", name: "Groceries", count: 3 }, { categoryId: "c3", name: "Household", count: 2 }, { categoryId: "c2", name: "Eating Out", count: 1 }] };
+    const request = buildRequest({ merchant: "Costco", amount: 30 }, cats, [], undefined, tally);
+    const limit = bytes({ ...request, tally: request.tally.slice(0, 1) });
+    expect(fitToBudget(request, bytes, limit).tally).toEqual([{ category: "Groceries", count: 3 }]);
   });
 });
 

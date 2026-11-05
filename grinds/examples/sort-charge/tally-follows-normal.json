@@ -1,0 +1,21 @@
+{
+  "description": "Amazon's tally leans to Household with no category holding over half, and the newest charge went elsewhere: the answer follows what is normal, the most counted, Household.",
+  "schemaVersion": "1.1",
+  "request": {
+    "merchant": "AMAZON MKTPL*2X3Y4",
+    "amount": 27.48,
+    "owner": "Jonathan",
+    "categories": [{"name":"Groceries","left":212},{"name":"Eating Out","left":8},{"name":"Household","left":60.5},{"name":"Kids","left":31.25},{"name":"Jonathan's Spending","left":40}],
+    "history": [],
+    "tally": [
+      { "category": "Household", "count": 5 },
+      { "category": "Jonathan's Spending", "count": 4 },
+      { "category": "Kids", "count": 2 }
+    ]
+  },
+  "expect": {
+    "category": "Household",
+    "split": { "present": false },
+    "why": { "present": true }
+  }
+}

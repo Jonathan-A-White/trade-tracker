@@ -2,7 +2,7 @@
   "grind": 1,
   "app": "trade-tracker",
   "kind": "sort-charge",
-  "versions": ["1.0"],
+  "versions": ["1.0", "1.1"],
   "model": "sonnet",
   "effort": "low",
   "instructions": "grinds/sort-charge.md",

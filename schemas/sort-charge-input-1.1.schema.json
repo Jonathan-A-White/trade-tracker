@@ -1,0 +1,140 @@
+{
+  "$schema": "http://json-schema.org/draft-07/schema#",
+  "$id": "sort-charge-input-1.1",
+  "title": "Sort Charge input 1.1",
+  "description": "One card charge waiting to be sorted, the family's categories with what is left in each, the merchant's tally (how many of its charges in the family's budget went to each category, most first), the last charges sorted at the same merchant on this phone (newest first; empty when the tally has the merchant), and, when the shopper photographed the receipt, the receipt's lines.",
+  "type": "object",
+  "additionalProperties": false,
+  "required": [
+    "merchant",
+    "amount",
+    "categories",
+    "history",
+    "tally"
+  ],
+  "properties": {
+    "merchant": {
+      "type": "string",
+      "minLength": 1,
+      "maxLength": 120
+    },
+    "amount": {
+      "type": "number",
+      "exclusiveMinimum": 0
+    },
+    "owner": {
+      "type": "string",
+      "minLength": 1,
+      "maxLength": 40
+    },
+    "categories": {
+      "type": "array",
+      "minItems": 1,
+      "maxItems": 150,
+      "items": {
+        "type": "object",
+        "additionalProperties": false,
+        "required": [
+          "name"
+        ],
+        "properties": {
+          "name": {
+            "type": "string",
+            "minLength": 1,
+            "maxLength": 60
+          },
+          "left": {
+            "type": "number"
+          }
+        }
+      }
+    },
+    "history": {
+      "type": "array",
+      "maxItems": 20,
+      "items": {
+        "type": "object",
+        "additionalProperties": false,
+        "required": [
+          "amount"
+        ],
+        "properties": {
+          "amount": {
+            "type": "number",
+            "exclusiveMinimum": 0
+          },
+          "category": {
+            "type": "string",
+            "maxLength": 60
+          },
+          "split": {
+            "type": "array",
+            "maxItems": 8,
+            "items": {
+              "type": "object",
+              "additionalProperties": false,
+              "required": [
+                "category",
+                "amount"
+              ],
+              "properties": {
+                "category": {
+                  "type": "string",
+                  "maxLength": 60
+                },
+                "amount": {
+                  "type": "number",
+                  "exclusiveMinimum": 0
+                }
+              }
+            }
+          }
+        }
+      }
+    },
+    "tally": {
+      "type": "array",
+      "maxItems": 20,
+      "items": {
+        "type": "object",
+        "additionalProperties": false,
+        "required": [
+          "category",
+          "count"
+        ],
+        "properties": {
+          "category": {
+            "type": "string",
+            "minLength": 1,
+            "maxLength": 60
+          },
+          "count": {
+            "type": "integer",
+            "minimum": 1
+          }
+        }
+      }
+    },
+    "lines": {
+      "type": "array",
+      "maxItems": 80,
+      "items": {
+        "type": "object",
+        "additionalProperties": false,
+        "required": [
+          "text",
+          "price"
+        ],
+        "properties": {
+          "text": {
+            "type": "string",
+            "maxLength": 80
+          },
+          "price": {
+            "type": "number"
+          }
+        }
+      }
+    }
+  }
+}
