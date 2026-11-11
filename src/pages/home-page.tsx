@@ -6,11 +6,13 @@ import { UnpackFile, UnpackedNote } from "@/move/unpack-file";
 import { storedPublicKeyHex } from "@/services/factory-service";
 import { StatCard } from "@/components/data-display/stat-card";
 import { TripCard } from "@/components/data-display/trip-card";
+import { useYnabOn } from "@/settings/connections";
 import { useFamilyFeed } from "@/sort/sort-context";
 import { WaitingCard } from "@/sort/WaitingCard";
 
 export function HomePage() {
   const family = useFamilyFeed();
+  const ynabOn = useYnabOn();
   const now = new Date();
   const startOfMonth = new Date(now.getFullYear(), now.getMonth(), 1).getTime();
 
@@ -88,6 +90,14 @@ export function HomePage() {
           />
         )}
         <WaitingCard family={family} />
+        {ynabOn && (
+          <Link
+            to="/cleanup"
+            className="block w-full min-h-[44px] rounded-lg border border-gray-300 dark:border-gray-600 bg-white dark:bg-gray-800 px-4 py-3 text-center text-sm font-medium text-gray-800 dark:text-gray-100"
+          >
+            Clean up
+          </Link>
+        )}
 
         {activeTrip ? (
           <Link

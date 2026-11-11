@@ -61,7 +61,7 @@ describe("YNAB Off", () => {
 
   it("says nothing of YNAB on Home, the trip pages, the lists and the reports", async () => {
     const { done } = await seed();
-    const paths = ["/", "/trips/new", "/trips/active", "/trips/history", `/trips/${done.id}`, `/trips/${done.id}/edit`, "/items", "/stores", "/reports", "/export", "/about"];
+    const paths = ["/", "/trips/new", "/trips/active", "/trips/history", `/trips/${done.id}`, `/trips/${done.id}/edit`, "/items", "/stores", "/reports", "/export", "/about", "/cleanup"];
     for (const path of paths) {
       const { container, unmount } = renderAt(path);
       await waitFor(() => expect(container.textContent?.length ?? 0).toBeGreaterThan(20));
