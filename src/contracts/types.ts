@@ -305,6 +305,13 @@ export interface YnabTransactionInput {
   memo?: string;
 }
 
+/** A transaction to approve in YNAB, with the category to set; none leaves its category as it is (a split, a transfer). */
+export interface YnabApproval {
+  /** YNAB's own id of the transaction */
+  id: string;
+  categoryId?: string;
+}
+
 /** One write waiting in the YNAB outbox. `localId` names the transaction in this app (and is its marker in YNAB's memo). */
 export type YnabWrite =
   | { kind: "create"; localId: string; transaction: YnabTransactionInput }

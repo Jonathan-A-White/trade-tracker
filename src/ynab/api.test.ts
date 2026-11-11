@@ -150,3 +150,40 @@ describe("the YNAB client's transaction writes", () => {
     expect((sick as YnabError).status).toBe(503);
   });
 });
+
+describe("the YNAB client: the unapproved and the bulk patch", () => {
+  const seeded = (): ReturnType<typeof fakeYnab> => {
+    const ynab = fakeYnab("good", [budget]);
+    ynab.transactions.push(
+      { id: "t1", account_id: "a1", date: "2026-10-01", amount: -1000, payee_name: "A", approved: false },
+      { id: "t2", account_id: "a1", date: "2026-10-02", amount: -2000, payee_name: "B", approved: true },
+    );
+    return ynab;
+  };
+
+  it("asks for type=unapproved and gets only the unapproved", async () => {
+    const ynab = seeded();
+    const client = createYnabClient("good", ynab.fetch);
+    const rows = await client.unapprovedTransactions("b1");
+    expect(rows.map((r) => r.id)).toEqual(["t1"]);
+    expect(ynab.calls.at(-1)?.path).toBe("/v1/budgets/b1/transactions?type=unapproved");
+  });
+
+  it("changes many transactions in one PATCH", async () => {
+    const ynab = seeded();
+    const client = createYnabClient("good", ynab.fetch);
+    await client.updateTransactions("b1", [{ id: "t1", category_id: "c1", approved: true }, { id: "t2", category_id: "c1", approved: true }]);
+    const patches = ynab.requests.filter((r) => r.method === "PATCH");
+    expect(patches).toHaveLength(1);
+    expect(patches[0]?.path).toBe("/v1/budgets/b1/transactions");
+    expect(patches[0]?.body).toEqual({ transactions: [{ id: "t1", category_id: "c1", approved: true }, { id: "t2", category_id: "c1", approved: true }] });
+    expect(ynab.transactions.map((t) => [t.approved, t.category_id])).toEqual([[true, "c1"], [true, "c1"]]);
+  });
+
+  it("says plainly when YNAB refuses the patch", async () => {
+    const ynab = seeded();
+    ynab.failNextBulk = 500;
+    const client = createYnabClient("good", ynab.fetch);
+    await expect(client.updateTransactions("b1", [{ id: "t1", approved: true }])).rejects.toMatchObject({ status: 500 });
+  });
+});

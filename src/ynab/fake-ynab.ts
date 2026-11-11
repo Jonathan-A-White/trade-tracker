@@ -53,6 +53,8 @@ export interface FakeYnab {
   loseNextResponse: boolean;
   /** while set, every call answers 429, with a Retry-After header when `retryAfterSeconds` is given */
   rateLimited: { retryAfterSeconds?: number } | null;
+  /** the next bulk PATCH of transactions answers this status and changes nothing; reset after it */
+  failNextBulk: number | null;
 }
 
 /** A group of categories: [id, name] or [id, name, balance in milliunits]. */
@@ -91,6 +93,7 @@ export function fakeYnab(token: string, budgets: FakeYnabBudget[]): FakeYnab {
     transactions: [],
     loseNextResponse: false,
     rateLimited: null,
+    failNextBulk: null,
     fetch: async (input, init) => {
       const url = new URL(typeof input === "string" ? input : input instanceof URL ? input.href : input.url);
       const headers = new Headers(init?.headers);
@@ -123,9 +126,25 @@ export function fakeYnab(token: string, budgets: FakeYnabBudget[]): FakeYnab {
           fake.transactions.push(made);
           return lose(reply(201, { data: { transaction_ids: [made.id], transaction: made, server_knowledge: fake.knowledge } }));
         }
+        if (method === "PATCH" && !tx[2]) {
+          if (fake.failNextBulk !== null) {
+            const status = fake.failNextBulk;
+            fake.failNextBulk = null;
+            return reply(status, { error: { id: String(status), name: "failed" } });
+          }
+          const changes = (sentBody as { transactions?: (Partial<FakeYnabTransaction> & { id: string })[] } | undefined)?.transactions ?? [];
+          if (changes.some((c) => !fake.transactions.some((t) => t.id === c.id))) return reply(400, { error: { id: "400", name: "bad_request" } });
+          for (const change of changes) {
+            const at = fake.transactions.findIndex((t) => t.id === change.id);
+            fake.transactions[at] = { ...fake.transactions[at]!, ...change };
+          }
+          const done = changes.map((c) => fake.transactions.find((t) => t.id === c.id)!);
+          return reply(209, { data: { transaction_ids: done.map((t) => t.id), transactions: done, server_knowledge: fake.knowledge } });
+        }
         if (method === "GET" && !tx[2]) {
           const since = url.searchParams.get("since_date") ?? "";
-          const rows = fake.transactions.filter((t) => t.date >= since);
+          const unapprovedOnly = url.searchParams.get("type") === "unapproved";
+          const rows = fake.transactions.filter((t) => t.date >= since && (!unapprovedOnly || (!t.approved && !t.deleted)));
           return reply(200, { data: { transactions: rows, server_knowledge: fake.knowledge } });
         }
         const at = fake.transactions.findIndex((t) => t.id === tx[2]);
