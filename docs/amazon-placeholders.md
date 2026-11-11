@@ -21,6 +21,24 @@ Sources, read 2026-11-11, with no YNAB token and no authenticated call:
 - A probe: the Amazon total parser run on 14 hand-made mail shapes, on a copy of postern in /tmp. postern itself
   was not changed. The results are in [Why seq 50 says 0.00](#3-why-seq-50-says-000).
 
+<!-- toc -->
+
+- [1. What YNAB's API allows](#1-what-ynabs-api-allows)
+  - [(a) An API transaction and a later bank import: when they match](#a-an-api-transaction-and-a-later-bank-import-when-they-match)
+  - [(b) Splits](#b-splits)
+  - [(c) Delete; an imported transaction's category, memo and approval](#c-delete-an-imported-transactions-category-memo-and-approval)
+  - [(d) The rate limit](#d-the-rate-limit)
+  - [(e) Does an uncleared, approved API transaction lower its category at once?](#e-does-an-uncleared-approved-api-transaction-lower-its-category-at-once)
+- [2. How Amazon bills, and what links a charge to an order](#2-how-amazon-bills-and-what-links-a-charge-to-an-order)
+- [3. Why seq 50 says 0.00](#3-why-seq-50-says-000)
+- [4. Designs: from a placeholder to the real charges](#4-designs-from-a-placeholder-to-the-real-charges)
+  - [Design 1: cut a slice at each card alert and let YNAB's matching close it](#design-1-cut-a-slice-at-each-card-alert-and-let-ynabs-matching-close-it)
+  - [Design 2: categorise each import and shrink the placeholder](#design-2-categorise-each-import-and-shrink-the-placeholder)
+  - [Design 3: keep the placeholder whole and swap once at the end](#design-3-keep-the-placeholder-whole-and-swap-once-at-the-end)
+- [Recommendation](#recommendation)
+
+<!-- /toc -->
+
 ## 1. What YNAB's API allows
 
 ### (a) An API transaction and a later bank import: when they match
