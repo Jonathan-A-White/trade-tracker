@@ -1,0 +1,267 @@
+import { render, screen, waitFor, within } from "@testing-library/react";
+import userEvent from "@testing-library/user-event";
+import { MemoryRouter, useRoutes } from "react-router";
+import { tapSettings } from "pwa-kit/tap";
+import { FactoryProvider } from "@/contexts/factory-context";
+import { ThemeProvider } from "@/contexts/theme-context";
+import { db } from "@/db/database";
+import { YnabRepository } from "@/db/repositories/ynab-repository";
+import { appRoutes } from "@/routes";
+import type { PasskeyPort } from "@/services/passkey";
+import { setYnabOn } from "@/settings/connections";
+import { SortProvider, type SortSeams } from "@/sort/sort-context";
+import type { SortChargeAsk } from "@/sort/suggest";
+import { createYnabClient } from "@/ynab/api";
+import { fakeYnab, groupOf, type FakeYnab, type FakeYnabTransaction } from "@/ynab/fake-ynab";
+import { YNAB_BUSY_KEY, createYnabWriter } from "@/ynab/writer";
+
+const noWebAuthn: PasskeyPort = {
+  isAvailable: () => false,
+  create: async () => {
+    throw new Error("no WebAuthn");
+  },
+  getPrfSecret: async () => null,
+};
+
+function Routed() {
+  return useRoutes(appRoutes);
+}
+
+let ynab: FakeYnab;
+let n = 0;
+const row = (payee: string, categoryId: string | null, date: string, over: Partial<FakeYnabTransaction> = {}): FakeYnabTransaction => ({
+  id: `t${++n}`,
+  account_id: "a1",
+  date,
+  amount: -10_000,
+  payee_name: payee,
+  category_id: categoryId,
+  approved: true,
+  ...over,
+});
+const unapproved = (payee: string, categoryId: string | null, date: string, over: Partial<FakeYnabTransaction> = {}) =>
+  row(payee, categoryId, date, { approved: false, ...over });
+
+function renderPage(seams: Partial<SortSeams> = {}, path = "/cleanup") {
+  const client = createYnabClient("good", ynab.fetch);
+  const writer = createYnabWriter({ getClient: async () => client });
+  return render(
+    <ThemeProvider>
+      <FactoryProvider checkLicence={async () => ({ state: "none", checkedAt: "x" })} passkeyPort={noWebAuthn}>
+        <SortProvider client={null} writer={writer} ynabClient={async () => client} refreshBalances={async () => {}} suggest={null} {...seams}>
+          <MemoryRouter initialEntries={[path]}>
+            <Routed />
+          </MemoryRouter>
+        </SortProvider>
+      </FactoryProvider>
+    </ThemeProvider>,
+  );
+}
+
+const patches = () => ynab.requests.filter((r) => r.method === "PATCH");
+const groupOfPayee = (name: string) => screen.getByRole("group", { name });
+
+beforeEach(async () => {
+  await Promise.all(db.tables.map((table) => table.clear()));
+  localStorage.clear();
+  localStorage.setItem("tradetracker-theme", "light");
+  vi.stubGlobal("matchMedia", (query: string) => ({ matches: false, media: query, addEventListener: () => {}, removeEventListener: () => {} }));
+  tapSettings.ms = 0;
+  n = 0;
+  ynab = fakeYnab("good", [
+    {
+      id: "b1",
+      name: "Our Budget",
+      categoryGroups: [groupOf("gi", "Internal Master Category", [["unc", "Uncategorized"]]), groupOf("g1", "Food", [["c1", "Groceries"], ["c2", "Eating Out"]]), groupOf("g2", "Home", [["c3", "Household"]])],
+      accounts: [],
+      payees: [],
+    },
+  ]);
+  const repo = new YnabRepository();
+  await repo.saveConnection({ budgetId: "b1", budgetName: "Our Budget" });
+  await repo.applyCategories(
+    [groupOf("gi", "Internal Master Category", [["unc", "Uncategorized"]]), groupOf("g1", "Food", [["c1", "Groceries"], ["c2", "Eating Out"]]), groupOf("g2", "Home", [["c3", "Household"]])],
+    1,
+  );
+  await setYnabOn(true);
+  ynab.transactions.push(
+    // history: Trader Joe's is sure (last three all Groceries), Costco is likely (two of three)
+    row("Trader Joe's", "c1", "2026-08-01"),
+    row("Trader Joe's", "c1", "2026-08-08"),
+    row("Trader Joe's", "c1", "2026-08-15"),
+    row("Costco", "c1", "2026-08-01"),
+    row("Costco", "c1", "2026-08-08"),
+    row("Costco", "c3", "2026-08-15"),
+    // the unapproved
+    unapproved("Trader Joe's", null, "2026-10-01", { id: "tj1", amount: -12_340 }),
+    unapproved("Trader Joe's", null, "2026-10-05", { id: "tj2", amount: -30_000 }),
+    unapproved("Costco", null, "2026-10-02", { id: "co1" }),
+    unapproved("Mystery Shop", null, "2026-10-03", { id: "my1" }),
+    unapproved("Shell", "c2", "2026-10-04", { id: "sh1", category_name: "Eating Out" }),
+  );
+});
+
+afterEach(() => {
+  vi.unstubAllGlobals();
+  localStorage.removeItem(YNAB_BUSY_KEY);
+});
+
+describe("Clean up", () => {
+  it("lists the unapproved transactions grouped by payee, with the count, the total and one category for the group", async () => {
+    renderPage();
+    const tj = await screen.findByRole("group", { name: "Trader Joe's" });
+    expect(within(tj).getByText("2 transactions · $42.34")).toBeInTheDocument();
+    expect(within(tj).getByLabelText("Category for Trader Joe's")).toHaveValue("c1");
+    expect(within(groupOfPayee("Costco")).getByText("1 transaction · $10.00")).toBeInTheDocument();
+    // the approved ones are not here
+    expect(screen.queryByText(/2026-08/)).not.toBeInTheDocument();
+    expect(ynab.requests.some((r) => r.path.includes("type=unapproved"))).toBe(true);
+  });
+
+  it("ticks the sure ones and puts them first; the others are unticked, with their confidence shown", async () => {
+    renderPage();
+    await screen.findByRole("group", { name: "Trader Joe's" });
+    const names = screen.getAllByRole("group").map((g) => g.getAttribute("aria-label"));
+    expect(names[0]).toBe("Trader Joe's");
+
+    const tj = groupOfPayee("Trader Joe's");
+    expect(within(tj).getByText("Sure")).toBeInTheDocument();
+    for (const box of within(tj).getAllByRole("checkbox", { name: /^Approve / })) expect(box).toBeChecked();
+
+    const costco = groupOfPayee("Costco");
+    expect(within(costco).getByText("Likely")).toBeInTheDocument();
+    expect(within(costco).getByLabelText("Category for Costco")).toHaveValue("c1");
+    expect(within(costco).getByRole("checkbox", { name: /^Approve / })).not.toBeChecked();
+
+    const mystery = groupOfPayee("Mystery Shop");
+    expect(within(mystery).getByText("Unsure")).toBeInTheDocument();
+    expect(within(mystery).getByRole("checkbox", { name: /^Approve / })).not.toBeChecked();
+    expect(screen.getByRole("button", { name: "Approve 2" })).toBeInTheDocument();
+  });
+
+  it("writes only the ticked ones, category and approved, in one bulk PATCH, and nothing before the tap", async () => {
+    const user = userEvent.setup();
+    renderPage();
+    const tj = await screen.findByRole("group", { name: "Trader Joe's" });
+    expect(patches()).toHaveLength(0);
+
+    await user.click(within(tj).getByRole("checkbox", { name: /Approve \$30\.00/ }));
+    await user.click(screen.getByRole("button", { name: "Approve 1" }));
+
+    await waitFor(() => expect(patches()).toHaveLength(1));
+    expect(patches()[0]?.body).toEqual({ transactions: [{ id: "tj1", category_id: "c1", approved: true }] });
+    const byId = (id: string) => ynab.transactions.find((t) => t.id === id);
+    expect(byId("tj1")).toMatchObject({ approved: true, category_id: "c1" });
+    expect(byId("tj2")?.approved).toBe(false);
+    expect(byId("co1")?.approved).toBe(false);
+    expect(byId("my1")?.approved).toBe(false);
+  });
+
+  it("moves to the next page after the write, the unticked ones left behind", async () => {
+    const user = userEvent.setup();
+    ynab.transactions = ynab.transactions.filter((t) => t.approved);
+    for (let i = 1; i <= 25; i++) ynab.transactions.push(unapproved("Trader Joe's", null, `2026-10-${String(i).padStart(2, "0")}`, { id: `x${i}` }));
+    renderPage();
+    await screen.findByRole("button", { name: "Approve 20" });
+    expect(screen.getAllByRole("checkbox", { name: /^Approve \$/ })).toHaveLength(20);
+    await user.click(screen.getByRole("button", { name: "Approve 20" }));
+    await waitFor(() => expect(screen.getByRole("button", { name: "Approve 5" })).toBeInTheDocument());
+    expect(patches()).toHaveLength(1);
+    expect((patches()[0]?.body as { transactions: unknown[] }).transactions).toHaveLength(20);
+    expect(screen.getAllByRole("checkbox", { name: /^Approve \$/ })).toHaveLength(5);
+  });
+
+  it("says when a write failed and leaves the page as it was, nothing approved", async () => {
+    const user = userEvent.setup();
+    renderPage();
+    await screen.findByRole("group", { name: "Trader Joe's" });
+    ynab.failNextBulk = 500;
+    await user.click(screen.getByRole("button", { name: "Approve 2" }));
+    expect(await screen.findByRole("alert")).toHaveTextContent(/could not approve/i);
+    // the same transactions, still ticked, still on the page; a second tap works
+    const tj = groupOfPayee("Trader Joe's");
+    for (const box of within(tj).getAllByRole("checkbox", { name: /^Approve / })) expect(box).toBeChecked();
+    expect(ynab.transactions.filter((t) => !t.approved)).toHaveLength(5);
+    await user.click(screen.getByRole("button", { name: "Approve 2" }));
+    await waitFor(() => expect(ynab.transactions.filter((t) => t.approved && t.id.startsWith("tj"))).toHaveLength(2));
+  });
+
+  it("keeps the category a categorized transaction has, and writes a changed one", async () => {
+    const user = userEvent.setup();
+    renderPage();
+    const shell = await screen.findByRole("group", { name: "Shell" });
+    const select = within(shell).getByLabelText("Category for Shell");
+    expect(select).toHaveValue("c2");
+    expect(within(shell).getByRole("checkbox", { name: /^Approve / })).not.toBeChecked();
+
+    await user.click(within(shell).getByRole("checkbox", { name: /^Approve / }));
+    await user.click(screen.getByRole("button", { name: "Approve 3" }));
+    await waitFor(() => expect(patches()).toHaveLength(1));
+    expect((patches()[0]?.body as { transactions: { id: string; category_id?: string }[] }).transactions).toContainEqual({ id: "sh1", category_id: "c2", approved: true });
+
+    // the page is done (the unticked were passed by); going through them again reads YNAB afresh
+    await user.click(await screen.findByRole("button", { name: "Go through them again" }));
+    // a changed one: Mystery Shop to Household, which ticks it
+    const mystery = await screen.findByRole("group", { name: "Mystery Shop" });
+    await user.selectOptions(within(mystery).getByLabelText("Category for Mystery Shop"), "c3");
+    expect(within(mystery).getByRole("checkbox", { name: /^Approve / })).toBeChecked();
+    await user.click(screen.getByRole("button", { name: "Approve 1" }));
+    await waitFor(() => expect(patches()).toHaveLength(2));
+    expect(patches()[1]?.body).toEqual({ transactions: [{ id: "my1", category_id: "c3", approved: true }] });
+  });
+
+  it("changes the category of the whole group, or of one transaction", async () => {
+    const user = userEvent.setup();
+    renderPage();
+    const tj = await screen.findByRole("group", { name: "Trader Joe's" });
+    await user.selectOptions(within(tj).getByLabelText("Category for Trader Joe's"), "c2");
+    for (const select of within(tj).getAllByLabelText(/^Category for \$/)) expect(select).toHaveValue("c2");
+    await user.selectOptions(within(tj).getAllByLabelText(/^Category for \$/)[1]!, "c3");
+    expect(within(tj).getByLabelText("Category for Trader Joe's")).toHaveValue("");
+    await user.click(screen.getByRole("button", { name: "Approve 2" }));
+    await waitFor(() => expect(patches()).toHaveLength(1));
+    expect(patches()[0]?.body).toEqual({
+      transactions: [
+        { id: "tj1", category_id: "c2", approved: true },
+        { id: "tj2", category_id: "c3", approved: true },
+      ],
+    });
+  });
+
+  it("opens again showing only what is still unapproved", async () => {
+    const user = userEvent.setup();
+    const first = renderPage();
+    await screen.findByRole("group", { name: "Trader Joe's" });
+    await user.click(screen.getByRole("button", { name: "Approve 2" }));
+    await waitFor(() => expect(patches()).toHaveLength(1));
+    first.unmount();
+
+    renderPage();
+    await screen.findByRole("group", { name: "Costco" });
+    expect(screen.queryByRole("group", { name: "Trader Joe's" })).not.toBeInTheDocument();
+    expect(screen.getByRole("group", { name: "Mystery Shop" })).toBeInTheDocument();
+    expect(screen.getByRole("group", { name: "Shell" })).toBeInTheDocument();
+  });
+
+  it("asks the AI for a payee nothing else knows, and marks its category unsure and unticked", async () => {
+    const suggest: SortChargeAsk = vi.fn(async (request) => ({ category: request.merchant === "Mystery Shop" ? "Household" : "Groceries", why: "It sells hardware." }));
+    renderPage({ suggest });
+    const mystery = await screen.findByRole("group", { name: "Mystery Shop" });
+    await waitFor(() => expect(within(mystery).getByLabelText("Category for Mystery Shop")).toHaveValue("c3"));
+    expect(within(mystery).getByText("Unsure")).toBeInTheDocument();
+    expect(within(mystery).getByRole("checkbox", { name: /^Approve / })).not.toBeChecked();
+    // not asked for the ones the history knows
+    expect(vi.mocked(suggest).mock.calls.map((c) => c[0].merchant)).toEqual(["Mystery Shop"]);
+  });
+
+  it("says there is nothing to clean when nothing is unapproved", async () => {
+    ynab.transactions = ynab.transactions.filter((t) => t.approved);
+    renderPage();
+    expect(await screen.findByText("Nothing is waiting to be approved.")).toBeInTheDocument();
+  });
+
+  it("is reached from a Clean up link on Home while the connection is On", async () => {
+    renderPage({}, "/");
+    expect(await screen.findByRole("link", { name: "Clean up" })).toHaveAttribute("href", "/cleanup");
+  });
+});

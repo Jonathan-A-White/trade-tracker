@@ -26,6 +26,7 @@ import SettingsPage from "@/pages/settings-page";
 import AboutPage from "@/pages/about-page";
 import { NotFoundPage } from "@/pages/not-found-page";
 import { RouteErrorPage } from "@/pages/route-error-page";
+import CleanupPage from "@/pages/cleanup-page";
 import { SortRoute } from "@/sort/SortSheet";
 
 export const appRoutes: RouteObject[] = [
@@ -81,6 +82,7 @@ export const appRoutes: RouteObject[] = [
           { path: "stores", element: <StoresPage /> },
           { path: "stores/new", element: <NewStorePage /> },
           { path: "stores/:id/edit", element: <EditStorePage /> },
+          { path: "cleanup", element: <CleanupPage /> },
           { path: "export", element: <ExportPage /> },
           { path: "settings", element: <SettingsPage /> },
           { path: "about", element: <AboutPage /> },

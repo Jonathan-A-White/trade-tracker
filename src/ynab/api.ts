@@ -4,6 +4,7 @@ import type {
   YnabCategoryGroupWire,
   YnabDelta,
   YnabPayeeWire,
+  YnabTransactionPatch,
   YnabTransactionWire,
 } from "./types";
 
@@ -69,7 +70,11 @@ export interface YnabClient {
   createTransaction(budgetId: string, transaction: YnabTransactionWire, options?: YnabCallOptions): Promise<{ id: string }>;
   /** The transactions dated `sinceDate` (YYYY-MM-DD) or later. */
   transactionsSince(budgetId: string, sinceDate: string, options?: YnabCallOptions): Promise<YnabTransactionWire[]>;
+  /** Every transaction YNAB has not approved yet (type=unapproved), in the order it gives them. */
+  unapprovedTransactions(budgetId: string, options?: YnabCallOptions): Promise<YnabTransactionWire[]>;
   updateTransaction(budgetId: string, id: string, transaction: YnabTransactionWire, options?: YnabCallOptions): Promise<void>;
+  /** Changes several transactions in one PATCH (each by id; only the fields given change). */
+  updateTransactions(budgetId: string, transactions: YnabTransactionPatch[], options?: YnabCallOptions): Promise<void>;
   deleteTransaction(budgetId: string, id: string, options?: YnabCallOptions): Promise<void>;
 }
 
@@ -170,8 +175,16 @@ export function createYnabClient(
       if (!Array.isArray(data.transactions)) throw new YnabError("YNAB answered something this app cannot read.");
       return data.transactions as YnabTransactionWire[];
     },
+    async unapprovedTransactions(budgetId, options) {
+      const data = await call("GET", `/budgets/${enc(budgetId)}/transactions?type=unapproved`, undefined, options);
+      if (!Array.isArray(data.transactions)) throw new YnabError("YNAB answered something this app cannot read.");
+      return data.transactions as YnabTransactionWire[];
+    },
     async updateTransaction(budgetId, id, transaction, options) {
       await call("PUT", `/budgets/${enc(budgetId)}/transactions/${enc(id)}`, { transaction }, options);
+    },
+    async updateTransactions(budgetId, transactions, options) {
+      await call("PATCH", `/budgets/${enc(budgetId)}/transactions`, { transactions }, options);
     },
     async deleteTransaction(budgetId, id, options) {
       await call("DELETE", `/budgets/${enc(budgetId)}/transactions/${enc(id)}`, undefined, options);

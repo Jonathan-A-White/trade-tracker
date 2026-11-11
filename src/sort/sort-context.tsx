@@ -11,7 +11,7 @@ import { makeAlertsClient, type AlertsClient, type FamilyAlert } from "@/family/
 import { cardBook, type CardBook } from "@/family/cards";
 import { browserStorage } from "@/services/factory-service";
 import { useFamilyOn } from "@/settings/connections";
-import { createYnabClient } from "@/ynab/api";
+import { createYnabClient, type YnabClient } from "@/ynab/api";
 import { refreshCache } from "@/ynab/cache";
 import { refreshTally as readYnabTally } from "@/ynab/tally";
 import { openToken } from "@/ynab/token";
@@ -39,8 +39,8 @@ import {
   type WaitingCharge,
 } from "./waiting";
 
-/** What the sheet needs of the YNAB writer. */
-export type SortWriter = Pick<YnabWriter, "create">;
+/** What the sheet needs of the YNAB writer (and Clean up, `approve`, when the writer has it). */
+export type SortWriter = Pick<YnabWriter, "create"> & Partial<Pick<YnabWriter, "approve">>;
 
 /** The parts a test replaces: each left out is the app's own. */
 export interface SortSeams {
@@ -53,6 +53,8 @@ export interface SortSeams {
   refreshBalances?: () => Promise<void>;
   /** reads YNAB's tally of payees by category, when the one kept is old */
   refreshTally?: () => Promise<void>;
+  /** the YNAB client Clean up reads with; the app's own opens the sealed token with the unlocked key */
+  ynabClient?: () => Promise<YnabClient>;
   /** asks the mill where a charge goes; null asks nothing (the app's own is the factory's, only on a licensed key) */
   suggest?: SortChargeAsk | null;
   /** how long the sheet waits for the suggestion */
@@ -96,10 +98,10 @@ function useAppWriter(enabled: boolean): SortWriter | null {
 
 export function SortProvider({ children, ...seams }: SortSeams & { children: ReactNode }) {
   const appWriter = useAppWriter(seams.writer === undefined);
-  const { client, writer, me, refreshBalances, refreshTally, suggest, suggestTimeoutMs, readReceipt, receiptTimeoutMs, pollMs, feedTiming, balanceTiming } = seams;
+  const { client, writer, me, refreshBalances, refreshTally, ynabClient, suggest, suggestTimeoutMs, readReceipt, receiptTimeoutMs, pollMs, feedTiming, balanceTiming } = seams;
   const value = useMemo<SortSeams>(
-    () => ({ client, writer: writer === undefined ? appWriter : writer, me, refreshBalances, refreshTally, suggest, suggestTimeoutMs, readReceipt, receiptTimeoutMs, pollMs, feedTiming, balanceTiming }),
-    [client, writer, appWriter, me, refreshBalances, refreshTally, suggest, suggestTimeoutMs, readReceipt, receiptTimeoutMs, pollMs, feedTiming, balanceTiming],
+    () => ({ client, writer: writer === undefined ? appWriter : writer, me, refreshBalances, refreshTally, ynabClient, suggest, suggestTimeoutMs, readReceipt, receiptTimeoutMs, pollMs, feedTiming, balanceTiming }),
+    [client, writer, appWriter, me, refreshBalances, refreshTally, ynabClient, suggest, suggestTimeoutMs, readReceipt, receiptTimeoutMs, pollMs, feedTiming, balanceTiming],
   );
   return <SortContext.Provider value={value}>{children}</SortContext.Provider>;
 }
@@ -148,6 +150,65 @@ export interface FamilyFeed {
   receiptTimeoutMs: number;
   /** keeps that this phone sorted the charge; `claimed` false claims it for every phone now (or later, when unreached) */
   sortedHere: (charge: WaitingCharge, claimed: boolean) => void;
+}
+
+/** The app's YNAB client for a read: the token opened with the unlocked key, or the sentence that says why not. */
+function useYnabClientFor(): (what: string) => Promise<YnabClient> {
+  const { getKey } = useFactory();
+  return useCallback(
+    async (what: string) => {
+      const key = getKey();
+      if (!key) throw new Error(`Unlock the key to read ${what} from YNAB.`);
+      const token = await openToken(browserStorage(), key);
+      if (!token) throw new Error("The YNAB token could not be opened. Turn YNAB off and on again under Settings.");
+      return createYnabClient(token);
+    },
+    [getKey],
+  );
+}
+
+/** The suggestion is the AI: asked only on a licensed key, the key read when it asks. */
+function useAppSuggest(): SortChargeAsk | null {
+  const { door, getKey, backendUrl } = useFactory();
+  const licenceNow = useLicenceNow();
+  const licensed = door === "licensed";
+  return useMemo<SortChargeAsk | null>(
+    () =>
+      licensed
+        ? async (request, signal) => {
+            const key = getKey();
+            if (!key) throw new Error("The factory is locked.");
+            return makeSortChargeAsk(backendUrl, key, licenceNow)(request, signal);
+          }
+        : null,
+    [licensed, getKey, backendUrl, licenceNow],
+  );
+}
+
+/** What the Clean up screen reads and writes with. */
+export interface CleanupDeps {
+  /** opens a YNAB client for a read */
+  getClient: () => Promise<YnabClient>;
+  /** approves transactions; null when the writer is not there */
+  approve: YnabWriter["approve"] | null;
+  /** asks the mill where a payee's charge goes; null when the AI is not allowed */
+  suggest: SortChargeAsk | null;
+  suggestTimeoutMs: number;
+}
+
+export function useCleanupDeps(): CleanupDeps {
+  const seams = useContext(SortContext);
+  const clientFor = useYnabClientFor();
+  const appSuggest = useAppSuggest();
+  const { approve } = seams.writer ?? {};
+  const seamClient = seams.ynabClient;
+  const getClient = useCallback(() => (seamClient ? seamClient() : clientFor("the transactions")), [seamClient, clientFor]);
+  return {
+    getClient,
+    approve: approve ?? null,
+    suggest: seams.suggest !== undefined ? seams.suggest : appSuggest,
+    suggestTimeoutMs: seams.suggestTimeoutMs ?? SUGGEST_DEADLINE_MS,
+  };
 }
 
 /** The family's feed as Home and the sheet read it. */
@@ -213,13 +274,7 @@ export function useFamilyFeed(): FamilyFeed {
   );
   const sorted = useMemo(() => (on ? sortedToday(records) : []), [on, records]);
 
-  const ynabClient = useCallback(async (what: string) => {
-    const key = getKey();
-    if (!key) throw new Error(`Unlock the key to read ${what} from YNAB.`);
-    const token = await openToken(browserStorage(), key);
-    if (!token) throw new Error("The YNAB token could not be opened. Turn YNAB off and on again under Settings.");
-    return createYnabClient(token);
-  }, [getKey]);
+  const ynabClient = useYnabClientFor();
   const appRefresh = useCallback(async () => refreshCache(await ynabClient("the balances")), [ynabClient]);
   const appRefreshTally = useCallback(async () => readYnabTally(await ynabClient("the history")), [ynabClient]);
 
@@ -233,18 +288,7 @@ export function useFamilyFeed(): FamilyFeed {
     [claim, forget],
   );
 
-  // the suggestion is the AI: asked only on a licensed key, the key read when it asks
-  const appSuggest = useMemo<SortChargeAsk | null>(
-    () =>
-      licensed
-        ? async (request, signal) => {
-            const key = getKey();
-            if (!key) throw new Error("The factory is locked.");
-            return makeSortChargeAsk(backendUrl, key, licenceNow)(request, signal);
-          }
-        : null,
-    [licensed, getKey, backendUrl, licenceNow],
-  );
+  const appSuggest = useAppSuggest();
 
   // the receipt is read by the receipt grind, over the same key and licence
   const appReadReceipt = useMemo<ReceiptReader | null>(

@@ -61,3 +61,10 @@ export interface YnabTransactionWire {
   category_name?: string | null;
   transfer_account_id?: string | null;
 }
+
+/** One change in a bulk PATCH of transactions: the id, and the fields to change. */
+export interface YnabTransactionPatch {
+  id: string;
+  category_id?: string | null;
+  approved?: boolean;
+}

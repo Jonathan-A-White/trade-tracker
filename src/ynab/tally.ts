@@ -17,7 +17,7 @@ export const TALLY_FRESH_MS = 12 * 60 * 60_000;
 /** How long after a failed read the next is tried. */
 export const TALLY_RETRY_MS = 60 * 60_000;
 /** YNAB's own group, holding Uncategorized and Inflow: Ready to Assign; nothing counted goes there. */
-const INTERNAL_GROUP = "Internal Master Category";
+export const INTERNAL_GROUP = "Internal Master Category";
 const UNCATEGORIZED = "uncategorized";
 
 /** Per payee as YNAB names it, per category id: how many charges. */
@@ -92,7 +92,7 @@ export function forgetTally(): void {
 }
 
 /** A day as YNAB writes it, YYYY-MM-DD, on this phone's calendar. */
-function day(ms: number): string {
+export function day(ms: number): string {
   const d = new Date(ms);
   return `${d.getFullYear()}-${String(d.getMonth() + 1).padStart(2, "0")}-${String(d.getDate()).padStart(2, "0")}`;
 }

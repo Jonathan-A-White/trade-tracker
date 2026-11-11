@@ -401,3 +401,59 @@ describe("the YNAB writer: offline and time limits", () => {
     expect(lastStatus()?.line).toContain("key");
   });
 });
+
+describe("the YNAB writer: approve", () => {
+  const seed = () =>
+    ynab.transactions.push(
+      { id: "u1", account_id: "a1", date: "2026-10-01", amount: -1000, payee_name: "A", approved: false },
+      { id: "u2", account_id: "a1", date: "2026-10-02", amount: -2000, payee_name: "B", approved: false },
+    );
+
+  it("approves the given transactions with their categories in one PATCH", async () => {
+    await setup();
+    seed();
+    await writer.approve([{ id: "u1", categoryId: "c1" }, { id: "u2" }]);
+    const patches = ynab.requests.filter((r) => r.method === "PATCH");
+    expect(patches).toHaveLength(1);
+    expect(patches[0]?.body).toEqual({ transactions: [{ id: "u1", category_id: "c1", approved: true }, { id: "u2", approved: true }] });
+    expect(ynab.transactions.map((t) => t.approved)).toEqual([true, true]);
+  });
+
+  it("sends nothing for an empty list", async () => {
+    await setup();
+    await writer.approve([]);
+    expect(ynab.requests.filter((r) => r.method === "PATCH")).toHaveLength(0);
+  });
+
+  it("rejects when YNAB refuses, and does not queue it for a later try", async () => {
+    await setup();
+    seed();
+    ynab.failNextBulk = 500;
+    await expect(writer.approve([{ id: "u1", categoryId: "c1" }])).rejects.toThrow();
+    await writer.settled();
+    expect(ynab.requests.filter((r) => r.method === "PATCH")).toHaveLength(1);
+    expect(ynab.transactions.map((t) => t.approved)).toEqual([false, false]);
+  });
+
+  it("is busy for the wait YNAB named after a 429, and sends nothing while it waits", async () => {
+    await setup();
+    seed();
+    ynab.rateLimited = { retryAfterSeconds: 90 };
+    await expect(writer.approve([{ id: "u1" }])).rejects.toThrow(/YNAB is busy, waiting until/);
+    expect(Number(localStorage.getItem(YNAB_BUSY_KEY))).toBeGreaterThan(Date.now());
+    ynab.rateLimited = null;
+    const before = ynab.requests.length;
+    await expect(writer.approve([{ id: "u1" }])).rejects.toThrow(/YNAB is busy/);
+    expect(ynab.requests.length).toBe(before);
+  });
+
+  it("refuses when YNAB is not connected or the key is locked", async () => {
+    await setup();
+    await db.ynabConnection.clear();
+    await expect(writer.approve([{ id: "u1" }])).rejects.toThrow("YNAB is not connected.");
+    await new YnabRepository().saveConnection({ budgetId: "b1", budgetName: "Our Budget" });
+    stop();
+    writer = createYnabWriter({ getClient: async () => null, page });
+    await expect(writer.approve([{ id: "u1" }])).rejects.toThrow(/key is locked/);
+  });
+});

@@ -2,7 +2,7 @@ import { createOutbox, PermanentSendError } from "pwa-kit/outbox";
 import type { Outbox, OutboxItem, OutboxPage, OutboxStatus } from "pwa-kit/outbox";
 import { YnabOutboxRepository } from "@/db/repositories/ynab-outbox-repository";
 import { YnabRepository } from "@/db/repositories/ynab-repository";
-import type { YnabTransactionInput, YnabWrite } from "@/contracts/types";
+import type { YnabApproval, YnabTransactionInput, YnabWrite } from "@/contracts/types";
 import { YnabError, YnabNotFoundError, YnabRateLimitedError, YnabRefusedError, type YnabClient } from "./api";
 import type { YnabTransactionWire } from "./types";
 
@@ -49,6 +49,12 @@ export interface YnabWriter {
   update(localId: string, input: YnabTransactionInput): Promise<void>;
   /** Queues the deletion of a transaction entered earlier. */
   remove(localId: string): Promise<void>;
+  /**
+   * Approves transactions already in YNAB (the Clean up screen), each with its category, in one PATCH, and answers when YNAB has done
+   * it. Not queued: the person is waiting to be told, so a failure rejects with its plain sentence and nothing is kept to try again.
+   * While YNAB's hour is used up it rejects with the busy line and sends nothing.
+   */
+  approve(approvals: readonly YnabApproval[]): Promise<void>;
   retry(clientId: string): Promise<void>;
   discard(clientId: string): Promise<void>;
   status(): Promise<OutboxStatus>;
@@ -92,7 +98,7 @@ function toWire(input: YnabTransactionInput, localId: string): YnabTransactionWi
   return wire;
 }
 
-/** Writes to YNAB through the outbox: entered transactions (no import_id, so YNAB's own bank import matches them), created once, updated and deleted by their YNAB id. */
+/** Every write to YNAB goes through here. Entered transactions (no import_id, so YNAB's own bank import matches them) go through the outbox: created once, updated and deleted by their YNAB id. Approving existing ones (Clean up) is one awaited PATCH. */
 export function createYnabWriter(options: YnabWriterOptions): YnabWriter {
   const repo = options.repo ?? new YnabOutboxRepository();
   const connections = options.connections ?? new YnabRepository();
@@ -219,6 +225,29 @@ export function createYnabWriter(options: YnabWriterOptions): YnabWriter {
     },
     async remove(localId) {
       await outbox.enqueue({ kind: "delete", localId });
+    },
+    async approve(approvals) {
+      if (approvals.length === 0) return;
+      const until = busyUntil();
+      if (until > Date.now()) throw new Error(busyLine(until));
+      if (until) storage?.removeItem(YNAB_BUSY_KEY);
+      const connection = await connections.getConnection();
+      if (!connection) throw new Error("YNAB is not connected.");
+      const client = await options.getClient();
+      if (!client) throw new Error("The key is locked, so the YNAB token cannot be opened.");
+      try {
+        await client.updateTransactions(
+          connection.budgetId,
+          approvals.map((a) => ({ id: a.id, ...(a.categoryId ? { category_id: a.categoryId } : {}), approved: true })),
+        );
+      } catch (err) {
+        if (err instanceof YnabRateLimitedError) throw beBusy(err.retryAfterMs);
+        if (err instanceof YnabNotFoundError) throw new Error("One of those is no longer in YNAB. Open Clean up again.");
+        if (err instanceof YnabError && err.status !== undefined && err.status >= 400 && err.status < 500) {
+          throw new Error(`YNAB did not accept these (${err.status}).`);
+        }
+        throw err;
+      }
     },
     retry: (clientId) => outbox.retry(clientId),
     discard: (clientId) => outbox.discard(clientId),
