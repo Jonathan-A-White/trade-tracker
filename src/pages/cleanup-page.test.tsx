@@ -12,7 +12,7 @@ import { setYnabOn } from "@/settings/connections";
 import { SortProvider, type SortSeams } from "@/sort/sort-context";
 import type { SortChargeAsk } from "@/sort/suggest";
 import { createYnabClient } from "@/ynab/api";
-import { fakeYnab, groupOf, type FakeYnab, type FakeYnabTransaction } from "@/ynab/fake-ynab";
+import { accountOf, fakeYnab, groupOf, type FakeYnab, type FakeYnabTransaction } from "@/ynab/fake-ynab";
 import type { CheckReader } from "@/ynab/check-read";
 import { YNAB_BUSY_KEY, createYnabWriter } from "@/ynab/writer";
 
@@ -681,5 +681,106 @@ describe("Clean up: an inflow (his words, 2026-11-12: 'Inflow should go to Ready
     renderPage();
     const tj = await screen.findByRole("group", { name: "Trader Joe's" });
     expect(within(tj).queryByRole("option", { name: "Inflow: Ready to Assign" })).not.toBeInTheDocument();
+  });
+});
+
+describe("Clean up: a transfer says what moved (his words, 2026-11-12: 'transfer is right, but needs to be more detailed')", () => {
+  const LINE = "Credit card payment: $6,925.28 from PNC Checking to Citi Double Cash, 2026-02-17";
+  const byId = (id: string) => ynab.transactions.find((t) => t.id === id);
+  beforeEach(() => {
+    ynab.budgets[0]!.accounts = [accountOf("pnc", "PNC Checking"), accountOf("citi", "Citi Double Cash", "creditCard")];
+    ynab.transactions = ynab.transactions.filter((t) => t.approved);
+  });
+
+  it("names both accounts, the direction and the kind, says YNAB holds the other side approved, and Approve writes approved only", async () => {
+    const user = userEvent.setup();
+    ynab.transactions.push(
+      unapproved("Transfer : PNC Checking", null, "2026-02-17", { id: "citi1", account_id: "citi", amount: 6_925_280, transfer_account_id: "pnc", transfer_transaction_id: "pnc1" }),
+      row("Transfer : Citi Double Cash", null, "2026-02-17", { id: "pnc1", account_id: "pnc", amount: -6_925_280, transfer_account_id: "citi", transfer_transaction_id: "citi1" }),
+    );
+    renderPage();
+    const card = await screen.findByRole("group", { name: "Transfer : PNC Checking" });
+    expect(within(card).getByText(LINE)).toBeInTheDocument();
+    expect(within(card).getByText("YNAB has the other side in PNC Checking, and it is approved.")).toBeInTheDocument();
+    expect(within(card).getByText("Sure")).toBeInTheDocument();
+    expect(within(card).getByRole("checkbox", { name: "Approve $6,925.28 in on 2026-02-17" })).toBeChecked();
+
+    await user.click(screen.getByRole("button", { name: "Approve 1" }));
+    await waitFor(() => expect(patches()).toHaveLength(1));
+    expect((patches()[0]?.body as { transactions: unknown[] }).transactions).toEqual([{ id: "citi1", approved: true }]);
+    expect(byId("citi1")).toMatchObject({ approved: true, category_id: null });
+    await waitFor(() => expect(screen.queryByRole("group", { name: "Transfer : PNC Checking" })).not.toBeInTheDocument());
+  });
+
+  it("can be ticked by hand when the other side is not approved yet (Likely), and approves with no category", async () => {
+    const user = userEvent.setup();
+    ynab.transactions.push(
+      unapproved("Transfer : PNC Checking", null, "2026-02-17", { id: "citi1", account_id: "citi", amount: 6_925_280, transfer_account_id: "pnc", transfer_transaction_id: "pnc1" }),
+      unapproved("Transfer : Citi Double Cash", null, "2026-02-17", { id: "pnc1", account_id: "pnc", amount: -6_925_280, transfer_account_id: "citi", transfer_transaction_id: "citi1" }),
+    );
+    renderPage();
+    const card = await screen.findByRole("group", { name: "Transfer : PNC Checking" });
+    expect(within(card).getByText("YNAB has the other side in PNC Checking, not approved yet.")).toBeInTheDocument();
+    expect(within(card).getByText("Likely")).toBeInTheDocument();
+    const box = within(card).getByRole("checkbox", { name: "Approve $6,925.28 in on 2026-02-17" });
+    expect(box).not.toBeChecked();
+    await user.click(box);
+    await user.click(screen.getByRole("button", { name: "Approve 1" }));
+    await waitFor(() => expect(patches()).toHaveLength(1));
+    expect((patches()[0]?.body as { transactions: unknown[] }).transactions).toEqual([{ id: "citi1", approved: true }]);
+  });
+
+  it("says 'No matching transaction in <account> yet' and stays unticked when YNAB has matched nothing", async () => {
+    ynab.transactions.push(unapproved("Transfer : PNC Checking", null, "2026-02-17", { id: "citi1", account_id: "citi", amount: 6_925_280, transfer_account_id: "pnc" }));
+    renderPage();
+    const card = await screen.findByRole("group", { name: "Transfer : PNC Checking" });
+    expect(within(card).getByText(LINE)).toBeInTheDocument();
+    expect(within(card).getByText("No matching transaction in PNC Checking yet.")).toBeInTheDocument();
+    expect(within(card).getByRole("checkbox", { name: "Approve $6,925.28 in on 2026-02-17" })).not.toBeChecked();
+    expect(screen.getByRole("button", { name: "Approve 0" })).toBeDisabled();
+  });
+
+  it("says a savings move and a loan payment in their own words", async () => {
+    ynab.budgets[0]!.accounts = [accountOf("pnc", "PNC Checking"), accountOf("sav", "Ally Savings", "savings"), accountOf("mtg", "Home Mortgage", "mortgage", false)];
+    ynab.transactions.push(
+      unapproved("Transfer : Ally Savings", null, "2026-02-10", { id: "t1", account_id: "pnc", amount: -500_000, transfer_account_id: "sav" }),
+      unapproved("Transfer : Home Mortgage", null, "2026-02-11", { id: "t2", account_id: "pnc", amount: -1_200_000, transfer_account_id: "mtg" }),
+    );
+    renderPage();
+    expect(await screen.findByText("Savings move: $500.00 from PNC Checking to Ally Savings, 2026-02-10")).toBeInTheDocument();
+    expect(screen.getByText("Loan payment: $1,200.00 from PNC Checking to Home Mortgage, 2026-02-11")).toBeInTheDocument();
+  });
+});
+
+describe("Clean up: already in a category in YNAB (his words, 2026-11-12: 'It looks like this was already categorized')", () => {
+  it("says so first and pre-ticks the Anthropic charges, whose history agrees (18 of 20); Approve writes them in that category", async () => {
+    const user = userEvent.setup();
+    ynab.transactions = ynab.transactions.filter((t) => t.approved);
+    for (let i = 1; i <= 18; i++) ynab.transactions.push(row("Anthropic", "c4", `2026-01-${String(i).padStart(2, "0")}`));
+    ynab.transactions.push(row("Anthropic", "c1", "2026-02-01"), row("Anthropic", "c2", "2026-02-02"));
+    ynab.transactions.push(
+      unapproved("Anthropic", "c4", "2026-03-07", { id: "an1", amount: -11_540, category_name: "Stuff I Forgot to Budget For" }),
+      unapproved("Anthropic", "c4", "2026-03-07", { id: "an2", amount: -11_200, category_name: "Stuff I Forgot to Budget For" }),
+    );
+    renderPage();
+    const card = await screen.findByRole("group", { name: "Anthropic" });
+    expect(within(card).getByText("2 transactions · $22.74")).toBeInTheDocument();
+    expect(within(card).getAllByText("Already in Stuff I Forgot to Budget For in YNAB; only needs approving")).toHaveLength(2);
+    expect(within(card).getAllByText("18 of 20 here went to Stuff I Forgot to Budget For.")).toHaveLength(2);
+    expect(within(card).getAllByRole("checkbox", { name: /^Approve \$/ }).every((b) => (b as HTMLInputElement).checked)).toBe(true);
+    await user.click(screen.getByRole("button", { name: "Approve 2" }));
+    await waitFor(() => expect(patches()).toHaveLength(1));
+    expect((patches()[0]?.body as { transactions: unknown[] }).transactions).toEqual([
+      { id: "an1", category_id: "c4", approved: true },
+      { id: "an2", category_id: "c4", approved: true },
+    ]);
+  });
+
+  it("names a split's parts and their categories", async () => {
+    ynab.transactions = ynab.transactions.filter((t) => t.approved);
+    ynab.transactions.push(unapproved("Costco", null, "2026-10-06", { id: "sp1", amount: -30_000, subtransactions: [{ amount: -20_000, category_id: "c1" }, { amount: -10_000, category_id: "c3" }] }));
+    renderPage();
+    const card = await screen.findByRole("group", { name: "Costco" });
+    expect(within(card).getByText("Split in YNAB into 2 parts: $20.00 Groceries, $10.00 Household.")).toBeInTheDocument();
   });
 });

@@ -60,6 +60,8 @@ export interface YnabTransactionWire {
   /** what YNAB answers on a read, never sent: the category's name ('Uncategorized'), and the account of a transfer */
   category_name?: string | null;
   transfer_account_id?: string | null;
+  /** the other side of a transfer, the transaction YNAB holds in the other account; null while YNAB has not matched one */
+  transfer_transaction_id?: string | null;
 }
 
 /** One change in a bulk PATCH of transactions: the id, and the fields to change. */

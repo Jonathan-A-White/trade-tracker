@@ -25,6 +25,7 @@ export interface FakeYnabTransaction {
   subtransactions?: { amount: number; category_id?: string | null; memo?: string | null; transfer_account_id?: string | null }[];
   category_name?: string | null;
   transfer_account_id?: string | null;
+  transfer_transaction_id?: string | null;
   deleted?: boolean;
 }
 
@@ -75,8 +76,9 @@ export function groupOf(id: string, name: string, categories: ([string, string] 
   };
 }
 
-export function accountOf(id: string, name: string): YnabAccountWire {
-  return { id, name, type: "checking", on_budget: true, closed: false, deleted: false };
+/** An account; YNAB's type is 'checking' unless given ('savings', 'creditCard', 'mortgage', 'otherAsset', ...). */
+export function accountOf(id: string, name: string, type = "checking", onBudget = true): YnabAccountWire {
+  return { id, name, type, on_budget: onBudget, closed: false, deleted: false };
 }
 
 export function payeeOf(id: string, name: string): YnabPayeeWire {

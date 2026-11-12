@@ -1,4 +1,4 @@
-import type { YnabCategory } from "@/contracts/types";
+import type { YnabAccount, YnabCategory } from "@/contracts/types";
 import { db } from "@/db/database";
 import { YnabRepository } from "@/db/repositories/ynab-repository";
 import { createYnabClient } from "./api";
@@ -280,5 +280,148 @@ describe("an inflow (his words, 2026-11-12: 'Inflow should go to Ready to Assign
       tx("Chase Rewards", null, "2026-03-17", { approved: false, amount: -5_000, id: "out" }),
     ]);
     expect(items[0]!.categoryId).toBe("c4");
+  });
+});
+
+describe("a transfer says what moved (his words, 2026-11-12: 'transfer is right, but needs to be more detailed')", () => {
+  const account = (id: string, name: string, type: string, onBudget = true): YnabAccount => ({ id, name, type, onBudget, closed: false });
+  const accounts = [
+    account("pnc", "PNC Checking", "checking"),
+    account("citi", "Citi Double Cash", "creditCard"),
+    account("sav", "Ally Savings", "savings"),
+    account("cash", "Wallet", "cash"),
+    account("mtg", "Home Mortgage", "mortgage"),
+    account("inv", "Brokerage", "otherAsset", false),
+    account("amex", "Amex Gold", "creditCard"),
+  ];
+  const ctx = (known: YnabTransactionWire[] = []) => ({ categories, history: payeeHistory([], none), tally: null, notCounted: none, accounts, known });
+  // a pair: `mine` is the unapproved side, `theirs` the side in the other account
+  const pair = (from: string, to: string, over: Partial<YnabTransactionWire> = {}, otherApproved: boolean | null = true) => {
+    const at = ++n;
+    const mine = tx(`Transfer : ${accounts.find((a) => a.id === from)!.name}`, null, "2026-02-17", { id: `m${at}`, account_id: to, amount: 6_925_280, approved: false, transfer_account_id: from, transfer_transaction_id: otherApproved === null ? null : `o${at}`, ...over });
+    const theirs = tx(`Transfer : ${accounts.find((a) => a.id === to)!.name}`, null, "2026-02-17", { id: `o${at}`, account_id: from, amount: -6_925_280, approved: otherApproved ?? false, transfer_account_id: to, transfer_transaction_id: mine.id });
+    return { mine, theirs };
+  };
+  const build = (mine: YnabTransactionWire, theirs?: YnabTransactionWire) => buildItems([mine], ctx(theirs ? [mine, theirs] : [mine]))[0]!;
+
+  it("says a credit card payment in words: both accounts by their YNAB names, the direction, the kind, the date", () => {
+    const { mine, theirs } = pair("pnc", "citi");
+    expect(build(mine, theirs).note).toBe("Credit card payment: $6,925.28 from PNC Checking to Citi Double Cash, 2026-02-17");
+    // the same transfer seen from the other account's side reads the same way
+    expect(build({ ...theirs, approved: false }, mine).note).toBe("Credit card payment: $6,925.28 from PNC Checking to Citi Double Cash, 2026-02-17");
+  });
+
+  it("names each kind from the accounts' YNAB types", () => {
+    const kinds: [string, string, string][] = [
+      ["pnc", "sav", "Savings move"],
+      ["sav", "pnc", "Savings move"],
+      ["pnc", "cash", "Move between your own bank accounts"],
+      ["pnc", "mtg", "Loan payment"],
+      ["pnc", "inv", "Tracking account move"],
+      ["citi", "amex", "Move between credit cards"],
+    ];
+    for (const [from, to, kind] of kinds) {
+      const { mine, theirs } = pair(from, to);
+      const fromName = accounts.find((a) => a.id === from)!.name;
+      const toName = accounts.find((a) => a.id === to)!.name;
+      expect(build(mine, theirs).note).toBe(`${kind}: $6,925.28 from ${fromName} to ${toName}, 2026-02-17`);
+    }
+  });
+
+  it("is plain about an account it does not know, and still a transfer", () => {
+    const { mine } = pair("pnc", "citi");
+    const [item] = buildItems([mine], { ...ctx([mine]), accounts: [] });
+    expect(item).toMatchObject({ fixedLabel: "Transfer" });
+    expect(item!.note).toBe("Transfer: $6,925.28 from another account to another account, 2026-02-17");
+  });
+
+  it("is sure and pre-ticked when YNAB holds the other side and it is approved, and says so", () => {
+    const { mine, theirs } = pair("pnc", "citi", {}, true);
+    const item = build(mine, theirs);
+    expect(item).toMatchObject({ confidence: "sure", ticked: true, categoryId: null, fixedLabel: "Transfer" });
+    expect(item.why).toBe("YNAB has the other side in PNC Checking, and it is approved.");
+  });
+
+  it("is likely and unticked when the other side is there but not approved yet", () => {
+    const { mine, theirs } = pair("pnc", "citi", {}, false);
+    const item = build(mine, theirs);
+    expect(item).toMatchObject({ confidence: "likely", ticked: false });
+    expect(item.why).toBe("YNAB has the other side in PNC Checking, not approved yet.");
+  });
+
+  it("is likely and unticked when it is matched but the other side is not among the transactions read", () => {
+    const { mine } = pair("pnc", "citi");
+    const item = build(mine);
+    expect(item).toMatchObject({ confidence: "likely", ticked: false });
+    expect(item.why).toBe("YNAB has the other side in PNC Checking.");
+  });
+
+  it("is unsure, unticked and says there is no match when YNAB has matched nothing", () => {
+    const { mine } = pair("pnc", "citi", {}, null);
+    const item = build(mine);
+    expect(item).toMatchObject({ confidence: "unsure", ticked: false });
+    expect(item.why).toBe("No matching transaction in PNC Checking yet.");
+  });
+
+  it("does not take a deleted other side for a match", () => {
+    const { mine, theirs } = pair("pnc", "citi");
+    const item = build(mine, { ...theirs, deleted: true });
+    expect(item.confidence).toBe("likely");
+  });
+});
+
+describe("a split says its parts (the sweep of 2026-11-12)", () => {
+  const ctx = { categories, history: payeeHistory([], none), tally: null, notCounted: none, accounts: [] as YnabAccount[] };
+
+  it("lists each part's amount and category", () => {
+    const [item] = buildItems(
+      [tx("Costco", null, "2026-10-03", { approved: false, amount: -30_000, subtransactions: [{ amount: -20_000, category_id: "c1" }, { amount: -10_000, category_id: "c3", category_name: "Household" }] })],
+      ctx,
+    );
+    expect(item).toMatchObject({ fixedLabel: "Split", confidence: "unsure", ticked: false });
+    expect(item!.note).toBe("Split in YNAB into 2 parts: $20.00 Groceries, $10.00 Household.");
+  });
+
+  it("says plainly when a part has no category", () => {
+    const [item] = buildItems([tx("Costco", null, "2026-10-03", { approved: false, amount: -30_000, subtransactions: [{ amount: -20_000, category_id: "c1" }, { amount: -10_000, category_id: null }] })], ctx);
+    expect(item!.note).toBe("Split in YNAB into 2 parts: $20.00 Groceries, $10.00 no category.");
+  });
+});
+
+describe("already categorized in YNAB, only unapproved (his words, 2026-11-12: 'It looks like this was already categorized')", () => {
+  const ctx = (history = payeeHistory([], none)) => ({ categories, history, tally: null, notCounted: none });
+
+  it("says so first, and is pre-ticked when the history agrees (the Anthropic example: 18 of 20)", () => {
+    const history = payeeHistory([...Array.from({ length: 18 }, (_, i) => tx("Anthropic", "c4", `2026-01-${String(i + 1).padStart(2, "0")}`)), tx("Anthropic", "c1", "2026-02-20"), tx("Anthropic", "c2", "2026-01-21")], none);
+    const rows = [
+      tx("Anthropic", "c4", "2026-03-07", { approved: false, amount: -11_540, category_name: "Stuff I Forgot to Budget For" }),
+      tx("Anthropic", "c4", "2026-03-07", { approved: false, amount: -11_200, category_name: "Stuff I Forgot to Budget For" }),
+    ];
+    const items = buildItems(rows, ctx(history));
+    expect(items.map((i) => i.note)).toEqual(Array(2).fill("Already in Stuff I Forgot to Budget For in YNAB; only needs approving"));
+    expect(items.every((i) => i.ticked && i.categoryId === "c4" && i.confidence === "likely")).toBe(true);
+    expect(items[0]!.why).toBe("18 of 20 here went to Stuff I Forgot to Budget For.");
+    expect(groupPage(items)).toHaveLength(1);
+  });
+
+  it("is pre-ticked when the history is sure", () => {
+    const history = payeeHistory([tx("Costco", "c1", "2026-09-01"), tx("Costco", "c1", "2026-09-02"), tx("Costco", "c1", "2026-09-03")], none);
+    const [item] = buildItems([tx("Costco", "c1", "2026-10-03", { approved: false, category_name: "Groceries" })], ctx(history));
+    expect(item).toMatchObject({ confidence: "sure", ticked: true, note: "Already in Groceries in YNAB; only needs approving" });
+  });
+
+  it("says so but stays unticked when the history disagrees or says nothing", () => {
+    const history = payeeHistory([tx("Costco", "c1", "2026-09-01"), tx("Costco", "c1", "2026-09-02"), tx("Costco", "c1", "2026-09-03")], none);
+    const [differs] = buildItems([tx("Costco", "c2", "2026-10-03", { approved: false, category_name: "Eating Out" })], ctx(history));
+    expect(differs).toMatchObject({ confidence: "unsure", ticked: false, categoryId: "c2", note: "Already in Eating Out in YNAB; only needs approving" });
+    expect(differs!.why).toBe("Its history here went to Groceries, not Eating Out.");
+    const [none1] = buildItems([tx("Mystery", "c2", "2026-10-03", { approved: false, category_name: "Eating Out" })], ctx());
+    expect(none1).toMatchObject({ confidence: "unsure", ticked: false, note: "Already in Eating Out in YNAB; only needs approving" });
+    expect(none1!.why).toBe("Nothing in its history to check that.");
+  });
+
+  it("says so for a category this screen does not offer, and cannot change it", () => {
+    const [item] = buildItems([tx("Costco", "hidden1", "2026-10-03", { approved: false, category_name: "Old Stuff" })], ctx());
+    expect(item).toMatchObject({ fixedLabel: "Old Stuff", ticked: false, note: "Already in Old Stuff in YNAB; only needs approving" });
   });
 });
