@@ -178,8 +178,9 @@ export default function CleanupPage() {
   const page = useMemo(() => pageAfter(items, start), [items, start]);
   const groups = useMemo(() => groupPage(page), [page]);
 
-  // a payee nothing else knows is asked of the AI, one at a time; its category is filled in unsure and unticked
-  const needing = useMemo(() => groups.filter((g) => g.items.some((i) => !i.fixedLabel && i.categoryId === null)).map((g) => g.payee), [groups]);
+  // a payee nothing else knows holds Stuff I Forgot to Budget For and is asked of the AI, one at a time; its answer replaces that
+  // unsure and unticked, and never names Food or Household for a payee not seen there before
+  const needing = useMemo(() => groups.filter((g) => g.items.some((i) => !i.fixedLabel && i.open)).map((g) => g.payee), [groups]);
   const needKey = needing.join("\u0000");
   useEffect(() => {
     if (!suggest || needKey === "" || categories.length === 0) return;
@@ -196,9 +197,10 @@ export default function CleanupPage() {
         try {
           const tally = tallyFor(payee, readTally(), categories);
           const answer = await suggest(buildRequest({ merchant: payee, amount }, categories, readHistory(payee), undefined, tally), run.signal);
-          const found = resolveSuggestion(answer, categories, amount);
+          const seen = new Set(items.find((i) => i.payee === payee)?.seen ?? []);
+          const found = resolveSuggestion(answer, categories, amount, seen);
           if (found && "categoryId" in found && !cancelled) {
-            setItems((all) => all.map((i) => (i.key === key && !i.fixedLabel && i.categoryId === null ? { ...i, categoryId: found.categoryId, why: found.why } : i)));
+            setItems((all) => all.map((i) => (i.key === key && !i.fixedLabel && i.open ? { ...i, categoryId: found.categoryId, why: found.why, open: false } : i)));
           }
         } catch {
           // the AI is only a help: the group stays without a category until he chooses one
@@ -211,7 +213,7 @@ export default function CleanupPage() {
       cancelled = true;
       run.abort();
     };
-    // `items` is read for the amount only, once per payee
+    // `items` is read for the amount and the categories seen only, once per payee
     // eslint-disable-next-line react-hooks/exhaustive-deps
   }, [needKey, suggest, suggestTimeoutMs, categories]);
 
@@ -219,8 +221,8 @@ export default function CleanupPage() {
     setItems((all) => all.map((i) => (match(i) ? { ...i, ...patch } : i)));
   }, []);
   const onGroupCategory = (key: string, categoryId: string) =>
-    change((i) => i.key === key && page.some((p) => p.id === i.id) && !i.fixedLabel, { categoryId, ticked: true });
-  const onItemCategory = (id: string, categoryId: string) => change((i) => i.id === id, { categoryId, ticked: true });
+    change((i) => i.key === key && page.some((p) => p.id === i.id) && !i.fixedLabel, { categoryId, ticked: true, open: false });
+  const onItemCategory = (id: string, categoryId: string) => change((i) => i.id === id, { categoryId, ticked: true, open: false });
   const onTick = (id: string, ticked: boolean) => change((i) => i.id === id, { ticked });
   const onTickAll = (key: string, ticked: boolean) =>
     change((i) => i.key === key && page.some((p) => p.id === i.id) && (i.categoryId !== null || !!i.fixedLabel), { ticked });

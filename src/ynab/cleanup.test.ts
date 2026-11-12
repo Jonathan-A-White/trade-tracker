@@ -3,7 +3,7 @@ import { CLEANUP_PAGE, SURE_FROM, buildItems, groupPage, pageAfter, payeeHistory
 import type { YnabTransactionWire } from "./types";
 
 const cat = (id: string, name: string, groupName = "Food"): YnabCategory => ({ id, groupId: groupName, groupName, name, hidden: false });
-const categories = [cat("c1", "Groceries"), cat("c2", "Eating Out"), cat("c3", "Household", "Home")];
+const categories = [cat("c1", "Groceries"), cat("c2", "Eating Out"), cat("c3", "Household", "Home"), cat("c4", "Stuff I Forgot to Budget For", "Surprises")];
 const none = new Set<string>();
 
 let n = 0;
@@ -86,9 +86,39 @@ describe("the cleanup's rules", () => {
     expect(items.map((i) => [i.categoryId, i.confidence, i.ticked])).toEqual([
       ["c1", "sure", true],
       ["c2", "unsure", false],
-      [null, "unsure", false],
+      ["c4", "unsure", false],
       ["c1", "sure", true],
     ]);
+  });
+
+  describe("an unsure guess (his words, 2026-11-11)", () => {
+    const ctx = (over: Partial<Parameters<typeof buildItems>[1]> = {}) => ({ categories, history: payeeHistory([], none), tally: null, notCounted: none, ...over });
+
+    it("puts a payee nothing is known of in Stuff I Forgot to Budget For, unticked, and says so", () => {
+      const [item] = buildItems([tx("8631 Bus Dirpay", null, "2026-10-03", { approved: false })], ctx());
+      expect(item).toMatchObject({ categoryId: "c4", confidence: "unsure", ticked: false });
+      expect(item!.why).toContain("Stuff I Forgot to Budget For");
+      expect(item!.why).not.toMatch(/everyday/i);
+    });
+
+    it("leaves no category chosen only when the budget has no Stuff I Forgot to Budget For", () => {
+      const [item] = buildItems([tx("ABC Fundraising", null, "2026-10-03", { approved: false })], ctx({ categories: categories.slice(0, 3) }));
+      expect(item).toMatchObject({ categoryId: null, confidence: "unsure", ticked: false });
+    });
+
+    it("keeps a sure group sure and ticked", () => {
+      const history = payeeHistory([tx("Costco", "c1", "2026-09-01"), tx("Costco", "c1", "2026-09-02"), tx("Costco", "c1", "2026-09-03")], none);
+      const [item] = buildItems([tx("Costco", null, "2026-10-03", { approved: false })], ctx({ history }));
+      expect(item).toMatchObject({ categoryId: "c1", confidence: "sure", ticked: true });
+    });
+
+    it("tells the screen which categories the payee has been seen in, from its YNAB history and tally", () => {
+      const history = payeeHistory([tx("Costco", "c1", "2026-09-01"), tx("Costco", "c3", "2026-09-02")], none);
+      const tally = { budgetId: "b", since: "2024-01-01", readAt: 0, payees: { Costco: { c2: 1 } } };
+      const [item] = buildItems([tx("Costco", null, "2026-10-03", { approved: false })], ctx({ history, tally }));
+      expect([...item!.seen].sort()).toEqual(["c1", "c2", "c3"]);
+      expect(item!.open).toBe(true);
+    });
   });
 
   it("groups a page by payee, the groups with a sure one first, then by oldest", () => {

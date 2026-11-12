@@ -72,7 +72,7 @@ beforeEach(async () => {
     {
       id: "b1",
       name: "Our Budget",
-      categoryGroups: [groupOf("gi", "Internal Master Category", [["unc", "Uncategorized"]]), groupOf("g1", "Food", [["c1", "Groceries"], ["c2", "Eating Out"]]), groupOf("g2", "Home", [["c3", "Household"]])],
+      categoryGroups: [groupOf("gi", "Internal Master Category", [["unc", "Uncategorized"]]), groupOf("g1", "Food", [["c1", "Groceries"], ["c2", "Eating Out"]]), groupOf("g2", "Home", [["c3", "Household"]]), groupOf("g3", "Surprises", [["c4", "Stuff I Forgot to Budget For"]])],
       accounts: [],
       payees: [],
     },
@@ -80,7 +80,7 @@ beforeEach(async () => {
   const repo = new YnabRepository();
   await repo.saveConnection({ budgetId: "b1", budgetName: "Our Budget" });
   await repo.applyCategories(
-    [groupOf("gi", "Internal Master Category", [["unc", "Uncategorized"]]), groupOf("g1", "Food", [["c1", "Groceries"], ["c2", "Eating Out"]]), groupOf("g2", "Home", [["c3", "Household"]])],
+    [groupOf("gi", "Internal Master Category", [["unc", "Uncategorized"]]), groupOf("g1", "Food", [["c1", "Groceries"], ["c2", "Eating Out"]]), groupOf("g2", "Home", [["c3", "Household"]]), groupOf("g3", "Surprises", [["c4", "Stuff I Forgot to Budget For"]])],
     1,
   );
   await setYnabOn(true);
@@ -244,14 +244,49 @@ describe("Clean up", () => {
   });
 
   it("asks the AI for a payee nothing else knows, and marks its category unsure and unticked", async () => {
-    const suggest: SortChargeAsk = vi.fn(async (request) => ({ category: request.merchant === "Mystery Shop" ? "Household" : "Groceries", why: "It sells hardware." }));
+    const suggest: SortChargeAsk = vi.fn(async () => ({ category: "Eating Out", why: "It sounds like a cafe." }));
     renderPage({ suggest });
     const mystery = await screen.findByRole("group", { name: "Mystery Shop" });
-    await waitFor(() => expect(within(mystery).getByLabelText("Category for Mystery Shop")).toHaveValue("c3"));
+    await waitFor(() => expect(within(mystery).getByLabelText("Category for Mystery Shop")).toHaveValue("c2"));
     expect(within(mystery).getByText("Unsure")).toBeInTheDocument();
     expect(within(mystery).getByRole("checkbox", { name: /^Approve / })).not.toBeChecked();
     // not asked for the ones the history knows
     expect(vi.mocked(suggest).mock.calls.map((c) => c[0].merchant)).toEqual(["Mystery Shop"]);
+  });
+
+  it("puts a payee nothing knows in Stuff I Forgot to Budget For, unticked, before and without the AI", async () => {
+    renderPage();
+    const mystery = await screen.findByRole("group", { name: "Mystery Shop" });
+    expect(within(mystery).getByLabelText("Category for Mystery Shop")).toHaveValue("c4");
+    expect(within(mystery).getByText("Unsure")).toBeInTheDocument();
+    expect(within(mystery).getByRole("checkbox", { name: /^Approve / })).not.toBeChecked();
+    expect(within(mystery).getByText(/Stuff I Forgot to Budget For/, { selector: "p" })).toBeInTheDocument();
+  });
+
+  it("does not let the AI put a payee new to Groceries or Household there: it stays in Stuff I Forgot to Budget For, unticked, saying so", async () => {
+    const suggest: SortChargeAsk = vi.fn(async () => ({ category: "Groceries", why: "A guess: everyday spending." }));
+    renderPage({ suggest });
+    const mystery = await screen.findByRole("group", { name: "Mystery Shop" });
+    await waitFor(() => expect(suggest).toHaveBeenCalled());
+    await new Promise((r) => setTimeout(r, 20));
+    expect(within(mystery).getByLabelText("Category for Mystery Shop")).toHaveValue("c4");
+    expect(within(mystery).getByRole("checkbox", { name: /^Approve / })).not.toBeChecked();
+    expect(within(mystery).queryByText(/everyday/i)).not.toBeInTheDocument();
+  });
+
+  it("lets the AI answer Household for a payee whose YNAB history has Household before", async () => {
+    // Hardware Hank was Household once and Groceries once: no majority, so the AI is asked, and Household is seen there
+    ynab.transactions.push(
+      row("Hardware Hank", "c3", "2026-08-01"),
+      row("Hardware Hank", "c1", "2026-08-08"),
+      unapproved("Hardware Hank", null, "2026-10-06", { id: "hh1" }),
+    );
+    const suggest: SortChargeAsk = vi.fn(async () => ({ category: "Household", why: "Hardware." }));
+    renderPage({ suggest });
+    const hank = await screen.findByRole("group", { name: "Hardware Hank" });
+    await waitFor(() => expect(within(hank).getByLabelText("Category for Hardware Hank")).toHaveValue("c3"));
+    expect(within(hank).getByRole("checkbox", { name: /^Approve / })).not.toBeChecked();
+    expect(within(hank).getByText("Unsure")).toBeInTheDocument();
   });
 
   it("says there is nothing to clean when nothing is unapproved", async () => {

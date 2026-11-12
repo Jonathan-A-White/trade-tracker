@@ -3,7 +3,7 @@
 // Nothing here writes; the writer's approve() does, on his tap.
 import type { YnabCategory } from "@/contracts/types";
 import { YnabRepository } from "@/db/repositories/ynab-repository";
-import { suggestAtOnce } from "@/sort/suggest";
+import { fallbackCategory, seenCategoryIds, suggestAtOnce } from "@/sort/suggest";
 import type { YnabClient } from "./api";
 import { INTERNAL_GROUP, TALLY_WINDOW_DAYS, day, readTally, type Tally } from "./tally";
 import type { YnabTransactionWire } from "./types";
@@ -100,6 +100,10 @@ export interface CleanupItem {
   confidence: Confidence;
   why: string;
   ticked: boolean;
+  /** the ids of the categories the payee has been seen in (its YNAB history and tally, what he taught): Food and Household are guessed only among these */
+  seen: string[];
+  /** nothing known of the payee: it holds Stuff I Forgot to Budget For until the AI answers or he chooses, which closes it */
+  open: boolean;
 }
 
 export interface CleanupContext {
@@ -111,7 +115,11 @@ export interface CleanupContext {
   notCounted: ReadonlySet<string>;
 }
 
-/** The unapproved transactions as items, oldest first; the sure ones are ticked. A categorized one keeps its own category. */
+/**
+ * The unapproved transactions as items, oldest first; the sure ones are ticked. A categorized one keeps its own category. A payee
+ * nothing is known of goes to Stuff I Forgot to Budget For, unticked (the Governor, 2026-11-11), left without a category only when the
+ * budget has none such.
+ */
 export function buildItems(rows: readonly YnabTransactionWire[], context: CleanupContext): CleanupItem[] {
   const { categories, history, tally, notCounted } = context;
   const suggested = new Map<string, Suggested | null>();
@@ -125,7 +133,7 @@ export function buildItems(rows: readonly YnabTransactionWire[], context: Cleanu
     .sort((a, b) => (a.date < b.date ? -1 : a.date > b.date ? 1 : a.id! < b.id! ? -1 : 1))
     .map((row): CleanupItem => {
       const payee = row.payee_name?.trim() || "No payee";
-      const base = { id: row.id!, date: row.date, payee, key: payeeKey(payee), amount: row.amount / 1000, memo: row.memo?.trim() ?? "" };
+      const base = { id: row.id!, date: row.date, payee, key: payeeKey(payee), amount: row.amount / 1000, memo: row.memo?.trim() ?? "", seen: [] as string[], open: false };
       if (row.subtransactions && row.subtransactions.length > 0) {
         return { ...base, categoryId: null, fixedLabel: "Split", confidence: "unsure", why: "Split in YNAB.", ticked: false };
       }
@@ -133,6 +141,7 @@ export function buildItems(rows: readonly YnabTransactionWire[], context: Cleanu
         return { ...base, categoryId: null, fixedLabel: "Transfer", confidence: "unsure", why: "A transfer.", ticked: false };
       }
       const found = suggestion(payee);
+      const seen = [...new Set([...(history.get(payeeKey(payee)) ?? []).map((e) => e.categoryId), ...seenCategoryIds(payee, categories, tally)])];
       if (!isUncategorized(row.category_id, row.category_name, notCounted)) {
         const own = categories.find((c) => c.id === row.category_id);
         if (!own) {
@@ -140,11 +149,13 @@ export function buildItems(rows: readonly YnabTransactionWire[], context: Cleanu
         }
         const agrees = found?.categoryId === own.id;
         const confidence: Confidence = agrees ? found.confidence : "unsure";
-        return { ...base, categoryId: own.id, confidence, why: agrees ? found.why : `YNAB has it in ${own.name}.`, ticked: confidence === "sure" };
+        return { ...base, seen, categoryId: own.id, confidence, why: agrees ? found.why : `YNAB has it in ${own.name}.`, ticked: confidence === "sure" };
       }
-      return found
-        ? { ...base, categoryId: found.categoryId, confidence: found.confidence, why: found.why, ticked: found.confidence === "sure" }
-        : { ...base, categoryId: null, confidence: "unsure", why: "Nothing here to go by.", ticked: false };
+      if (found) return { ...base, seen, categoryId: found.categoryId, confidence: found.confidence, why: found.why, ticked: found.confidence === "sure" };
+      const forgot = fallbackCategory(categories);
+      return forgot
+        ? { ...base, seen, open: true, categoryId: forgot.id, confidence: "unsure", why: `Nothing here to go by, so ${forgot.name}.`, ticked: false }
+        : { ...base, seen, open: true, categoryId: null, confidence: "unsure", why: "Nothing here to go by.", ticked: false };
     });
 }
 
