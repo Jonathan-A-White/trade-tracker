@@ -14,6 +14,7 @@ import type {
   YnabLink,
   YnabPayeeRule,
   FamilyCard,
+  CheckImage,
 } from "../contracts/types";
 
 export class TradeTrackerDB extends Dexie {
@@ -31,6 +32,7 @@ export class TradeTrackerDB extends Dexie {
   ynabLinks!: EntityTable<YnabLink, "localId">;
   ynabPayeeRules!: EntityTable<YnabPayeeRule, "key">;
   familyCards!: EntityTable<FamilyCard, "id">;
+  checkImages!: EntityTable<CheckImage, "transactionId">;
 
   constructor() {
     super("TradeTrackerDB");
@@ -98,6 +100,11 @@ export class TradeTrackerDB extends Dexie {
     // Version 12: the payee rules (Clean up's "Always"): a payee's key, the category its unapproved transactions are approved into.
     this.version(12).stores({
       ynabPayeeRules: "key, budgetId",
+    });
+
+    // Version 13: the check images Clean up keeps on the device, one per YNAB transaction (the image and the mill's read of it).
+    this.version(13).stores({
+      checkImages: "transactionId",
     });
   }
 }

@@ -50,7 +50,7 @@ describe("packPhone", () => {
     await fill();
     const pack = await packPhone();
     expect(Object.keys(pack.db.tables).sort()).toEqual(db.tables.map((t) => t.name).sort());
-    expect(pack.db.schema).toBe(12);
+    expect(pack.db.schema).toBe(13);
     expect(pack.version).toBe(1);
     expect(pack.app).toBe("trade-tracker");
     expect(pack.from).toBe(location.origin);

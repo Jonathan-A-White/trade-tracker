@@ -252,7 +252,12 @@ export function createYnabWriter(options: YnabWriterOptions): YnabWriter {
     },
     async approve(approvals) {
       await patchBulk(
-        approvals.map((a) => ({ id: a.id, ...(a.categoryId ? { category_id: a.categoryId } : {}), approved: true })),
+        approvals.map((a) => ({
+          id: a.id,
+          ...(a.categoryId ? { category_id: a.categoryId } : {}),
+          ...(a.memo ? { memo: a.memo.slice(0, MEMO_MAX) } : {}),
+          approved: true,
+        })),
       );
     },
     async restore(restores) {

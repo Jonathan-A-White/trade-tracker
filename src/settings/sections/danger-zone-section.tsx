@@ -16,7 +16,7 @@ export function DangerZoneSection() {
     try {
       await db.transaction(
         "rw",
-        [db.stores, db.items, db.trips, db.tripItems, db.priceHistory, db.ynabPayeeRules],
+        [db.stores, db.items, db.trips, db.tripItems, db.priceHistory, db.ynabPayeeRules, db.checkImages],
         async () => {
           await db.stores.clear();
           await db.items.clear();
@@ -25,6 +25,8 @@ export function DangerZoneSection() {
           await db.priceHistory.clear();
           // his payee rules (Clean up's "Always") go with the rest of his data
           await db.ynabPayeeRules.clear();
+          // and the check images kept for Clean up
+          await db.checkImages.clear();
         },
       );
       forgetDeviceData();

@@ -310,6 +310,30 @@ export interface YnabApproval {
   /** YNAB's own id of the transaction */
   id: string;
   categoryId?: string;
+  /** the memo to write with the approval (Clean up's check read); none leaves YNAB's memo as it is */
+  memo?: string;
+}
+
+/** What the check-read grind answers for a check image (grinds/check-read.json, answer 1.0). */
+export interface CheckReadAnswer {
+  /** who the check is made out to ('Pay to the order of'); empty when it cannot be read */
+  payTo: string;
+  /** the check's memo line; empty when there is none */
+  memo: string;
+  /** the budget category it suggests, named as the request listed it; left out when none fits */
+  category?: string;
+  confidence: "high" | "medium" | "low";
+  why: string;
+}
+
+/** A check's image, kept on the device only (never sent to YNAB), with what the mill read from it. One per YNAB transaction. */
+export interface CheckImage {
+  /** YNAB's id of the check's transaction */
+  transactionId: string;
+  image: Blob;
+  addedAt: number;
+  /** the mill's read of the image, kept so it is not asked again */
+  read?: CheckReadAnswer;
 }
 
 /** A transaction to put back as it was before an approval: unapproved, in its old category (null: it had none). */

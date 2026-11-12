@@ -48,7 +48,7 @@ describe("TradeTrackerDB upgrade to version 7", () => {
     const upgraded = new TradeTrackerDB();
     await upgraded.open();
 
-    expect(upgraded.verno).toBe(12);
+    expect(upgraded.verno).toBe(13);
     expect((await upgraded.stores.get("s1"))?.name).toBe("Stop & Shop");
     expect((await upgraded.items.get("i1"))?.barcode).toBe("0123");
     const line = await upgraded.tripItems.get("ti1");
@@ -103,7 +103,7 @@ describe("TradeTrackerDB upgrade to version 8", () => {
     const upgraded = new TradeTrackerDB();
     await upgraded.open();
 
-    expect(upgraded.verno).toBe(12);
+    expect(upgraded.verno).toBe(13);
     const trip = await upgraded.trips.get("t1");
     expect(trip?.scannedSubtotal).toBe(7);
     expect(trip?.budget).toBe(50);
@@ -160,7 +160,7 @@ describe("TradeTrackerDB upgrade to version 9", () => {
     const upgraded = new TradeTrackerDB();
     await upgraded.open();
 
-    expect(upgraded.verno).toBe(12);
+    expect(upgraded.verno).toBe(13);
     expect((await upgraded.stores.get("s1"))?.name).toBe("Stop & Shop");
     expect((await upgraded.trips.get("t1"))?.scannedSubtotal).toBe(7);
     expect(await upgraded.ynabConnection.count()).toBe(0);
@@ -215,7 +215,7 @@ describe("TradeTrackerDB upgrade to version 10", () => {
     const upgraded = new TradeTrackerDB();
     await upgraded.open();
 
-    expect(upgraded.verno).toBe(12);
+    expect(upgraded.verno).toBe(13);
     expect((await upgraded.stores.get("s1"))?.name).toBe("Stop & Shop");
     expect((await upgraded.ynabConnection.get("connection"))?.budgetName).toBe("Our Budget");
     expect(await upgraded.ynabOutbox.count()).toBe(0);
@@ -272,7 +272,7 @@ describe("TradeTrackerDB upgrade to version 11", () => {
     const upgraded = new TradeTrackerDB();
     await upgraded.open();
 
-    expect(upgraded.verno).toBe(12);
+    expect(upgraded.verno).toBe(13);
     expect((await upgraded.stores.get("s1"))?.name).toBe("Stop & Shop");
     expect((await upgraded.ynabLinks.get("l1"))?.ynabId).toBe("y1");
     expect(await upgraded.familyCards.count()).toBe(0);
@@ -323,13 +323,65 @@ describe("TradeTrackerDB upgrade to version 12", () => {
     const upgraded = new TradeTrackerDB();
     await upgraded.open();
 
-    expect(upgraded.verno).toBe(12);
+    expect(upgraded.verno).toBe(13);
     expect((await upgraded.stores.get("s1"))?.name).toBe("Stop & Shop");
     expect((await upgraded.familyCards.get("k1"))?.owner).toBe("Jonathan");
     expect(await upgraded.ynabPayeeRules.count()).toBe(0);
 
     await upgraded.ynabPayeeRules.put({ key: "chewy", budgetId: "b1", payee: "Chewy", categoryId: "c1", createdAt: 5, approved: 0 });
     expect((await upgraded.ynabPayeeRules.get("chewy"))?.payee).toBe("Chewy");
+    upgraded.close();
+  });
+});
+
+describe("TradeTrackerDB upgrade to version 13", () => {
+  it("keeps existing data when upgrading from version 12 and adds the check images", async () => {
+    const old = new Dexie("TradeTrackerDB");
+    old.version(1).stores({
+      stores: "id, name, createdAt",
+      items: "id, &barcode, name, category, createdAt",
+      trips: "id, storeId, status, startedAt, [storeId+status], createdAt",
+      tripItems: "id, tripId, itemId, [tripId+itemId], addedAt",
+      priceHistory: "id, itemId, storeId, [itemId+storeId], recordedAt",
+    });
+    old.version(5).stores({
+      priceHistory: "id, itemId, storeId, [itemId+storeId], recordedAt, tripItemId",
+    });
+    old.version(7).stores({
+      pendingLookups: "id, tripId, barcode, status, createdAt",
+    });
+    old.version(8).stores({});
+    old.version(9).stores({
+      ynabConnection: "id",
+      ynabCategories: "id, groupId",
+      ynabAccounts: "id",
+      ynabPayees: "id",
+    });
+    old.version(10).stores({
+      ynabOutbox: "clientId, queuedAt",
+      ynabLinks: "localId",
+    });
+    old.version(11).stores({
+      familyCards: "id, &lastFour",
+    });
+    old.version(12).stores({
+      ynabPayeeRules: "key, budgetId",
+    });
+    await old.open();
+    await old.table("stores").put({ id: "s1", name: "Stop & Shop", createdAt: 1, updatedAt: 1 });
+    await old.table("ynabPayeeRules").put({ key: "chewy", budgetId: "b1", payee: "Chewy", categoryId: "c1", createdAt: 5, approved: 0 });
+    old.close();
+
+    const upgraded = new TradeTrackerDB();
+    await upgraded.open();
+
+    expect(upgraded.verno).toBe(13);
+    expect((await upgraded.stores.get("s1"))?.name).toBe("Stop & Shop");
+    expect((await upgraded.ynabPayeeRules.get("chewy"))?.payee).toBe("Chewy");
+    expect(await upgraded.checkImages.count()).toBe(0);
+
+    await upgraded.checkImages.put({ transactionId: "t1", image: new Blob([new Uint8Array([1, 2])], { type: "image/jpeg" }), addedAt: 5 });
+    expect((await upgraded.checkImages.get("t1"))?.addedAt).toBe(5);
     upgraded.close();
   });
 });
