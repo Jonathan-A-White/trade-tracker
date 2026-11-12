@@ -342,6 +342,22 @@ describe("Home: Budget ideas", () => {
     expect(within(idea).getByRole("button", { name: "Never" })).toBeInTheDocument();
   });
 
+  it("asks the guesser what each payee is for, once, and proposes two brands of one kind as one category", async () => {
+    await connect();
+    ynab.transactions.length = 0;
+    const charge = (id: string, payee: string, months: number, dollars: number): FakeYnabTransaction => ({ id, account_id: "a1", date: monthsAgo(months), amount: -dollars * 1000, payee_name: payee, category_id: "f1" });
+    ynab.transactions.push(charge("p1", "Puracy Naturals", 4, 149.91), charge("b1", "Blueland", 2, 38.4), charge("b2", "Blueland", 1, 41.2));
+    await setYnabOn(true);
+    const asked: string[] = [];
+    renderHome({ ...seams(), suggest: async (request) => { asked.push(request.merchant); return { category: "Cleaning supplies", why: "Household cleaners." }; } });
+    const idea = await screen.findByRole("listitem", { name: "Cleaning supplies" });
+    expect(idea).toHaveTextContent("3 charges");
+    expect(idea).toHaveTextContent("Blueland, Puracy Naturals");
+    expect(screen.getAllByRole("listitem", { name: /./ })).toHaveLength(1);
+    expect(asked.sort()).toEqual(["Blueland", "Puracy Naturals"]);
+    expect(JSON.parse(localStorage.getItem("tradetracker-budget-ideas-kinds")!)).toEqual({ blueland: "Cleaning supplies", "puracy naturals": "Cleaning supplies" });
+  });
+
   it("Add creates the category with its monthly target in YNAB and says so", async () => {
     await connect();
     await setYnabOn(true);

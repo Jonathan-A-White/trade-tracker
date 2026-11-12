@@ -89,12 +89,11 @@ export function BudgetIdeas() {
     let cancelled = false;
     const run = new AbortController();
     void (async () => {
-      let count = 0;
       for (const payee of askKey.split("\u0000")) {
-        if (cancelled || count >= KINDS_ASKED_AT_A_TIME) return;
+        // the answer to one changes askKey and restarts this loop, so the limit is on all that were asked since Home opened
+        if (cancelled || asked.current.size >= KINDS_ASKED_AT_A_TIME) return;
         if (asked.current.has(payee)) continue;
         asked.current.add(payee);
-        count += 1;
         const deadline = setTimeout(() => run.abort(), suggestTimeoutMs);
         try {
           const kind = await askKind(payee, suggest, run.signal);
@@ -190,7 +189,7 @@ export function BudgetIdeas() {
               <span className="text-base font-semibold text-gray-900 dark:text-gray-100">{amountLine(idea)}</span>
             </span>
             <span className="text-sm text-gray-600 dark:text-gray-400">
-              {idea.charges.length} {idea.charges.length === 1 ? "charge" : "charges"}, {money(idea.total)} in the last year went to {FALLBACK_NAME}: {idea.payees.join(", ")}.
+              {idea.charges.length} {idea.charges.length === 1 ? "charge" : "charges"}, {money(idea.total)} in the last year went to {FALLBACK_NAME}: {[...idea.payees].sort().join(", ")}.
             </span>
             <span className="text-sm text-gray-600 dark:text-gray-400">{howToAdd(idea, forgot.groupName)}</span>
             <details>
