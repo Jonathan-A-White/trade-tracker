@@ -11,6 +11,8 @@ export const PUSH_MESSAGE = "tradetracker-alert-push";
 /** A push's JSON, as much of it as the worker reads. */
 export interface AlertPush {
   class?: string;
+  /** the alert's kind (Postern sends it in every alert push; FamilyAlertKind in src/family/alerts-client.ts): absent from an older backend */
+  kind?: string;
   title?: string;
   /** the alert's id: the tap opens its sheet */
   id?: string;
@@ -34,8 +36,18 @@ function money(amount: string | undefined): string | null {
   return new Intl.NumberFormat("en-US", { style: "currency", currency: "USD" }).format(value);
 }
 
-/** The notification for a push: '$43.12 at Trader Joe's' when the push says them, else a plain line; the tap opens its sheet. */
+/** Where Gmail's confirmation shows in the app: the Family row of Settings (its link is `/settings?setting=family`, registry.ts SETTINGS_PATH). */
+const CONFIRMATION_URL = "settings?setting=family";
+
+/**
+ * The notification for a push: '$43.12 at Trader Joe's' when the push says them, else a plain line; the tap opens its sheet.
+ * A Gmail forwarding confirmation has its own words and opens the Family row. Every other kind, and a push with no kind (an older
+ * backend), is worded as a charge: Postern pushes only charge and forward-confirm, so amazon and unread never arrive as a push.
+ */
 export function notificationFor(push: AlertPush): AlertNotification {
+  if (push.kind === "forward-confirm") {
+    return { title: "Confirm Gmail forwarding", body: "Tap to open it.", tag: "alert-forward-confirm", url: CONFIRMATION_URL };
+  }
   const amount = money(push.amount);
   const merchant = push.merchant?.trim();
   const id = push.id && /^[0-9A-Za-z-]{1,64}$/.test(push.id) ? push.id : null;

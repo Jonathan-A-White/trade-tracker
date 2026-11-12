@@ -1,3 +1,4 @@
+import type { FamilyAlertKind } from "@/family/alerts-client";
 import { PUSH_MESSAGE as PAGE_MESSAGE } from "@/sort/useAlerts";
 import {
   PUSH_MESSAGE,
@@ -119,6 +120,56 @@ describe("the service worker's push", () => {
   it("an id that is no alert's is not put in the URL", () => {
     expect(notificationFor({ id: "../../evil", amount: "5" }).url).toBe("");
     expect(notificationFor({ amount: "5.5" }).title).toBe("$5.50 charge");
+  });
+
+  it("a Gmail forwarding confirmation is worded as one and its tap opens the Family row in Settings", async () => {
+    const worker = fakeWorker();
+    const push = pushEvent({ class: "alert", title: "New alert", ts: 1793836800, kind: "forward-confirm" });
+    handlePush(worker.scope, push.event);
+    await push.settled();
+    const [{ title, options }] = worker.shown;
+    expect(title).toBe("Confirm Gmail forwarding");
+    expect(options.body).toBe("Tap to open it.");
+    expect(options.data).toEqual({ url: "settings?setting=family" });
+
+    const click = clickEvent(options.data);
+    handleNotificationClick(worker.scope, click.event);
+    await click.settled();
+    expect(worker.opened).toEqual([`${SCOPE}settings?setting=family`]);
+  });
+
+  it("a charge push names its kind and keeps the charge wording exactly", () => {
+    expect(notificationFor({ class: "alert", kind: "charge" })).toEqual({
+      title: "A new charge to sort",
+      body: "Tap to sort it.",
+      tag: "alert",
+      url: "",
+    });
+    expect(notificationFor({ class: "alert", kind: "charge", id: "a1", amount: "43.12", merchant: "Trader Joe's", last4: "1234" })).toEqual({
+      title: "$43.12 at Trader Joe's",
+      body: "Card ending 1234. Tap to sort it.",
+      tag: "alert-a1",
+      url: "sort/a1",
+    });
+  });
+
+  it("a push with no kind (an older backend) is worded as before", () => {
+    expect(notificationFor({ class: "alert" })).toEqual({ title: "A new charge to sort", body: "Tap to sort it.", tag: "alert", url: "" });
+  });
+
+  it("every alert kind the app knows is worded or falls back to the charge wording on purpose", () => {
+    const kinds: Record<FamilyAlertKind, "own wording" | "charge wording"> = {
+      charge: "charge wording",
+      "forward-confirm": "own wording",
+      // the backend pushes only charge and forward-confirm (Postern pushesKind); these two never reach the phone as a push
+      amazon: "charge wording",
+      unread: "charge wording",
+    };
+    for (const [kind, wording] of Object.entries(kinds)) {
+      const shown = notificationFor({ class: "alert", kind });
+      if (wording === "own wording") expect(shown.title, kind).not.toBe("A new charge to sort");
+      else expect(shown, kind).toEqual({ title: "A new charge to sort", body: "Tap to sort it.", tag: "alert", url: "" });
+    }
   });
 
   it("installs both handlers on the worker", () => {
