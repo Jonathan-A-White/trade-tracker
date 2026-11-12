@@ -29,7 +29,16 @@ export interface Suggested {
 export interface HistoryEntry {
   date: string;
   categoryId: string;
+  /** set when the transaction was money in; an inflow is judged by the payee's earlier inflows only, an outflow by its outflows */
+  inflow?: true;
 }
+
+/**
+ * YNAB's Inflow: Ready to Assign: the one category in the budget's internal group that is not Uncategorized (found by its group, not
+ * by its name). An inflow with nothing better to go by is suggested here, never into a spending category (the Governor, 2026-11-12).
+ */
+export const isInflowCategory = (c: Pick<YnabCategory, "groupName" | "name">): boolean =>
+  c.groupName === INTERNAL_GROUP && c.name.trim().toLowerCase() !== UNCATEGORIZED;
 
 /**
  * A check's payee text in YNAB: 'CHECK <number>', then the bank's account tail (the Governor's example: 'CHECK 1089 *8368'). The
@@ -64,7 +73,7 @@ export function payeeHistory(rows: readonly YnabTransactionWire[], notCounted: R
     if (row.subtransactions && row.subtransactions.length > 0) continue;
     if (isUncategorized(row.category_id, row.category_name, notCounted)) continue;
     const key = payeeKey(payee);
-    history.set(key, [...(history.get(key) ?? []), { date: row.date, categoryId: row.category_id! }]);
+    history.set(key, [...(history.get(key) ?? []), { date: row.date, categoryId: row.category_id!, ...(row.amount > 0 ? { inflow: true as const } : {}) }]);
   }
   for (const entries of history.values()) entries.sort((a, b) => (a.date < b.date ? 1 : a.date > b.date ? -1 : 0));
   return history;
@@ -75,8 +84,14 @@ export function payeeHistory(rows: readonly YnabTransactionWire[], notCounted: R
  * else what he taught or the YNAB tally's majority (src/sort/suggest.ts), else the category holding over half of at least two of its
  * transactions, both likely. Null when nothing says.
  */
-export function suggestForPayee(payee: string, history: PayeeHistory, categories: readonly YnabCategory[], tally: Tally | null): Suggested | null {
-  const entries = history.get(payeeKey(payee)) ?? [];
+export function suggestForPayee(
+  payee: string,
+  history: PayeeHistory,
+  categories: readonly YnabCategory[],
+  tally: Tally | null,
+  direction: "out" | "in" = "out",
+): Suggested | null {
+  const entries = (history.get(payeeKey(payee)) ?? []).filter((e) => (direction === "in") === (e.inflow === true));
   const nameOf = (id: string) => categories.find((c) => c.id === id)?.name;
   const offered = (id: string) => nameOf(id) !== undefined;
 
@@ -85,7 +100,8 @@ export function suggestForPayee(payee: string, history: PayeeHistory, categories
     return { categoryId: latest[0]!.categoryId, confidence: "sure", why: `Its last ${SURE_FROM} here all went to ${nameOf(latest[0]!.categoryId)}.` };
   }
 
-  const atOnce = suggestAtOnce(payee, categories, tally);
+  // what he taught and the tally are about charges: an inflow has neither
+  const atOnce = direction === "in" ? null : suggestAtOnce(payee, categories, tally);
   if (atOnce) return { categoryId: atOnce.categoryId, confidence: "likely", why: atOnce.why };
 
   const counts = new Map<string, number>();
@@ -95,6 +111,24 @@ export function suggestForPayee(payee: string, history: PayeeHistory, categories
     return { categoryId: top[0], confidence: "likely", why: `${top[1]} of ${entries.length} here went to ${nameOf(top[0])}.` };
   }
   return null;
+}
+
+/** What an inflow goes to is called, in the why, as YNAB shows it on the budget. */
+const READY_TO_ASSIGN = "Ready to Assign";
+
+/**
+ * The category an uncategorized inflow goes to by the payee's earlier inflows alone: a spending category they point to (sure or likely,
+ * as for a charge), else Ready to Assign when most of them went there, never sure, never the fallback. Null when nothing says.
+ */
+function suggestForInflow(payee: string, history: PayeeHistory, categories: readonly YnabCategory[], inflow: YnabCategory | undefined, forgotId: string | undefined): Suggested | null {
+  const spending = categories.filter((c) => !isInflowCategory(c) && c.id !== forgotId);
+  const found = suggestForPayee(payee, history, inflow ? [...spending, inflow] : spending, null, "in");
+  if (found && found.categoryId === inflow?.id) return { ...found, confidence: "likely" };
+  if (found) return found;
+  if (!inflow) return null;
+  const entries = (history.get(payeeKey(payee)) ?? []).filter((e) => e.inflow === true);
+  const there = entries.filter((e) => e.categoryId === inflow.id).length;
+  return there > 0 && there * 2 > entries.length ? { categoryId: inflow.id, confidence: "likely", why: `${there} of ${entries.length} earlier inflows here went to ${READY_TO_ASSIGN}.` } : null;
 }
 
 /** One unapproved transaction as the screen holds it. */
@@ -131,8 +165,10 @@ export interface CleanupContext {
   categories: readonly YnabCategory[];
   history: PayeeHistory;
   tally: Tally | null;
-  /** the ids of YNAB's own categories (Uncategorized, Inflow) */
+  /** the ids of YNAB's own categories that are not to be learned from or chosen (Uncategorized) */
   notCounted: ReadonlySet<string>;
+  /** YNAB's Inflow: Ready to Assign, where an inflow goes; also in `categories` so it can be chosen. Absent when the budget has none cached. */
+  inflow?: YnabCategory;
 }
 
 /** The order of the list: every check after every other transaction, then oldest first. */
@@ -144,14 +180,19 @@ export function compareItems(a: { check?: boolean | string; date: string; id: st
 /**
  * The unapproved transactions as items, oldest first, the checks after all the rest; the sure ones are ticked. A categorized one keeps its own category. A payee
  * nothing is known of goes to Stuff I Forgot to Budget For, unticked (the Governor, 2026-11-11), left without a category only when the
- * budget has none such.
+ * budget has none such. Money in (a positive amount) never does: it goes to Inflow: Ready to Assign unless the payee's earlier inflows point
+ * to a spending category (the Governor, 2026-11-12).
  */
 export function buildItems(rows: readonly YnabTransactionWire[], context: CleanupContext): CleanupItem[] {
   const { categories, history, tally, notCounted } = context;
+  const inflowCategory = context.inflow ?? categories.find(isInflowCategory);
+  // a charge is judged among the spending categories; Ready to Assign is for money in
+  const spending = categories.filter((c) => !isInflowCategory(c));
+  const forgotId = fallbackCategory(categories)?.id;
   const suggested = new Map<string, Suggested | null>();
-  const suggestion = (payee: string) => {
-    const key = payeeKey(payee);
-    if (!suggested.has(key)) suggested.set(key, suggestForPayee(payee, history, categories, tally));
+  const suggestion = (payee: string, inflow: boolean) => {
+    const key = `${inflow ? "in" : "out"}:${payeeKey(payee)}`;
+    if (!suggested.has(key)) suggested.set(key, inflow ? suggestForInflow(payee, history, categories, inflowCategory, forgotId) : suggestForPayee(payee, history, spending, tally));
     return suggested.get(key)!;
   };
   const orderOf = (r: YnabTransactionWire) => ({ check: checkNumberOf(r.payee_name?.trim() ?? "") ?? undefined, date: r.date, id: r.id! });
@@ -170,7 +211,8 @@ export function buildItems(rows: readonly YnabTransactionWire[], context: Cleanu
       if (row.transfer_account_id) {
         return { ...base, categoryId: null, fixedLabel: "Transfer", confidence: "unsure", why: "A transfer.", ticked: false };
       }
-      const found = check === null ? suggestion(payee) : null;
+      const isInflow = check === null && row.amount > 0;
+      const found = check === null ? suggestion(payee, isInflow) : null;
       const seen = [...new Set([...(history.get(payeeKey(payee)) ?? []).map((e) => e.categoryId), ...seenCategoryIds(payee, categories, tally)])];
       if (!isUncategorized(row.category_id, row.category_name, notCounted)) {
         const own = categories.find((c) => c.id === row.category_id);
@@ -182,6 +224,12 @@ export function buildItems(rows: readonly YnabTransactionWire[], context: Cleanu
         return { ...base, seen, categoryId: own.id, confidence, why: agrees ? found.why : `YNAB has it in ${own.name}.`, ticked: confidence === "sure" };
       }
       if (found) return { ...base, seen, categoryId: found.categoryId, confidence: found.confidence, why: found.why, ticked: found.confidence === "sure" };
+      if (isInflow) {
+        // money in is not a charge: never the fallback, and the mill is not asked
+        return inflowCategory
+          ? { ...base, seen, categoryId: inflowCategory.id, confidence: "unsure", why: `Money in, with no earlier inflow from this payee to go by, so ${READY_TO_ASSIGN}.`, ticked: false }
+          : { ...base, seen, categoryId: null, confidence: "unsure", why: "Nothing here to go by.", ticked: false };
+      }
       const forgot = fallbackCategory(categories);
       if (check !== null) {
         // its image will say who was paid; until then it holds the fallback, not asked of the AI by its payee text
@@ -244,11 +292,16 @@ export function pageAfter<T>(items: readonly T[], start: number): T[] {
   return items.slice(start, start + CLEANUP_PAGE);
 }
 
-/** The categories on offer (not hidden, not YNAB's own) and the ids of YNAB's own (Uncategorized, Inflow), from the cached list. */
-export function offeredCategories(all: readonly YnabCategory[]): { categories: YnabCategory[]; notCounted: Set<string> } {
+/**
+ * The categories on offer (not hidden, not YNAB's own, but with YNAB's Inflow: Ready to Assign, where an inflow goes), the ids of YNAB's
+ * own that are never learned from or chosen (Uncategorized), and the Inflow category, from the cached list.
+ */
+export function offeredCategories(all: readonly YnabCategory[]): { categories: YnabCategory[]; notCounted: Set<string>; inflow: YnabCategory | undefined } {
+  const inflow = all.find(isInflowCategory);
   return {
-    notCounted: new Set(all.filter((c) => c.groupName === INTERNAL_GROUP).map((c) => c.id)),
-    categories: all.filter((c) => !c.hidden && c.groupName !== INTERNAL_GROUP),
+    notCounted: new Set(all.filter((c) => c.groupName === INTERNAL_GROUP && !isInflowCategory(c)).map((c) => c.id)),
+    categories: [...all.filter((c) => !c.hidden && c.groupName !== INTERNAL_GROUP), ...(inflow ? [inflow] : [])],
+    inflow,
   };
 }
 
@@ -262,13 +315,13 @@ export async function loadCleanup(
   now: number = Date.now(),
   read?: readonly YnabTransactionWire[],
 ): Promise<{ items: CleanupItem[]; categories: YnabCategory[] }> {
-  const { categories, notCounted } = offeredCategories(await new YnabRepository().listCategories());
+  const { categories, notCounted, inflow } = offeredCategories(await new YnabRepository().listCategories());
   const [unapproved, past] = await Promise.all([
     read ?? client.unapprovedTransactions(budgetId),
     client.transactionsSince(budgetId, day(now - TALLY_WINDOW_DAYS * 24 * 60 * 60_000)),
   ]);
   const tally = readTally();
-  const built = buildItems(unapproved, { categories, history: payeeHistory(past, notCounted), tally: tally?.budgetId === budgetId ? tally : null, notCounted });
+  const built = buildItems(unapproved, { categories, history: payeeHistory(past, notCounted), tally: tally?.budgetId === budgetId ? tally : null, notCounted, inflow });
   // a check whose image was read on an earlier visit has that read applied again; the mill is not asked twice
   const kept = await new CheckImageRepository().many(built.filter((i) => i.check !== undefined).map((i) => i.id));
   const items = built.map((item) => {

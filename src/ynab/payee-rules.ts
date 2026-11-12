@@ -74,11 +74,13 @@ export function unapprovedWithRules(client: YnabClient, budgetId: string, approv
     if (!approve) return { rows, approved: 0, error: null };
     const rules = await repo.list(budgetId);
     if (rules.length === 0) return { rows, approved: 0, error: null };
-    const { categories } = offeredCategories(await new YnabRepository().listCategories());
+    const { categories, inflow } = offeredCategories(await new YnabRepository().listCategories());
     const offered = new Set(categories.map((c) => c.id));
     const byKey = new Map(rules.filter((r) => offered.has(r.categoryId)).map((r) => [r.key, r]));
     const picks = rows.flatMap((row) => {
       const rule = ruleable(row) ? byKey.get(payeeKey(row.payee_name!)) : undefined;
+      // a rule into Ready to Assign (made on an inflow) takes money in only: an outflow of the same payee is left to him
+      if (rule && rule.categoryId === inflow?.id && !(row.amount > 0)) return [];
       return rule ? [{ row, rule }] : [];
     });
     if (picks.length === 0) return { rows, approved: 0, error: null };

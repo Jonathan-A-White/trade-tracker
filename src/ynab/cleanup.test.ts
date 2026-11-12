@@ -1,5 +1,9 @@
 import type { YnabCategory } from "@/contracts/types";
-import { CLEANUP_PAGE, SURE_FROM, buildItems, checkNumberOf, groupPage, pageAfter, payeeHistory, suggestForPayee } from "./cleanup";
+import { db } from "@/db/database";
+import { YnabRepository } from "@/db/repositories/ynab-repository";
+import { createYnabClient } from "./api";
+import { CLEANUP_PAGE, SURE_FROM, buildItems, checkNumberOf, groupPage, loadCleanup, offeredCategories, pageAfter, payeeHistory, suggestForPayee } from "./cleanup";
+import { fakeYnab, groupOf } from "./fake-ynab";
 import type { YnabTransactionWire } from "./types";
 
 const cat = (id: string, name: string, groupName = "Food"): YnabCategory => ({ id, groupId: groupName, groupName, name, hidden: false });
@@ -185,5 +189,96 @@ describe("checks (his words, 2026-11-12)", () => {
     expect(history.size).toBe(0);
     const [check] = buildItems([tx("CHECK 1089 *8368", null, "2026-01-22", { approved: false })], { ...ctx, history });
     expect(check).toMatchObject({ categoryId: "c4", confidence: "unsure", ticked: false, open: false });
+  });
+});
+
+describe("an inflow (his words, 2026-11-12: 'Inflow should go to Ready to Assign')", () => {
+  const groups = [
+    groupOf("gi", "Internal Master Category", [["unc", "Uncategorized"], ["rta", "Inflow: Ready to Assign"]]),
+    groupOf("g1", "Food", [["c1", "Groceries"]]),
+    groupOf("g3", "Surprises", [["c4", "Stuff I Forgot to Budget For"]]),
+  ];
+  const past = (payee: string, categoryId: string, date: string, amount = 100_000, categoryName = "x") =>
+    ({ id: `h${++n}`, account_id: "a1", date, amount, payee_name: payee, category_id: categoryId, category_name: categoryName, approved: true }) as YnabTransactionWire;
+
+  beforeEach(async () => {
+    await Promise.all(db.tables.map((t) => t.clear()));
+    const repo = new YnabRepository();
+    await repo.saveConnection({ budgetId: "b1", budgetName: "Our Budget" });
+    await repo.applyCategories(groups, 1);
+  });
+
+  const load = async (rows: YnabTransactionWire[]) => {
+    const ynab = fakeYnab("good", [{ id: "b1", name: "Our Budget", categoryGroups: groups, accounts: [], payees: [] }]);
+    ynab.transactions.push(...rows.map((r) => ({ ...r, id: r.id!, account_id: r.account_id! })));
+    return loadCleanup(createYnabClient("good", ynab.fetch), "b1", Date.parse("2026-11-12"));
+  };
+
+  it("offers YNAB's Inflow: Ready to Assign (found in its internal group, not by name), and not Uncategorized", async () => {
+    const { categories, notCounted } = offeredCategories(await new YnabRepository().listCategories());
+    expect(categories.map((c) => c.id)).toContain("rta");
+    expect(categories.map((c) => c.id)).not.toContain("unc");
+    expect(notCounted.has("unc")).toBe(true);
+    expect(notCounted.has("rta")).toBe(false);
+  });
+
+  it("suggests an uncategorized $108.93 Chase Rewards inflow into Ready to Assign, unticked, saying so", async () => {
+    const { items } = await load([tx("Chase Rewards", null, "2026-03-17", { approved: false, amount: 108_930, id: "cr1" })]);
+    expect(items).toHaveLength(1);
+    expect(items[0]).toMatchObject({ amount: 108.93, categoryId: "rta", confidence: "unsure", ticked: false, open: false });
+    expect(items[0]!.why).toContain("Ready to Assign");
+    expect(items[0]!.why).not.toContain("Stuff I Forgot");
+  });
+
+  it("is likely Ready to Assign when the payee's earlier inflows went there", async () => {
+    const { items } = await load([
+      past("Chase Rewards", "rta", "2026-01-10", 254_300, "Inflow: Ready to Assign"),
+      past("Chase Rewards", "rta", "2026-02-10", 120_000, "Inflow: Ready to Assign"),
+      tx("Chase Rewards", null, "2026-03-17", { approved: false, amount: 108_930, id: "cr1" }),
+    ]);
+    expect(items[0]).toMatchObject({ categoryId: "rta", confidence: "likely", ticked: false });
+  });
+
+  it("is likely Ready to Assign from a single earlier inflow there", async () => {
+    const { items } = await load([past("Citi Rewards", "rta", "2026-01-10", 136_400), tx("Citi Rewards", null, "2026-03-17", { approved: false, amount: 196_010, id: "ci1" })]);
+    expect(items[0]).toMatchObject({ categoryId: "rta", confidence: "likely" });
+  });
+
+  it("never lets the fallback in for an inflow, even when the budget's fallback category exists and the payee is unknown", () => {
+    const categoriesWithRta = [...categories, cat("rta", "Inflow: Ready to Assign", "Internal Master Category")];
+    const [item] = buildItems([tx("Mystery Refund", null, "2026-03-17", { approved: false, amount: 5_000 })], {
+      categories: categoriesWithRta,
+      history: payeeHistory([], none),
+      tally: null,
+      notCounted: new Set(["unc"]),
+      inflow: categoriesWithRta[4],
+    });
+    expect(item!.categoryId).toBe("rta");
+    expect(item!.categoryId).not.toBe("c4");
+  });
+
+  it("leaves an inflow with no category (not the fallback) when the budget offers no Ready to Assign", () => {
+    const [item] = buildItems([tx("Mystery Refund", null, "2026-03-17", { approved: false, amount: 5_000 })], { categories, history: payeeHistory([], none), tally: null, notCounted: none });
+    expect(item).toMatchObject({ categoryId: null, confidence: "unsure", ticked: false, open: false });
+  });
+
+  it("keeps a refund's own spending history: an inflow from a payee whose earlier inflows all went to Groceries is sure Groceries", async () => {
+    const { items } = await load([
+      past("Trader Joe's", "c1", "2026-01-10"),
+      past("Trader Joe's", "c1", "2026-02-10"),
+      past("Trader Joe's", "c1", "2026-03-10"),
+      tx("Trader Joe's", null, "2026-03-17", { approved: false, amount: 12_000, id: "tj" }),
+    ]);
+    expect(items[0]).toMatchObject({ categoryId: "c1", confidence: "sure" });
+  });
+
+  it("does not let an inflow's history steer an outflow of the same payee, nor the reverse", async () => {
+    const { items } = await load([
+      past("Chase Rewards", "rta", "2026-01-10", 254_300),
+      past("Chase Rewards", "rta", "2026-01-11", 254_300),
+      past("Chase Rewards", "rta", "2026-01-12", 254_300),
+      tx("Chase Rewards", null, "2026-03-17", { approved: false, amount: -5_000, id: "out" }),
+    ]);
+    expect(items[0]!.categoryId).toBe("c4");
   });
 });

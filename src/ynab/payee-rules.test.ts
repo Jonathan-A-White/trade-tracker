@@ -5,7 +5,7 @@ import { fakeYnab, groupOf, type FakeYnab, type FakeYnabTransaction } from "./fa
 import { PayeeRuleRepository, setAlways, undoAlways, unapprovedWithRules } from "./payee-rules";
 import { createYnabWriter, type YnabWriter } from "./writer";
 
-const groups = [groupOf("gi", "Internal Master Category", [["unc", "Uncategorized"]]), groupOf("g1", "Food", [["c1", "Groceries"], ["c2", "Eating Out"]])];
+const groups = [groupOf("gi", "Internal Master Category", [["unc", "Uncategorized"], ["rta", "Inflow: Ready to Assign"]]), groupOf("g1", "Food", [["c1", "Groceries"], ["c2", "Eating Out"]])];
 
 let ynab: FakeYnab;
 let writer: YnabWriter;
@@ -108,6 +108,19 @@ describe("the payee rules", () => {
     await Promise.all([unapprovedWithRules(client(), "b1", writer.approve), unapprovedWithRules(client(), "b1", writer.approve)]);
     expect(patches()).toHaveLength(1);
     expect((await rules.get("chewy"))?.approved).toBe(1);
+  });
+});
+
+describe("a rule made for an inflow (his words, 2026-11-12)", () => {
+  it("defaults to Ready to Assign, approves the inflow there, and leaves an outflow of the same payee to him", async () => {
+    ynab.transactions.push(tx("in1", "Chase Rewards", { amount: 254_300 }));
+    const done = await setAlways({ budgetId: "b1", payee: "Chase Rewards", key: "chase rewards", categoryId: "rta", items: [{ id: "in1", ynabCategoryId: null }] }, writer.approve);
+    expect(done.categoryId).toBe("rta");
+    expect(await rules.get("chase rewards")).toMatchObject({ categoryId: "rta" });
+    ynab.transactions.push(tx("in2", "Chase Rewards", { amount: 108_930 }), tx("out1", "Chase Rewards", { amount: -5_000 }));
+    const read = await unapprovedWithRules(client(), "b1", writer.approve);
+    expect(read.approved).toBe(1);
+    expect(ynab.transactions.map((t) => [t.id, t.approved, t.category_id])).toEqual([["in1", true, "rta"], ["in2", true, "rta"], ["out1", false, null]]);
   });
 });
 
