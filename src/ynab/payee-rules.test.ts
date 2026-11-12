@@ -72,6 +72,24 @@ describe("the payee rules", () => {
     expect(ynab.transactions.find((t) => t.id === "ok")?.approved).toBe(true);
   });
 
+  it("never apply an Always rule, whatever its category (Ready to Assign included), to a transfer on either side", async () => {
+    // a rule for the payee text of each side of a credit card payment, and one for a payee that also has a transfer row
+    await rule("transfer : citi double cash", "c1");
+    await rule("transfer : pnc checking", "rta");
+    await rule("citi double cash", "rta");
+    ynab.transactions.push(
+      tx("out", "Transfer : Citi Double Cash", { account_id: "pnc", amount: -6_925_280, transfer_account_id: "citi", transfer_transaction_id: "in" }),
+      tx("in", "Transfer : PNC Checking", { account_id: "citi", amount: 6_925_280, transfer_account_id: "pnc", transfer_transaction_id: "out" }),
+      tx("same", "Citi Double Cash", { account_id: "citi", amount: 6_925_280, transfer_account_id: "pnc" }),
+      tx("plain", "Citi Double Cash", { amount: 5_000 }),
+    );
+    const read = await unapprovedWithRules(client(), "b1", writer.approve);
+    expect(read.rows.map((r) => r.id).sort()).toEqual(["in", "out", "same"]);
+    expect(read.approved).toBe(1);
+    for (const id of ["out", "in", "same"]) expect(ynab.transactions.find((t) => t.id === id)).toMatchObject({ approved: false, category_id: null });
+    expect((patches()[0]?.body as { transactions: unknown[] }).transactions).toEqual([{ id: "plain", category_id: "rta", approved: true }]);
+  });
+
   it("make no request when nothing matches, and ignore a rule of another budget or for a category no longer on offer", async () => {
     await rules.put({ key: "chewy", budgetId: "b2", payee: "Chewy", categoryId: "c1", createdAt: 1, approved: 0 });
     await rule("shell", "gone");
