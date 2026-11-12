@@ -1,10 +1,14 @@
 // Clean up: YNAB's unapproved transactions, oldest first, twenty to a page, grouped by payee. Each group carries the category its
 // payee usually goes to and how sure that is (src/ynab/cleanup.ts); the sure ones are ticked and first, the rest wait unticked.
-// Nothing reaches YNAB until he taps Approve, and then only the ticked ones, in one request.
+// Nothing reaches YNAB until he taps Approve, and then only the ticked ones, in one request. "Always <category>" on a card approves all
+// of that payee's unapproved transactions at once and keeps a payee rule (src/ynab/payee-rules.ts): the payee's new ones are approved as
+// they are read, before this lists them; Undo takes the last "Always" back for 10 seconds, and Payee rules lists the rules to remove.
+import { useLiveQuery } from "dexie-react-hooks";
 import { useCallback, useEffect, useMemo, useRef, useState } from "react";
 import { Link } from "react-router";
 import type { YnabCategory } from "@/contracts/types";
 import { PageHeader } from "@/components/layout/page-header";
+import { db } from "@/db/database";
 import { YnabRepository } from "@/db/repositories/ynab-repository";
 import { useYnabOn } from "@/settings/connections";
 import { useCleanupDeps } from "@/sort/sort-context";
@@ -12,6 +16,7 @@ import { buildRequest, readHistory, resolveSuggestion, tallyFor } from "@/sort/s
 import { money } from "@/sort/waiting";
 import { refreshCache } from "@/ynab/cache";
 import { groupPage, loadCleanup, pageAfter, type CleanupGroup, type CleanupItem, type Confidence } from "@/ynab/cleanup";
+import { PayeeRuleRepository, setAlways, undoAlways, unapprovedWithRules, type AlwaysDone } from "@/ynab/payee-rules";
 import { readTally } from "@/ynab/tally";
 
 const BUTTON = "min-h-12 rounded-lg px-4 text-base font-medium";
@@ -26,6 +31,16 @@ const RANK: Record<Confidence, number> = { sure: 2, likely: 1, unsure: 0 };
 const WORD: Record<Confidence, string> = { sure: "Sure", likely: "Likely", unsure: "Unsure" };
 
 type Phase = { state: "loading" } | { state: "failed"; error: string } | { state: "ready" };
+
+/** How long Undo stays after "Always". */
+const UNDO_MS = 10_000;
+
+interface Undoable {
+  done: AlwaysDone;
+  /** the items that left the list, as they were */
+  items: CleanupItem[];
+  categoryName: string;
+}
 
 const plural = (n: number) => (n === 1 ? "1 transaction" : `${n} transactions`);
 /** Dollars as said on a row: money out plain, money in marked. */
@@ -65,6 +80,8 @@ function GroupCard({
   onItemCategory,
   onTick,
   onTickAll,
+  onAlways,
+  busy,
 }: {
   group: CleanupGroup;
   categories: readonly YnabCategory[];
@@ -72,12 +89,16 @@ function GroupCard({
   onItemCategory: (id: string, categoryId: string) => void;
   onTick: (id: string, on: boolean) => void;
   onTickAll: (key: string, on: boolean) => void;
+  /** taps "Always <category>"; null while that cannot be done (no writer) */
+  onAlways: ((group: CleanupGroup, categoryId: string) => void) | null;
+  busy: boolean;
 }) {
   const best = bestOf(group.items);
   const editable = group.items.filter((i) => !i.fixedLabel);
   const shared = editable.length > 0 && editable.every((i) => i.categoryId === editable[0]!.categoryId) ? (editable[0]!.categoryId ?? "") : "";
   const mixed = editable.length > 1 && shared === "" && editable.some((i) => i.categoryId !== null);
   const tickable = group.items.filter((i) => i.categoryId !== null || i.fixedLabel);
+  const sharedName = shared ? categories.find((c) => c.id === shared)?.name : undefined;
   const allTicked = tickable.length > 0 && tickable.every((i) => i.ticked);
   return (
     <section role="group" aria-label={group.payee} className="space-y-2 rounded-lg border border-gray-200 dark:border-gray-700 bg-white dark:bg-gray-800 p-3">
@@ -89,6 +110,11 @@ function GroupCard({
         {plural(group.items.length)} · {said(group.total)}
       </p>
       {editable.length > 0 && <CategorySelect label={`Category for ${group.payee}`} value={shared} mixed={mixed} categories={categories} onChange={(id) => onGroupCategory(group.key, id)} />}
+      {onAlways && sharedName && (
+        <button type="button" disabled={busy} className={`${SECONDARY} w-full`} onClick={() => onAlways(group, shared)}>
+          Always {sharedName}
+        </button>
+      )}
       {group.items.length > 1 && tickable.length > 0 && (
         <label className="flex min-h-12 items-center gap-3 text-sm text-gray-800 dark:text-gray-200">
           <input type="checkbox" className="h-5 w-5" aria-label={`Tick all of ${group.payee}`} checked={allTicked} onChange={(e) => onTickAll(group.key, e.target.checked)} />
@@ -133,10 +159,34 @@ function GroupCard({
   );
 }
 
+/** The payee rules: each with its payee, category and how many it has approved; Remove stops it and changes nothing already written. */
+function PayeeRules() {
+  const rules = useLiveQuery(() => new PayeeRuleRepository().list(), []);
+  const names = useLiveQuery(async () => new Map((await db.ynabCategories.toArray()).map((c) => [c.id, c.name])), []);
+  if (!rules) return null;
+  if (rules.length === 0) return <p className="text-base text-gray-700 dark:text-gray-300">No payee rules yet.</p>;
+  return (
+    <ul aria-label="Payee rules" className="space-y-2">
+      {rules.map((rule) => (
+        <li key={rule.key} className="flex items-center justify-between gap-3 rounded-lg border border-gray-200 dark:border-gray-700 bg-white dark:bg-gray-800 p-3">
+          <div className="min-w-0">
+            <p className="break-words text-base font-semibold text-gray-900 dark:text-gray-100">{rule.payee}</p>
+            <p className="text-sm text-gray-700 dark:text-gray-300">{names?.get(rule.categoryId) ?? "A category no longer in YNAB"}</p>
+            <p className="text-sm text-gray-600 dark:text-gray-400">Approved {rule.approved}</p>
+          </div>
+          <button type="button" className={SECONDARY} onClick={() => void new PayeeRuleRepository().remove(rule.key)}>
+            Remove
+          </button>
+        </li>
+      ))}
+    </ul>
+  );
+}
+
 export default function CleanupPage() {
   const on = useYnabOn();
   const deps = useCleanupDeps();
-  const { getClient, approve, suggest, suggestTimeoutMs } = deps;
+  const { getClient, approve, restore, suggest, suggestTimeoutMs } = deps;
   const [phase, setPhase] = useState<Phase>({ state: "loading" });
   const [items, setItems] = useState<CleanupItem[]>([]);
   const [categories, setCategories] = useState<YnabCategory[]>([]);
@@ -144,6 +194,9 @@ export default function CleanupPage() {
   const [saving, setSaving] = useState(false);
   const [writeError, setWriteError] = useState<string | null>(null);
   const [round, setRound] = useState(0);
+  const [ruleError, setRuleError] = useState<string | null>(null);
+  const [undoable, setUndoable] = useState<Undoable | null>(null);
+  const [showRules, setShowRules] = useState(false);
   const asked = useRef(new Set<string>());
 
   // read YNAB afresh on opening and when he goes through them again
@@ -158,8 +211,11 @@ export default function CleanupPage() {
         const client = await getClient();
         // a category made in YNAB lately is on offer; a failed refresh keeps the list as it was
         await refreshCache(client).catch(() => {});
-        const loaded = await loadCleanup(client, connection.budgetId);
+        // the payee rules approve their payees' new transactions first, so those are never listed
+        const read = await unapprovedWithRules(client, connection.budgetId, approve);
+        const loaded = await loadCleanup(client, connection.budgetId, Date.now(), read.rows);
         if (cancelled) return;
+        setRuleError(read.error);
         asked.current = new Set();
         setCategories(loaded.categories);
         setItems(loaded.items);
@@ -173,7 +229,7 @@ export default function CleanupPage() {
     return () => {
       cancelled = true;
     };
-  }, [on, getClient, round]);
+  }, [on, getClient, approve, round]);
 
   const page = useMemo(() => pageAfter(items, start), [items, start]);
   const groups = useMemo(() => groupPage(page), [page]);
@@ -227,6 +283,56 @@ export default function CleanupPage() {
   const onTickAll = (key: string, ticked: boolean) =>
     change((i) => i.key === key && page.some((p) => p.id === i.id) && (i.categoryId !== null || !!i.fixedLabel), { ticked });
 
+  // Undo is there for ten seconds after "Always"
+  useEffect(() => {
+    if (!undoable) return;
+    const timer = setTimeout(() => setUndoable(null), UNDO_MS);
+    return () => clearTimeout(timer);
+  }, [undoable]);
+
+  async function always(group: CleanupGroup, categoryId: string) {
+    if (!approve || saving) return;
+    const targets = items.filter((i) => i.key === group.key && !i.fixedLabel);
+    if (targets.length === 0) return;
+    setSaving(true);
+    setWriteError(null);
+    try {
+      const connection = await new YnabRepository().getConnection();
+      if (!connection) throw new Error("No budget is connected.");
+      const done = await setAlways(
+        { budgetId: connection.budgetId, payee: group.payee, key: group.key, categoryId, items: targets.map((i) => ({ id: i.id, ynabCategoryId: i.ynabCategoryId })) },
+        approve,
+      );
+      const gone = new Set(targets.map((i) => i.id));
+      // the page keeps its place: the ones that left from before it move it back
+      const before = items.slice(0, start).filter((i) => gone.has(i.id)).length;
+      setItems((all) => all.filter((i) => !gone.has(i.id)));
+      setStart((s) => Math.max(0, s - before));
+      setUndoable({ done, items: targets, categoryName: categories.find((c) => c.id === categoryId)?.name ?? "that category" });
+    } catch (err) {
+      setWriteError(`Could not approve these: ${err instanceof Error ? err.message : "YNAB did not answer."}`);
+    } finally {
+      setSaving(false);
+    }
+  }
+
+  async function undo() {
+    if (!undoable || !restore || saving) return;
+    setSaving(true);
+    setWriteError(null);
+    try {
+      await undoAlways(undoable.done, restore);
+      const back = undoable.items;
+      setItems((all) => [...all, ...back].sort((a, b) => (a.date < b.date ? -1 : a.date > b.date ? 1 : a.id < b.id ? -1 : 1)));
+      setStart(0);
+      setUndoable(null);
+    } catch (err) {
+      setWriteError(`Could not undo: ${err instanceof Error ? err.message : "YNAB did not answer."}`);
+    } finally {
+      setSaving(false);
+    }
+  }
+
   const picked = page.filter((i) => i.ticked && (i.categoryId !== null || !!i.fixedLabel));
 
   async function approvePage() {
@@ -266,6 +372,23 @@ export default function CleanupPage() {
     <div className="flex min-h-full flex-col">
       <PageHeader title="Clean up" backTo="/" />
       <div className="flex-1 space-y-3 px-4 py-4">
+        <button type="button" aria-expanded={showRules} className={SECONDARY} onClick={() => setShowRules((v) => !v)}>
+          Payee rules
+        </button>
+        {showRules && <PayeeRules />}
+        {ruleError && (
+          <p role="alert" className="text-base text-red-700 dark:text-red-400">
+            {ruleError}
+          </p>
+        )}
+        {undoable && (
+          <p className="flex flex-wrap items-center gap-x-3 rounded-lg bg-gray-800 px-3 py-2 text-base text-white">
+            Approved {undoable.items.length} from {undoable.done.payee} as {undoable.categoryName} ·
+            <button type="button" disabled={saving || !restore} className="min-h-12 px-2 font-semibold underline disabled:opacity-50" onClick={() => void undo()}>
+              Undo
+            </button>
+          </p>
+        )}
         {phase.state === "loading" && <p role="status" className="text-base text-gray-700 dark:text-gray-300">Reading the transactions…</p>}
         {phase.state === "failed" && (
           <div role="alert" className="space-y-2">
@@ -290,7 +413,7 @@ export default function CleanupPage() {
               Showing {start + 1}–{start + page.length} of {left}, oldest first. Nothing goes to YNAB until you tap Approve.
             </p>
             {groups.map((group) => (
-              <GroupCard key={group.key} group={group} categories={categories} onGroupCategory={onGroupCategory} onItemCategory={onItemCategory} onTick={onTick} onTickAll={onTickAll} />
+              <GroupCard key={group.key} group={group} categories={categories} onGroupCategory={onGroupCategory} onItemCategory={onItemCategory} onTick={onTick} onTickAll={onTickAll} onAlways={approve ? (g, id) => void always(g, id) : null} busy={saving} />
             ))}
             {writeError && (
               <p role="alert" className="text-base text-red-700 dark:text-red-400">

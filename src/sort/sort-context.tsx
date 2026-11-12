@@ -10,9 +10,11 @@ import { FamilyRepository } from "@/db/repositories/family-repository";
 import { makeAlertsClient, type AlertsClient, type FamilyAlert } from "@/family/alerts-client";
 import { cardBook, type CardBook } from "@/family/cards";
 import { browserStorage } from "@/services/factory-service";
-import { useFamilyOn } from "@/settings/connections";
+import { useFamilyOn, useYnabOn } from "@/settings/connections";
 import { createYnabClient, type YnabClient } from "@/ynab/api";
 import { refreshCache } from "@/ynab/cache";
+import { PayeeRuleRepository, approveByRules } from "@/ynab/payee-rules";
+import { YnabRepository } from "@/db/repositories/ynab-repository";
 import { refreshTally as readYnabTally } from "@/ynab/tally";
 import { openToken } from "@/ynab/token";
 import { createYnabWriter, type YnabWriter } from "@/ynab/writer";
@@ -40,7 +42,7 @@ import {
 } from "./waiting";
 
 /** What the sheet needs of the YNAB writer (and Clean up, `approve`, when the writer has it). */
-export type SortWriter = Pick<YnabWriter, "create"> & Partial<Pick<YnabWriter, "approve">>;
+export type SortWriter = Pick<YnabWriter, "create"> & Partial<Pick<YnabWriter, "approve" | "restore">>;
 
 /** The parts a test replaces: each left out is the app's own. */
 export interface SortSeams {
@@ -53,6 +55,8 @@ export interface SortSeams {
   refreshBalances?: () => Promise<void>;
   /** reads YNAB's tally of payees by category, when the one kept is old */
   refreshTally?: () => Promise<void>;
+  /** whether the app approves the payee rules' transactions when it opens (default true); a test of Clean up alone turns it off */
+  approveOnOpen?: boolean;
   /** the YNAB client Clean up reads with; the app's own opens the sealed token with the unlocked key */
   ynabClient?: () => Promise<YnabClient>;
   /** asks the mill where a charge goes; null asks nothing (the app's own is the factory's, only on a licensed key) */
@@ -96,12 +100,44 @@ function useAppWriter(enabled: boolean): SortWriter | null {
   return writer;
 }
 
+/**
+ * When the app opens (and YNAB is On, the key unlocked, a rule standing), the payee rules approve their payees' new transactions, whatever
+ * screen is open. Silent when it fails: Clean up says so, and the next load tries again.
+ */
+function useApproveByRules(writer: SortWriter | null, enabled: boolean, seamClient: SortSeams["ynabClient"]) {
+  const on = useYnabOn();
+  const { door } = useFactory();
+  const clientFor = useYnabClientFor();
+  const rules = useLiveQuery(() => new PayeeRuleRepository().list(), []);
+  const approve = writer?.approve;
+  const unlocked = door === "licensed" || door === "unlocked";
+  const standing = (rules?.length ?? 0) > 0;
+  useEffect(() => {
+    if (!enabled || !on || !approve || !standing || (!seamClient && !unlocked)) return;
+    let cancelled = false;
+    void (async () => {
+      try {
+        const connection = await new YnabRepository().getConnection();
+        if (!connection || cancelled) return;
+        const client = await (seamClient ? seamClient() : clientFor("the transactions"));
+        if (!cancelled) await approveByRules(client, connection.budgetId, approve);
+      } catch {
+        // the next load tries again
+      }
+    })();
+    return () => {
+      cancelled = true;
+    };
+  }, [enabled, on, approve, standing, seamClient, unlocked, clientFor]);
+}
+
 export function SortProvider({ children, ...seams }: SortSeams & { children: ReactNode }) {
   const appWriter = useAppWriter(seams.writer === undefined);
-  const { client, writer, me, refreshBalances, refreshTally, ynabClient, suggest, suggestTimeoutMs, readReceipt, receiptTimeoutMs, pollMs, feedTiming, balanceTiming } = seams;
+  useApproveByRules(seams.writer === undefined ? appWriter : seams.writer, seams.approveOnOpen !== false, seams.ynabClient);
+  const { client, writer, me, approveOnOpen, refreshBalances, refreshTally, ynabClient, suggest, suggestTimeoutMs, readReceipt, receiptTimeoutMs, pollMs, feedTiming, balanceTiming } = seams;
   const value = useMemo<SortSeams>(
-    () => ({ client, writer: writer === undefined ? appWriter : writer, me, refreshBalances, refreshTally, ynabClient, suggest, suggestTimeoutMs, readReceipt, receiptTimeoutMs, pollMs, feedTiming, balanceTiming }),
-    [client, writer, appWriter, me, refreshBalances, refreshTally, ynabClient, suggest, suggestTimeoutMs, readReceipt, receiptTimeoutMs, pollMs, feedTiming, balanceTiming],
+    () => ({ client, writer: writer === undefined ? appWriter : writer, me, approveOnOpen, refreshBalances, refreshTally, ynabClient, suggest, suggestTimeoutMs, readReceipt, receiptTimeoutMs, pollMs, feedTiming, balanceTiming }),
+    [client, writer, appWriter, me, approveOnOpen, refreshBalances, refreshTally, ynabClient, suggest, suggestTimeoutMs, readReceipt, receiptTimeoutMs, pollMs, feedTiming, balanceTiming],
   );
   return <SortContext.Provider value={value}>{children}</SortContext.Provider>;
 }
@@ -191,6 +227,8 @@ export interface CleanupDeps {
   getClient: () => Promise<YnabClient>;
   /** approves transactions; null when the writer is not there */
   approve: YnabWriter["approve"] | null;
+  /** puts approved transactions back as they were (Undo); null when the writer is not there */
+  restore: YnabWriter["restore"] | null;
   /** asks the mill where a payee's charge goes; null when the AI is not allowed */
   suggest: SortChargeAsk | null;
   suggestTimeoutMs: number;
@@ -200,12 +238,13 @@ export function useCleanupDeps(): CleanupDeps {
   const seams = useContext(SortContext);
   const clientFor = useYnabClientFor();
   const appSuggest = useAppSuggest();
-  const { approve } = seams.writer ?? {};
+  const { approve, restore } = seams.writer ?? {};
   const seamClient = seams.ynabClient;
   const getClient = useCallback(() => (seamClient ? seamClient() : clientFor("the transactions")), [seamClient, clientFor]);
   return {
     getClient,
     approve: approve ?? null,
+    restore: restore ?? null,
     suggest: seams.suggest !== undefined ? seams.suggest : appSuggest,
     suggestTimeoutMs: seams.suggestTimeoutMs ?? SUGGEST_DEADLINE_MS,
   };

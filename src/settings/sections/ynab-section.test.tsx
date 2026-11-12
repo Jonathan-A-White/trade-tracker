@@ -163,7 +163,7 @@ describe("Settings > YNAB", () => {
     await waitFor(async () => expect((await new YnabRepository().getConnection())?.payeesKnowledge).toBe(130));
   });
 
-  it("Clear All Data turns it Off and forgets the token and the cache", async () => {
+  it("Clear All Data turns it Off and forgets the token, the cache and the payee rules", async () => {
     const user = userEvent.setup();
     renderSettings();
     await user.click(screen.getByRole("button", { name: "Make key" }));
@@ -173,6 +173,7 @@ describe("Settings > YNAB", () => {
     await user.click(screen.getByRole("button", { name: "Check" }));
     await user.click(await screen.findByRole("button", { name: "Our Budget" }));
     await screen.findByText("Connected as Our Budget");
+    await db.ynabPayeeRules.put({ key: "chewy", budgetId: "b1", payee: "Chewy", categoryId: "c1", createdAt: 1, approved: 3 });
 
     await user.click(screen.getByRole("button", { name: "Clear All Data" }));
     await user.click(screen.getByRole("button", { name: "Delete Everything" }));
@@ -180,5 +181,6 @@ describe("Settings > YNAB", () => {
     await waitFor(() => expect(screen.getByRole("switch", { name: "Connect YNAB" })).toHaveAttribute("aria-checked", "false"));
     expect(localStorage.getItem(YNAB_TOKEN_KEY)).toBeNull();
     expect(await db.ynabCategories.count()).toBe(0);
+    expect(await db.ynabPayeeRules.count()).toBe(0);
   });
 });

@@ -16,13 +16,15 @@ export function DangerZoneSection() {
     try {
       await db.transaction(
         "rw",
-        [db.stores, db.items, db.trips, db.tripItems, db.priceHistory],
+        [db.stores, db.items, db.trips, db.tripItems, db.priceHistory, db.ynabPayeeRules],
         async () => {
           await db.stores.clear();
           await db.items.clear();
           await db.trips.clear();
           await db.tripItems.clear();
           await db.priceHistory.clear();
+          // his payee rules (Clean up's "Always") go with the rest of his data
+          await db.ynabPayeeRules.clear();
         },
       );
       forgetDeviceData();

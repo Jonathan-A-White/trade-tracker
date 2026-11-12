@@ -48,7 +48,7 @@ function renderPage(seams: Partial<SortSeams> = {}, path = "/cleanup") {
   return render(
     <ThemeProvider>
       <FactoryProvider checkLicence={async () => ({ state: "none", checkedAt: "x" })} passkeyPort={noWebAuthn}>
-        <SortProvider client={null} writer={writer} ynabClient={async () => client} refreshBalances={async () => {}} suggest={null} {...seams}>
+        <SortProvider client={null} writer={writer} ynabClient={async () => client} refreshBalances={async () => {}} suggest={null} approveOnOpen={false} {...seams}>
           <MemoryRouter initialEntries={[path]}>
             <Routed />
           </MemoryRouter>
@@ -298,5 +298,194 @@ describe("Clean up", () => {
   it("is reached from a Clean up link on Home while the connection is On", async () => {
     renderPage({}, "/");
     expect(await screen.findByRole("link", { name: "Clean up" })).toHaveAttribute("href", "/cleanup");
+  });
+});
+
+describe("Clean up: Always", () => {
+  const ruleOf = (key: string) => db.ynabPayeeRules.get(key);
+  const byId = (id: string) => ynab.transactions.find((t) => t.id === id);
+
+  it("approves every unapproved transaction of the payee into the card's category in one PATCH, saves a rule, and the card goes", async () => {
+    const user = userEvent.setup();
+    renderPage();
+    const tj = await screen.findByRole("group", { name: "Trader Joe's" });
+    expect(screen.getByText(/of 5, oldest first/)).toBeInTheDocument();
+    await user.click(within(tj).getByRole("button", { name: "Always Groceries" }));
+
+    await waitFor(() => expect(screen.queryByRole("group", { name: "Trader Joe's" })).not.toBeInTheDocument());
+    expect(patches()).toHaveLength(1);
+    expect(patches()[0]?.body).toEqual({
+      transactions: [
+        { id: "tj1", category_id: "c1", approved: true },
+        { id: "tj2", category_id: "c1", approved: true },
+      ],
+    });
+    expect(byId("co1")?.approved).toBe(false);
+    expect(await ruleOf("trader joe's")).toMatchObject({ budgetId: "b1", payee: "Trader Joe's", categoryId: "c1", approved: 2 });
+    expect(screen.getByText(/of 3, oldest first/)).toBeInTheDocument();
+  });
+
+  it("reaches the payee's transactions on every page, not just this one", async () => {
+    const user = userEvent.setup();
+    ynab.transactions = ynab.transactions.filter((t) => t.approved);
+    for (let i = 1; i <= 25; i++) ynab.transactions.push(unapproved("Chewy", null, `2026-09-${String(i).padStart(2, "0")}`, { id: `ch${i}` }));
+    ynab.transactions.push(unapproved("Shell", "c2", "2026-10-04", { id: "sh1", category_name: "Eating Out" }));
+    renderPage();
+    const chewy = await screen.findByRole("group", { name: "Chewy" });
+    expect(within(chewy).getAllByRole("checkbox", { name: /^Approve \$/ })).toHaveLength(20);
+    await user.click(within(chewy).getByRole("button", { name: "Always Stuff I Forgot to Budget For" }));
+
+    await waitFor(() => expect(screen.queryByRole("group", { name: "Chewy" })).not.toBeInTheDocument());
+    expect(patches()).toHaveLength(1);
+    expect((patches()[0]?.body as { transactions: unknown[] }).transactions).toHaveLength(25);
+    expect(ynab.transactions.filter((t) => t.id.startsWith("ch") && t.approved && t.category_id === "c4")).toHaveLength(25);
+    expect((await ruleOf("chewy"))?.approved).toBe(25);
+    expect(await screen.findByRole("group", { name: "Shell" })).toBeInTheDocument();
+  });
+
+  it("leaves a payee's split and transfer alone and listed", async () => {
+    const user = userEvent.setup();
+    ynab.transactions.push(
+      unapproved("Trader Joe's", null, "2026-10-06", { id: "tjs", subtransactions: [{ amount: -5_000, category_id: "c1" }, { amount: -5_000, category_id: "c2" }] }),
+      unapproved("Trader Joe's", null, "2026-10-07", { id: "tjt", transfer_account_id: "a2" }),
+    );
+    renderPage();
+    const tj = await screen.findByRole("group", { name: "Trader Joe's" });
+    await user.click(within(tj).getByRole("button", { name: "Always Groceries" }));
+    await waitFor(() => expect(patches()).toHaveLength(1));
+    expect((patches()[0]?.body as { transactions: { id: string }[] }).transactions.map((t) => t.id)).toEqual(["tj1", "tj2"]);
+    const left = await screen.findByRole("group", { name: "Trader Joe's" });
+    expect(within(left).getByText("Split")).toBeInTheDocument();
+    expect(within(left).getByText("Transfer")).toBeInTheDocument();
+    expect(within(left).queryByRole("button", { name: /^Always/ })).not.toBeInTheDocument();
+  });
+
+  it("says so when the write fails, saves no rule, and a second tap works", async () => {
+    const user = userEvent.setup();
+    renderPage();
+    const tj = await screen.findByRole("group", { name: "Trader Joe's" });
+    ynab.failNextBulk = 500;
+    await user.click(within(tj).getByRole("button", { name: "Always Groceries" }));
+    expect(await screen.findByRole("alert")).toHaveTextContent(/could not approve/i);
+    expect(await db.ynabPayeeRules.count()).toBe(0);
+    expect(screen.getByRole("group", { name: "Trader Joe's" })).toBeInTheDocument();
+    expect(byId("tj1")?.approved).toBe(false);
+
+    await user.click(within(screen.getByRole("group", { name: "Trader Joe's" })).getByRole("button", { name: "Always Groceries" }));
+    await waitFor(() => expect(byId("tj1")?.approved).toBe(true));
+    expect(await ruleOf("trader joe's")).toMatchObject({ approved: 2 });
+  });
+
+  it("shows 'Approved N from <payee> as <category> · Undo', and Undo puts them back as they were and drops the rule", async () => {
+    const user = userEvent.setup();
+    ynab.transactions.push(unapproved("Trader Joe's", "c2", "2026-10-06", { id: "tj3", category_name: "Eating Out" }));
+    renderPage();
+    const tj = await screen.findByRole("group", { name: "Trader Joe's" });
+    // the three differ, so the card has no one category to be 'Always' until he chooses it
+    expect(within(tj).queryByRole("button", { name: /^Always/ })).not.toBeInTheDocument();
+    await user.selectOptions(within(tj).getByLabelText("Category for Trader Joe's"), "c1");
+    await user.click(within(tj).getByRole("button", { name: "Always Groceries" }));
+    expect(await screen.findByText("Approved 3 from Trader Joe's as Groceries ·")).toBeInTheDocument();
+    await user.click(screen.getByRole("button", { name: "Undo" }));
+
+    await waitFor(() => expect(screen.getByRole("group", { name: "Trader Joe's" })).toBeInTheDocument());
+    expect(patches()).toHaveLength(2);
+    expect(patches()[1]?.body).toEqual({
+      transactions: [
+        { id: "tj1", category_id: null, approved: false },
+        { id: "tj2", category_id: null, approved: false },
+        { id: "tj3", category_id: "c2", approved: false },
+      ],
+    });
+    expect([byId("tj1"), byId("tj2"), byId("tj3")].map((t) => [t?.approved, t?.category_id])).toEqual([[false, null], [false, null], [false, "c2"]]);
+    expect(await db.ynabPayeeRules.count()).toBe(0);
+    expect(screen.queryByText(/^Approved 3 from/)).not.toBeInTheDocument();
+  });
+
+  it("takes the Undo away after 10 seconds", async () => {
+    vi.useFakeTimers({ toFake: ["setTimeout", "clearTimeout", "Date"], shouldAdvanceTime: true });
+    try {
+      renderPage();
+      const tj = await screen.findByRole("group", { name: "Trader Joe's" });
+      within(tj).getByRole("button", { name: "Always Groceries" }).click();
+      expect(await screen.findByRole("button", { name: "Undo" })).toBeInTheDocument();
+      await vi.advanceTimersByTimeAsync(9_000);
+      expect(screen.getByRole("button", { name: "Undo" })).toBeInTheDocument();
+      await vi.advanceTimersByTimeAsync(1_500);
+      await waitFor(() => expect(screen.queryByRole("button", { name: "Undo" })).not.toBeInTheDocument());
+      expect(await db.ynabPayeeRules.count()).toBe(1);
+    } finally {
+      vi.useRealTimers();
+    }
+  });
+
+  it("approves a standing rule's new transactions on opening, so they are never listed; a split stays", async () => {
+    await db.ynabPayeeRules.put({ key: "shell", budgetId: "b1", payee: "Shell", categoryId: "c2", createdAt: 1, approved: 4 });
+    ynab.transactions.push(unapproved("Shell", null, "2026-10-08", { id: "sh2" }), unapproved("Shell", null, "2026-10-09", { id: "sh3", subtransactions: [{ amount: -5_000, category_id: "c1" }, { amount: -5_000, category_id: "c2" }] }));
+    renderPage();
+    await screen.findByRole("group", { name: "Trader Joe's" });
+    expect(patches()).toHaveLength(1);
+    expect((patches()[0]?.body as { transactions: unknown[] }).transactions).toEqual([
+      { id: "sh1", category_id: "c2", approved: true },
+      { id: "sh2", category_id: "c2", approved: true },
+    ]);
+    const shell = screen.getByRole("group", { name: "Shell" });
+    expect(within(shell).getByText("Split")).toBeInTheDocument();
+    expect(within(shell).getAllByRole("checkbox", { name: /^Approve / })).toHaveLength(1);
+    expect((await ruleOf("shell"))?.approved).toBe(6);
+  });
+
+  it("approves a standing rule's transactions when the app opens, without Clean up being opened", async () => {
+    await db.ynabPayeeRules.put({ key: "shell", budgetId: "b1", payee: "Shell", categoryId: "c2", createdAt: 1, approved: 0 });
+    renderPage({ approveOnOpen: true }, "/settings");
+    await waitFor(() => expect(patches()).toHaveLength(1));
+    expect(byId("sh1")).toMatchObject({ approved: true, category_id: "c2" });
+    await waitFor(async () => expect((await ruleOf("shell"))?.approved).toBe(1));
+  });
+
+  it("says a rule's write failed, still lists those transactions, and writes them once on the next load", async () => {
+    await db.ynabPayeeRules.put({ key: "shell", budgetId: "b1", payee: "Shell", categoryId: "c2", createdAt: 1, approved: 0 });
+    ynab.failNextBulk = 500;
+    const { unmount } = renderPage();
+    expect(await screen.findByRole("alert")).toHaveTextContent(/payee rules/i);
+    expect(screen.getByRole("group", { name: "Shell" })).toBeInTheDocument();
+    expect(byId("sh1")?.approved).toBe(false);
+    expect((await ruleOf("shell"))?.approved).toBe(0);
+
+    unmount();
+    renderPage();
+    await screen.findByRole("group", { name: "Trader Joe's" });
+    await waitFor(() => expect(byId("sh1")?.approved).toBe(true));
+    expect(screen.queryByRole("group", { name: "Shell" })).not.toBeInTheDocument();
+    expect(screen.queryByRole("alert")).not.toBeInTheDocument();
+    expect(patches()).toHaveLength(2);
+    expect((await ruleOf("shell"))?.approved).toBe(1);
+  });
+
+  it("lists the payee rules with their payee, category and how many they approved; Remove stops them and changes nothing written", async () => {
+    const user = userEvent.setup();
+    const { unmount } = renderPage();
+    const tj = await screen.findByRole("group", { name: "Trader Joe's" });
+    await user.click(within(tj).getByRole("button", { name: "Always Groceries" }));
+    await waitFor(() => expect(patches()).toHaveLength(1));
+
+    await user.click(screen.getByRole("button", { name: "Payee rules" }));
+    const list = await screen.findByRole("list", { name: "Payee rules" });
+    const item = within(list).getByRole("listitem");
+    expect(item).toHaveTextContent("Trader Joe's");
+    expect(item).toHaveTextContent("Groceries");
+    expect(item).toHaveTextContent("Approved 2");
+    await user.click(within(item).getByRole("button", { name: "Remove" }));
+    await waitFor(() => expect(db.ynabPayeeRules.count()).resolves.toBe(0));
+    expect(await screen.findByText("No payee rules yet.")).toBeInTheDocument();
+    expect(patches()).toHaveLength(1);
+    expect(byId("tj1")).toMatchObject({ approved: true, category_id: "c1" });
+
+    // a new one of that payee is now left for him
+    unmount();
+    ynab.transactions.push(unapproved("Trader Joe's", null, "2026-10-09", { id: "tj9" }));
+    renderPage();
+    expect(await screen.findByRole("group", { name: "Trader Joe's" })).toBeInTheDocument();
+    expect(patches()).toHaveLength(1);
   });
 });
