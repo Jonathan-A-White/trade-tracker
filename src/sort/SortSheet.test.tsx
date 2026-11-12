@@ -379,6 +379,23 @@ describe("the Sort sheet with the AI's suggestion", () => {
     expect(banner).toHaveTextContent("Eating Out · $8 left · short by $5.12");
   });
 
+  it("a merchant never seen in Groceries is suggested Stuff I Forgot to Budget For, not Groceries, saying so (his words, 2026-11-11)", async () => {
+    await new YnabRepository().applyCategories(
+      [
+        groupOf("g1", "Food", [["c1", "Groceries", 212_000], ["c2", "Eating Out", 8_000]]),
+        groupOf("g2", "Home", [["c3", "Household", 60_500]]),
+        groupOf("g3", "Surprises", [["c4", "Stuff I Forgot to Budget For", 5_000]]),
+      ],
+      2,
+    );
+    const alert = backend.receive({ kind: "charge", amount: "17.90", merchant: "SQ *ZQX 4471", last4: "1234" });
+    renderPhone(`/sort/${alert.id}`, { suggest: ask({ category: "Groceries", why: "A guess: everyday spending." }) });
+    const sheet = await screen.findByRole("dialog", { name: "$17.90 at SQ *ZQX 4471" });
+    expect(await within(sheet).findByText(/New to Groceries here, so Stuff I Forgot to Budget For\./)).toBeInTheDocument();
+    expect(within(sheet).getByRole("radio", { name: /Stuff I Forgot to Budget For/ })).toHaveAttribute("aria-checked", "true");
+    expect(within(sheet).getByRole("radio", { name: /Groceries/ })).toHaveAttribute("aria-checked", "false");
+  });
+
   it("a tap on another category changes the suggestion", async () => {
     const user = userEvent.setup();
     const alert = backend.receive({ kind: "charge", amount: "8.50", merchant: "Dunkin'", last4: "1234" });

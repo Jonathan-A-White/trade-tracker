@@ -6,6 +6,7 @@ import type { YnabCategory } from "@/contracts/types";
 import { MAX_PAYLOAD_BYTES, NotAllowed, sealedRecordBytes } from "@/factory/mill";
 import {
   HEADROOM_BYTES,
+  FALLBACK_NAME,
   HISTORY_KEY,
   LEARNED_KEY,
   SUGGEST_DEADLINE_MS,
@@ -16,8 +17,10 @@ import {
   learnChoice,
   makeSortChargeAsk,
   readHistory,
+  isReserved,
   recordCharge,
   resolveGrouping,
+  seenCategoryIds,
   resolveSuggestion,
   suggestAtOnce,
   tallyFor,
@@ -382,5 +385,49 @@ describe("the wait for the mill's answer (mw-mr4xgrw.40)", () => {
     expect(answeredAt).not.toBeNull();
     expect(answeredAt!).toBeLessThan(SUGGEST_DEADLINE_MS);
     expect((await asked).category).toBe("Groceries");
+  });
+});
+
+describe("Food and Household only where the merchant has been seen (his words, 2026-11-11)", () => {
+  const forgot = category("c9", FALLBACK_NAME, 5);
+  const withForgot = [...cats, forgot];
+  const budget = [category("f1", "Food [Monthly]"), category("f2", "Food [Sporadic]"), category("h", "Household"), category("a", "Auto"), forgot];
+
+  it("reserves the food and household categories, by his budget's names, and no other", () => {
+    for (const name of ["Food [Monthly]", "Food [Sporadic]", "Household", "Groceries", "household"]) expect(isReserved(category("x", name)), name).toBe(true);
+    for (const name of ["Auto", "Eating Out", FALLBACK_NAME, "Amazon & Whole Foods", "Costco"]) expect(isReserved(category("x", name)), name).toBe(false);
+  });
+
+  it("answers Stuff I Forgot to Budget For when the mill says Groceries for a merchant never seen there, and says so", () => {
+    const found = resolveSuggestion({ category: "Groceries", why: "A guess: everyday spending." }, withForgot, 20, new Set());
+    expect(found).toMatchObject({ categoryId: "c9" });
+    expect(found!.why).toContain(FALLBACK_NAME);
+    expect(found!.why).not.toMatch(/everyday/i);
+  });
+
+  it("keeps Groceries for a merchant whose history has it, and any other category for a stranger", () => {
+    expect(resolveSuggestion({ category: "Groceries", why: "It sells food." }, withForgot, 20, new Set(["c1"]))).toEqual({ why: "It sells food.", categoryId: "c1" });
+    expect(resolveSuggestion({ category: "Eating Out", why: "A cafe." }, withForgot, 20, new Set())).toEqual({ why: "A cafe.", categoryId: "c2" });
+  });
+
+  it("sends a split that names an unseen reserved category to Stuff I Forgot to Budget For whole", () => {
+    const answer = { split: [{ category: "Groceries", amount: 15 }, { category: "Eating Out", amount: 5 }], why: "Food and a coffee." };
+    expect(resolveSuggestion(answer, withForgot, 20, new Set(["c1"]))).toMatchObject({ parts: [{ categoryId: "c1", amount: 15 }, { categoryId: "c2", amount: 5 }] });
+    expect(resolveSuggestion(answer, withForgot, 20, new Set())).toMatchObject({ categoryId: "c9" });
+  });
+
+  it("does not guard when no seen set is given (the older callers), and keeps the answer when the budget has no fallback", () => {
+    expect(resolveSuggestion({ category: "Groceries", why: "x" }, cats, 20)).toEqual({ why: "x", categoryId: "c1" });
+    expect(resolveSuggestion({ category: "Groceries", why: "x" }, cats, 20, new Set())).toEqual({ why: "x", categoryId: "c1" });
+  });
+
+  it("reads the seen categories from the tally, what he taught, and what he sorted on this phone", () => {
+    const tally = tallyOf([...times(1, "Costco", "f1"), ...times(1, "Costco", "a")]);
+    expect([...seenCategoryIds("COSTCO WHSE #12", budget, tally)].sort()).toEqual(["a", "f1"]);
+    learnChoice("Hardware Hank", { id: "h", name: "Household" });
+    expect([...seenCategoryIds("Hardware Hank", budget, tally)]).toEqual(["h"]);
+    recordCharge("Corner Deli", 9, [{ category: "Food [Sporadic]", amount: 9 }]);
+    expect([...seenCategoryIds("Corner Deli", budget, null)]).toEqual(["f2"]);
+    expect([...seenCategoryIds("Never Seen", budget, tally)]).toEqual([]);
   });
 });

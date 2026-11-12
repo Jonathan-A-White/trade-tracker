@@ -25,6 +25,7 @@ import {
   recordCharge,
   resolveGrouping,
   resolveSuggestion,
+  seenCategoryIds,
   suggestAtOnce,
   tallyFor,
   type AtOnce,
@@ -228,7 +229,8 @@ function useSuggestion(opts: {
         if (!current || abort.signal.aborted) return;
         stopTimers();
         setResult("done");
-        const suggestion = resolveSuggestion(answer, list, c.amount);
+        // Food and Household are suggested only for a merchant seen there before; a stranger's guess falls to Stuff I Forgot to Budget For
+        const suggestion = resolveSuggestion(answer, list, c.amount, seenCategoryIds(c.alert.merchant ?? "", list, readTally()));
         if (suggestion) latest.current.onSuggestion(suggestion);
       },
       () => {

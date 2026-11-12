@@ -175,6 +175,50 @@ export function suggestAtOnce(merchant: string, categories: readonly YnabCategor
   return { source: "tally", categoryId: top.categoryId, why: `${top.count} of ${counted.total} here went to ${top.name}.` };
 }
 
+// --- where a guess may not go --------------------------------------------------------------------------------------------
+
+/** The category a guess falls to when it is not sure, in his budget's own words (the Governor, 2026-11-11). */
+export const FALLBACK_NAME = "Stuff I Forgot to Budget For";
+
+const nameKey = (name: string) => name.trim().toLowerCase();
+
+/** The budget's fallback category, or undefined when the budget has none (another family's). */
+export const fallbackCategory = (categories: readonly YnabCategory[]): YnabCategory | undefined =>
+  categories.find((c) => nameKey(c.name) === nameKey(FALLBACK_NAME));
+
+/**
+ * The food and household categories, which a guess may name only for a merchant seen there before: his budget's "Food [Monthly]" and
+ * "Food [Sporadic]" (any name starting Food), "Household", and Groceries for a budget that has one.
+ */
+export function isReserved(category: Pick<YnabCategory, "name">): boolean {
+  const name = nameKey(category.name);
+  return /^food\b/.test(name) || name === "household" || name === "groceries";
+}
+
+/**
+ * The categories a merchant has been seen in before: YNAB's tally for it, what he taught, and what he sorted there on this phone.
+ * `categories` are the ones on offer; an id that is not among them is not named.
+ */
+export function seenCategoryIds(merchant: string, categories: readonly YnabCategory[], tally: Tally | null): Set<string> {
+  const seen = new Set<string>();
+  for (const count of tallyFor(merchant, tally, categories)?.counts ?? []) seen.add(count.categoryId);
+  const taught = learnedFor(merchant);
+  if (taught) {
+    const category = categories.find((c) => c.id === taught.categoryId) ?? categories.find((c) => nameKey(c.name) === nameKey(taught.name));
+    if (category) seen.add(category.id);
+  }
+  for (const line of readHistory(merchant)) {
+    for (const name of line.split ? line.split.map((p) => p.category) : [line.category]) {
+      const category = categories.find((c) => nameKey(c.name) === nameKey(name ?? ""));
+      if (category) seen.add(category.id);
+    }
+  }
+  return seen;
+}
+
+/** Whether a guess may name this category for a merchant that has been seen in `seen`: a reserved one only where it was seen. */
+export const guessAllowed = (category: YnabCategory, seen: ReadonlySet<string>): boolean => !isReserved(category) || seen.has(category.id);
+
 // --- the history ---------------------------------------------------------------------------------------------------------
 
 interface HistoryRow {
@@ -284,20 +328,38 @@ export function makeSortChargeAsk(backendUrl: string, key: Uint8Array, licence: 
 /**
  * The answer in the sheet's own terms, or null when it cannot be used: no why, a category the budget does not have, or a split
  * that does not add up to the charge. The mill's words are matched to a category by name, whatever the case.
+ * With `seen` (the categories the merchant has been seen in, seenCategoryIds), an answer naming Food or Household where it has not
+ * been seen becomes "Stuff I Forgot to Budget For" whole, saying so (kept as it came if the budget has no such category).
  */
-export function resolveSuggestion(answer: SortChargeAnswer, categories: readonly YnabCategory[], amount: number): Suggestion | null {
+export function resolveSuggestion(answer: SortChargeAnswer, categories: readonly YnabCategory[], amount: number, seen?: ReadonlySet<string>): Suggestion | null {
   const why = typeof answer.why === "string" ? answer.why.replace(/\s+/g, " ").trim().slice(0, WHY_MAX) : "";
   if (!why) return null;
   const idOf = (name: string) => categories.find((c) => c.name.trim().toLowerCase() === name.trim().toLowerCase())?.id;
+  const barred = (ids: readonly string[]) => {
+    if (!seen) return null;
+    const refused = ids.map((id) => categories.find((c) => c.id === id)!).find((c) => !guessAllowed(c, seen));
+    if (!refused) return null;
+    const fallback = fallbackCategory(categories);
+    // a budget with no such category (another family's) keeps the answer as it came
+    return fallback ? { categoryId: fallback.id, why: `New to ${refused.name} here, so ${fallback.name}.` } : null;
+  };
+  let result: Suggestion | null;
   if (answer.split) {
     const parts = answer.split.map((p) => ({ categoryId: idOf(p.category), amount: p.amount }));
     if (parts.length < 2 || parts.some((p) => p.categoryId === undefined || !(p.amount > 0) || Math.abs(p.amount * 100 - Math.round(p.amount * 100)) > 1e-6)) return null;
     const total = parts.reduce((sum, p) => sum + Math.round(p.amount * 100), 0);
     if (total !== Math.round(amount * 100)) return null;
-    return { why, parts: parts.map((p) => ({ categoryId: p.categoryId!, amount: p.amount })) };
+    const refusal = barred(parts.map((p) => p.categoryId!));
+    if (refusal) return refusal;
+    result = { why, parts: parts.map((p) => ({ categoryId: p.categoryId!, amount: p.amount })) };
+  } else {
+    const categoryId = answer.category ? idOf(answer.category) : undefined;
+    if (categoryId === undefined) return null;
+    const refusal = barred([categoryId]);
+    if (refusal) return refusal;
+    result = { why, categoryId };
   }
-  const categoryId = answer.category ? idOf(answer.category) : undefined;
-  return categoryId === undefined ? null : { why, categoryId };
+  return result;
 }
 
 /**
