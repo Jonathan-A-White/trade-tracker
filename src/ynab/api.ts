@@ -76,6 +76,15 @@ export interface YnabClient {
   /** Changes several transactions in one PATCH (each by id; only the fields given change). */
   updateTransactions(budgetId: string, transactions: YnabTransactionPatch[], options?: YnabCallOptions): Promise<void>;
   deleteTransaction(budgetId: string, id: string, options?: YnabCallOptions): Promise<void>;
+  /** Creates a category in a group, with a recurring target when `target` is given (YNAB spec 1.91: createCategory); answers the id YNAB gave it. */
+  createCategory(budgetId: string, category: YnabNewCategory, options?: YnabCallOptions): Promise<{ id: string }>;
+}
+
+/** A category to create: its name and group, and a recurring target of `dollars` every month, or every year due `dueDate` (YYYY-MM-DD). */
+export interface YnabNewCategory {
+  name: string;
+  groupId: string;
+  target?: { dollars: number; frequency: "monthly" | "yearly"; dueDate?: string };
 }
 
 type Fetch = typeof fetch;
@@ -188,6 +197,26 @@ export function createYnabClient(
     },
     async deleteTransaction(budgetId, id, options) {
       await call("DELETE", `/budgets/${enc(budgetId)}/transactions/${enc(id)}`, undefined, options);
+    },
+    async createCategory(budgetId, category, options) {
+      const { name, groupId, target } = category;
+      const body = {
+        category: {
+          name,
+          category_group_id: groupId,
+          ...(target
+            ? {
+                goal_target: Math.round(target.dollars * 1000),
+                goal_frequency: target.frequency,
+                ...(target.dueDate ? { goal_target_date: target.dueDate } : {}),
+              }
+            : {}),
+        },
+      };
+      const data = await call("POST", `/budgets/${enc(budgetId)}/categories`, body, options);
+      const id = (data.category as { id?: unknown } | undefined)?.id;
+      if (typeof id !== "string") throw new YnabError("YNAB answered something this app cannot read.");
+      return { id };
     },
   };
 }

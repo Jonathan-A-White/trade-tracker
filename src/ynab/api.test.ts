@@ -94,6 +94,21 @@ describe("the YNAB client's transaction writes", () => {
     expect(ynab.transactions).toEqual([]);
   });
 
+  it("creates a category in a group with a monthly or a yearly target, the amount in milliunits", async () => {
+    const ynab = fakeYnab("good", [{ ...budget, categoryGroups: [groupOf("g1", "Food", [["c1", "Groceries"]])] }]);
+    const client = createYnabClient("good", ynab.fetch);
+    const monthly = await client.createCategory("b1", { name: "Cleaning supplies", groupId: "g1", target: { dollars: 40, frequency: "monthly" } });
+    expect(ynab.requests.at(-1)).toMatchObject({
+      method: "POST",
+      path: "/v1/budgets/b1/categories",
+      body: { category: { name: "Cleaning supplies", category_group_id: "g1", goal_target: 40_000, goal_frequency: "monthly" } },
+    });
+    expect((await client.categoryGroups("b1")).rows[0]?.categories.map((c) => c.id)).toContain(monthly.id);
+    await client.createCategory("b1", { name: "Home & yard", groupId: "g1", target: { dollars: 595, frequency: "yearly", dueDate: "2027-02-01" } });
+    expect(ynab.requests.at(-1)?.body).toEqual({ category: { name: "Home & yard", category_group_id: "g1", goal_target: 595_000, goal_frequency: "yearly", goal_target_date: "2027-02-01" } });
+    await expect(client.createCategory("b1", { name: "Lost", groupId: "nope" })).rejects.toBeInstanceOf(YnabError);
+  });
+
   it("puts a time limit on every call", async () => {
     const ynab = fakeYnab("good", [budget]);
     const client = createYnabClient("good", ynab.fetch);

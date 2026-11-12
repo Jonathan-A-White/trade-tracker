@@ -166,6 +166,14 @@ export function fakeYnab(token: string, budgets: FakeYnabBudget[]): FakeYnab {
       const m = /^\/budgets\/([^/]+)\/(categories|accounts|payees)$/.exec(path);
       const budget = m ? fake.budgets.find((b) => b.id === decodeURIComponent(m[1])) : undefined;
       if (!m || !budget) return reply(404, { error: { id: "404.2", name: "resource_not_found" } });
+      if (m[2] === "categories" && method === "POST") {
+        const sent = (sentBody as { category?: { name?: string; category_group_id?: string } } | undefined)?.category;
+        const group = budget.categoryGroups.find((g) => g.id === sent?.category_group_id);
+        if (!sent?.name || !group) return reply(400, { error: { id: "400", name: "bad_request" } });
+        const made = { id: `ynab-cat-${budget.categoryGroups.reduce((n, g) => n + g.categories.length, 0) + 1}`, category_group_id: group.id, name: sent.name, hidden: false, deleted: false };
+        group.categories.push(made);
+        return reply(201, { data: { category: made, server_knowledge: fake.knowledge } });
+      }
       const server_knowledge = fake.knowledge;
       if (m[2] === "categories") return reply(200, { data: { category_groups: budget.categoryGroups, server_knowledge } });
       if (m[2] === "accounts") return reply(200, { data: { accounts: budget.accounts, server_knowledge } });
