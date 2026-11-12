@@ -354,10 +354,11 @@ describe("Clean up: Always", () => {
     await user.click(within(tj).getByRole("button", { name: "Always Groceries" }));
     await waitFor(() => expect(patches()).toHaveLength(1));
     expect((patches()[0]?.body as { transactions: { id: string }[] }).transactions.map((t) => t.id)).toEqual(["tj1", "tj2"]);
-    const left = await screen.findByRole("group", { name: "Trader Joe's" });
+    // the card is redrawn with only the split and the transfer on it
+    await waitFor(() => expect(within(screen.getByRole("group", { name: "Trader Joe's" })).queryByRole("button", { name: /^Always/ })).not.toBeInTheDocument());
+    const left = screen.getByRole("group", { name: "Trader Joe's" });
     expect(within(left).getByText("Split")).toBeInTheDocument();
     expect(within(left).getByText("Transfer")).toBeInTheDocument();
-    expect(within(left).queryByRole("button", { name: /^Always/ })).not.toBeInTheDocument();
   });
 
   it("says so when the write fails, saves no rule, and a second tap works", async () => {
