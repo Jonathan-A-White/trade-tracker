@@ -16,7 +16,9 @@ import { SortProvider, type SortSeams } from "@/sort/sort-context";
 import { ME_KEY } from "@/sort/waiting";
 import { createYnabClient } from "@/ynab/api";
 import { fakeYnab, groupOf, type FakeYnab, type FakeYnabTransaction } from "@/ynab/fake-ynab";
+import { monthsBefore } from "@/ynab/budget-ideas";
 import { PayeeRuleRepository } from "@/ynab/payee-rules";
+import { day } from "@/ynab/tally";
 import { createYnabWriter } from "@/ynab/writer";
 
 vi.mock("@/move/reload", () => ({ reloadPage: vi.fn() }));
@@ -289,5 +291,95 @@ describe("Home: Approved for you (what the payee rules approved)", () => {
     renderYnabHome();
     expect(await screen.findByText("Start New Trip")).toBeInTheDocument();
     expect(screen.queryByText(/Approved for you/)).not.toBeInTheDocument();
+  });
+});
+
+describe("Home: Budget ideas", () => {
+  const monthsAgo = (months: number) => monthsBefore(day(Date.now()), months);
+  let ynab: FakeYnab;
+
+  async function connect() {
+    ynab = fakeYnab("tok", [
+      { id: "b1", name: "Our Budget", categoryGroups: [groupOf("g1", "Everyday", [["f1", "Stuff I Forgot to Budget For"], ["c2", "Groceries"]])], accounts: [], payees: [] },
+    ]);
+    await new YnabRepository().saveConnection({ budgetId: "b1", budgetName: "Our Budget" });
+    await new YnabRepository().applyCategories(ynab.budgets[0]!.categoryGroups, 1);
+    const charge = (id: string, payee: string, months: number, dollars: number): FakeYnabTransaction => ({
+      id,
+      account_id: "a1",
+      date: monthsAgo(months),
+      amount: -dollars * 1000,
+      payee_name: payee,
+      category_id: "f1",
+    });
+    // Hardware Hank: three charges in as many months; Chewy: three, and smaller
+    ynab.transactions.push(charge("t1", "Hardware Hank", 1, 60), charge("t2", "Hardware Hank", 2, 60), charge("t3", "Hardware Hank", 3, 60));
+    ynab.transactions.push(charge("t4", "Chewy", 1, 20), charge("t5", "Chewy", 2, 20), charge("t6", "Chewy", 3, 20));
+  }
+  const seams = (): SortSeams => ({ ynabClient: async () => createYnabClient("tok", ynab.fetch), suggest: null });
+
+  it("draws nothing of it while YNAB is Off, though a budget's charges are kept", async () => {
+    await connect();
+    localStorage.setItem("tradetracker-budget-ideas-charges", JSON.stringify({ budgetId: "b1", readAt: Date.now(), charges: [{ id: "t1", date: monthsAgo(1), payee: "Hardware Hank", amount: 60 }] }));
+    renderHome(seams());
+    expect(await screen.findByText("Start New Trip")).toBeInTheDocument();
+    await new Promise((resolve) => setTimeout(resolve, 50));
+    expect(screen.queryByText("Budget ideas")).not.toBeInTheDocument();
+    expect(ynab.requests).toEqual([]);
+  });
+
+  it("proposes the payee that kept landing in Stuff I Forgot to Budget For, saying what it would add", async () => {
+    await connect();
+    await setYnabOn(true);
+    renderHome(seams());
+    const card = await screen.findByRole("region", { name: "Budget ideas" });
+    const idea = await within(card).findByRole("listitem", { name: "Hardware Hank" });
+    expect(idea).toHaveTextContent("$45 a month");
+    expect(idea).toHaveTextContent("3 charges, $180.00 in the last year went to Stuff I Forgot to Budget For: Hardware Hank.");
+    expect(idea).toHaveTextContent("To add in YNAB: a category named Hardware Hank in the group Everyday, with a target of $45 a month.");
+    expect(within(idea).getByRole("button", { name: "Add" })).toBeInTheDocument();
+    expect(within(idea).getByRole("button", { name: "Not now" })).toBeInTheDocument();
+    expect(within(idea).getByRole("button", { name: "Never" })).toBeInTheDocument();
+  });
+
+  it("Add creates the category with its monthly target in YNAB and says so", async () => {
+    await connect();
+    await setYnabOn(true);
+    const user = userEvent.setup();
+    renderHome(seams());
+    const idea = await screen.findByRole("listitem", { name: "Hardware Hank" });
+    await user.click(within(idea).getByRole("button", { name: "Add" }));
+    expect(await screen.findByText("Added Hardware Hank to YNAB in the group Everyday, with a target of $45 a month.")).toBeInTheDocument();
+    const made = ynab.requests.find((r) => r.method === "POST" && r.path === "/v1/budgets/b1/categories");
+    expect(made?.body).toEqual({ category: { name: "Hardware Hank", category_group_id: "g1", goal_target: 45_000, goal_frequency: "monthly" } });
+    expect(screen.queryByRole("listitem", { name: "Hardware Hank" })).not.toBeInTheDocument();
+  });
+
+  it("when YNAB refuses, says exactly what to add by hand", async () => {
+    await connect();
+    await setYnabOn(true);
+    const user = userEvent.setup();
+    renderHome({ ynabClient: async () => ({ ...createYnabClient("tok", ynab.fetch), createCategory: async () => { throw new Error("YNAB answered 400. Try again later."); } }), suggest: null });
+    const idea = await screen.findByRole("listitem", { name: "Hardware Hank" });
+    await user.click(within(idea).getByRole("button", { name: "Add" }));
+    const alert = await screen.findByRole("alert");
+    expect(alert).toHaveTextContent("Could not add it in YNAB (YNAB answered 400. Try again later.). To add in YNAB: a category named Hardware Hank in the group Everyday, with a target of $45 a month.");
+    expect(screen.getByRole("listitem", { name: "Hardware Hank" })).toBeInTheDocument();
+  });
+
+  it("Not now hides an idea, Never hides another, and they stay hidden after Home is drawn again", async () => {
+    await connect();
+    await setYnabOn(true);
+    const user = userEvent.setup();
+    const first = renderHome(seams());
+    await user.click(within(await screen.findByRole("listitem", { name: "Hardware Hank" })).getByRole("button", { name: "Not now" }));
+    expect(screen.queryByRole("listitem", { name: "Hardware Hank" })).not.toBeInTheDocument();
+    await user.click(within(screen.getByRole("listitem", { name: "Chewy" })).getByRole("button", { name: "Never" }));
+    await waitFor(() => expect(screen.queryByRole("region", { name: "Budget ideas" })).not.toBeInTheDocument());
+    first.unmount();
+    renderHome(seams());
+    expect(await screen.findByText("Start New Trip")).toBeInTheDocument();
+    await new Promise((resolve) => setTimeout(resolve, 50));
+    expect(screen.queryByRole("region", { name: "Budget ideas" })).not.toBeInTheDocument();
   });
 });

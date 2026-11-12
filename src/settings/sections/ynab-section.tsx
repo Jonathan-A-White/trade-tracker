@@ -8,9 +8,11 @@ import { YnabRepository } from "@/db/repositories/ynab-repository";
 import { browserStorage } from "@/services/factory-service";
 import { YnabRefusedError, createYnabClient } from "@/ynab/api";
 import { connectBudget, refreshCache } from "@/ynab/cache";
+import { readIdeaSettings, writeIdeaSettings } from "@/ynab/budget-ideas";
 import { disconnectYnab } from "@/ynab/disconnect";
 import { openToken, sealToken } from "@/ynab/token";
 import type { YnabBudgetSummary } from "@/ynab/types";
+import { SettingRow } from "../setting-row";
 import { setYnabOn, useYnabOn } from "../connections";
 import { SETTINGS_PATH } from "../registry";
 import { OUTLINE_BUTTON_CLASS, ErrorNote, SectionCard, SectionNote } from "../parts";
@@ -35,6 +37,9 @@ export function YnabSection() {
   const [budgets, setBudgets] = useState<YnabBudgetSummary[] | null>(null);
   const [busy, setBusy] = useState(false);
   const [error, setError] = useState<string | null>(null);
+  const [ideas, setIdeas] = useState(readIdeaSettings);
+  // what is typed in the two fields, kept as typed so a field can be cleared and retyped; only a valid number is saved
+  const [typed, setTyped] = useState(() => ({ spend: String(ideas.minSpend), charges: String(ideas.minCharges) }));
 
   const connected = on && !!connection;
   const switchedOn = connected || setup;
@@ -209,6 +214,48 @@ export function YnabSection() {
         </button>
       )}
       {connected && !unlocked && <SectionNote>Unlock the key under Factory to refresh.</SectionNote>}
+
+      <SettingRow settingKey="ideas-spend">
+        <label className="block space-y-1">
+          <span className="text-xs text-gray-600 dark:text-gray-400">Budget ideas: dollars a year</span>
+          <input
+            type="number"
+            inputMode="decimal"
+            min={1}
+            value={typed.spend}
+            onChange={(e) => {
+              setTyped({ ...typed, spend: e.target.value });
+              const minSpend = Number(e.target.value);
+              if (!(minSpend > 0)) return;
+              const next = { ...ideas, minSpend };
+              setIdeas(next);
+              writeIdeaSettings(next);
+            }}
+            className={INPUT_CLASS}
+          />
+        </label>
+      </SettingRow>
+      <SettingRow settingKey="ideas-charges">
+        <label className="block space-y-1">
+          <span className="text-xs text-gray-600 dark:text-gray-400">Budget ideas: charges</span>
+          <input
+            type="number"
+            inputMode="numeric"
+            min={1}
+            step={1}
+            value={typed.charges}
+            onChange={(e) => {
+              setTyped({ ...typed, charges: e.target.value });
+              const minCharges = Math.floor(Number(e.target.value));
+              if (!(minCharges >= 1)) return;
+              const next = { ...ideas, minCharges };
+              setIdeas(next);
+              writeIdeaSettings(next);
+            }}
+            className={INPUT_CLASS}
+          />
+        </label>
+      </SettingRow>
 
       {error && <ErrorNote>{error}</ErrorNote>}
     </SectionCard>

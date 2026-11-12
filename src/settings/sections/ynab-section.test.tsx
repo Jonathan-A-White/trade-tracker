@@ -66,6 +66,20 @@ describe("Settings > YNAB", () => {
   });
   afterEach(() => vi.unstubAllGlobals());
 
+  it("keeps the two Budget ideas thresholds as typed, starting at 150 dollars and 3 charges", async () => {
+    const user = userEvent.setup();
+    renderSettings();
+    const spend = await screen.findByLabelText("Budget ideas: dollars a year");
+    const charges = screen.getByLabelText("Budget ideas: charges");
+    expect(spend).toHaveValue(150);
+    expect(charges).toHaveValue(3);
+    await user.clear(spend);
+    await user.type(spend, "200");
+    await user.clear(charges);
+    await user.type(charges, "5");
+    expect(JSON.parse(localStorage.getItem("tradetracker-budget-ideas-settings")!)).toEqual({ minSpend: 200, minCharges: 5 });
+  });
+
   it("with no key yet, turning it on says to make the key first, and Check waits", async () => {
     const user = userEvent.setup();
     renderSettings();

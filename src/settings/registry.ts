@@ -90,6 +90,20 @@ export const ROWS: readonly SettingsRow<SectionId>[] = rowsInOrder<SectionId, Se
     help: "Off until you turn it on. It needs a Personal Access Token from YNAB (app.ynab.com > Account Settings > Developer Settings > New Token); the token is kept sealed under your key on this device, and the budget's categories, accounts and payees are copied here.",
   },
   {
+    key: "ideas-spend",
+    section: "ynab",
+    label: "Budget ideas: dollars a year",
+    hint: "A kind of spend is proposed as a category once it passes this many dollars over the last twelve months.",
+    help: "Budget ideas looks at what went to Stuff I Forgot to Budget For. A group is proposed when it passes this many dollars over twelve months, or the number of charges below. Default 150.",
+  },
+  {
+    key: "ideas-charges",
+    section: "ynab",
+    label: "Budget ideas: charges",
+    hint: "...or once it has this many charges.",
+    help: "A group is proposed when it passes the dollars above over twelve months, or this many charges. Default 3.",
+  },
+  {
     key: "family",
     section: "family",
     label: "Family",

@@ -10,6 +10,7 @@ import { useYnabOn } from "@/settings/connections";
 import { useFamilyFeed } from "@/sort/sort-context";
 import { ApprovedForYou } from "@/sort/ApprovedForYou";
 import { WaitingCard } from "@/sort/WaitingCard";
+import { BudgetIdeas } from "@/ynab/BudgetIdeas";
 
 export function HomePage() {
   const family = useFamilyFeed();
@@ -100,6 +101,8 @@ export function HomePage() {
             Clean up
           </Link>
         )}
+
+        <BudgetIdeas />
 
         {activeTrip ? (
           <Link
