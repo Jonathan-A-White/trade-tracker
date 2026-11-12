@@ -1,6 +1,6 @@
 // The Clean up screen's rules: YNAB's unapproved transactions, each given the category its payee usually goes to and how sure that is.
 // Sure is the only word that pre-ticks: the payee's last SURE_FROM categorized, approved transactions in YNAB all used one category.
-// Nothing here writes; the writer's approve() does, on his tap.
+// Nothing here writes; the writer's approve() does, on his tap (or, for a payee with a rule, src/ynab/payee-rules.ts before this lists it).
 import type { YnabCategory } from "@/contracts/types";
 import { YnabRepository } from "@/db/repositories/ynab-repository";
 import { fallbackCategory, seenCategoryIds, suggestAtOnce } from "@/sort/suggest";
@@ -95,6 +95,8 @@ export interface CleanupItem {
   memo: string;
   /** the category it is to go to; null while none is chosen */
   categoryId: string | null;
+  /** the category YNAB holds for it now (null: none); what an undo puts back */
+  ynabCategoryId: string | null;
   /** set when its category cannot be changed here (a split, a transfer, a category not on offer): what to call it */
   fixedLabel?: string;
   confidence: Confidence;
@@ -133,7 +135,7 @@ export function buildItems(rows: readonly YnabTransactionWire[], context: Cleanu
     .sort((a, b) => (a.date < b.date ? -1 : a.date > b.date ? 1 : a.id! < b.id! ? -1 : 1))
     .map((row): CleanupItem => {
       const payee = row.payee_name?.trim() || "No payee";
-      const base = { id: row.id!, date: row.date, payee, key: payeeKey(payee), amount: row.amount / 1000, memo: row.memo?.trim() ?? "", seen: [] as string[], open: false };
+      const base = { id: row.id!, date: row.date, payee, key: payeeKey(payee), amount: row.amount / 1000, memo: row.memo?.trim() ?? "", ynabCategoryId: row.category_id ?? null, seen: [] as string[], open: false };
       if (row.subtransactions && row.subtransactions.length > 0) {
         return { ...base, categoryId: null, fixedLabel: "Split", confidence: "unsure", why: "Split in YNAB.", ticked: false };
       }
@@ -186,13 +188,27 @@ export function pageAfter<T>(items: readonly T[], start: number): T[] {
   return items.slice(start, start + CLEANUP_PAGE);
 }
 
-/** What the screen is built from: the categories on offer and every unapproved transaction as an item, oldest first. */
-export async function loadCleanup(client: YnabClient, budgetId: string, now: number = Date.now()): Promise<{ items: CleanupItem[]; categories: YnabCategory[] }> {
-  const all = await new YnabRepository().listCategories();
-  const notCounted = new Set(all.filter((c) => c.groupName === INTERNAL_GROUP).map((c) => c.id));
-  const categories = all.filter((c) => !c.hidden && c.groupName !== INTERNAL_GROUP);
+/** The categories on offer (not hidden, not YNAB's own) and the ids of YNAB's own (Uncategorized, Inflow), from the cached list. */
+export function offeredCategories(all: readonly YnabCategory[]): { categories: YnabCategory[]; notCounted: Set<string> } {
+  return {
+    notCounted: new Set(all.filter((c) => c.groupName === INTERNAL_GROUP).map((c) => c.id)),
+    categories: all.filter((c) => !c.hidden && c.groupName !== INTERNAL_GROUP),
+  };
+}
+
+/**
+ * What the screen is built from: the categories on offer and every unapproved transaction as an item, oldest first. The unapproved
+ * ones are read here unless the caller has them (src/ynab/payee-rules.ts reads them and approves the payee rules' first).
+ */
+export async function loadCleanup(
+  client: YnabClient,
+  budgetId: string,
+  now: number = Date.now(),
+  read?: readonly YnabTransactionWire[],
+): Promise<{ items: CleanupItem[]; categories: YnabCategory[] }> {
+  const { categories, notCounted } = offeredCategories(await new YnabRepository().listCategories());
   const [unapproved, past] = await Promise.all([
-    client.unapprovedTransactions(budgetId),
+    read ?? client.unapprovedTransactions(budgetId),
     client.transactionsSince(budgetId, day(now - TALLY_WINDOW_DAYS * 24 * 60 * 60_000)),
   ]);
   const tally = readTally();
