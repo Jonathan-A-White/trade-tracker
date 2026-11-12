@@ -312,6 +312,25 @@ export interface YnabApproval {
   categoryId?: string;
 }
 
+/** A transaction to put back as it was before an approval: unapproved, in its old category (null: it had none). */
+export interface YnabRestore {
+  id: string;
+  categoryId: string | null;
+}
+
+/** A payee rule: unapproved transactions of this payee in the connected budget are approved into `categoryId` as they are read. */
+export interface YnabPayeeRule {
+  /** the payee's key (src/ynab/cleanup.ts payeeKey) */
+  key: string;
+  budgetId: string;
+  /** the payee as YNAB names it, for the list */
+  payee: string;
+  categoryId: string;
+  createdAt: number;
+  /** how many transactions the rule has approved */
+  approved: number;
+}
+
 /** One write waiting in the YNAB outbox. `localId` names the transaction in this app (and is its marker in YNAB's memo). */
 export type YnabWrite =
   | { kind: "create"; localId: string; transaction: YnabTransactionInput }

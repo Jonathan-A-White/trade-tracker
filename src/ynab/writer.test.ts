@@ -457,3 +457,30 @@ describe("the YNAB writer: approve", () => {
     await expect(writer.approve([{ id: "u1" }])).rejects.toThrow(/key is locked/);
   });
 });
+
+describe("the YNAB writer: restore", () => {
+  it("puts approved transactions back unapproved in their old category, in one PATCH", async () => {
+    await setup();
+    ynab.transactions.push(
+      { id: "u1", account_id: "a1", date: "2026-10-01", amount: -1000, payee_name: "A", approved: true, category_id: "c1" },
+      { id: "u2", account_id: "a1", date: "2026-10-02", amount: -2000, payee_name: "A", approved: true, category_id: "c1" },
+    );
+    await writer.restore([{ id: "u1", categoryId: "c2" }, { id: "u2", categoryId: null }]);
+    const patches = ynab.requests.filter((r) => r.method === "PATCH");
+    expect(patches).toHaveLength(1);
+    expect(patches[0]?.body).toEqual({
+      transactions: [{ id: "u1", category_id: "c2", approved: false }, { id: "u2", category_id: null, approved: false }],
+    });
+    expect(ynab.transactions.map((t) => [t.approved, t.category_id])).toEqual([[false, "c2"], [false, null]]);
+  });
+
+  it("sends nothing for an empty list and rejects when YNAB refuses", async () => {
+    await setup();
+    ynab.transactions.push({ id: "u1", account_id: "a1", date: "2026-10-01", amount: -1000, approved: true, category_id: "c1" });
+    await writer.restore([]);
+    expect(ynab.requests.filter((r) => r.method === "PATCH")).toHaveLength(0);
+    ynab.failNextBulk = 500;
+    await expect(writer.restore([{ id: "u1", categoryId: null }])).rejects.toThrow();
+    expect(ynab.transactions[0]?.approved).toBe(true);
+  });
+});

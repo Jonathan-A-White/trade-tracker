@@ -2,9 +2,9 @@ import { createOutbox, PermanentSendError } from "pwa-kit/outbox";
 import type { Outbox, OutboxItem, OutboxPage, OutboxStatus } from "pwa-kit/outbox";
 import { YnabOutboxRepository } from "@/db/repositories/ynab-outbox-repository";
 import { YnabRepository } from "@/db/repositories/ynab-repository";
-import type { YnabApproval, YnabTransactionInput, YnabWrite } from "@/contracts/types";
+import type { YnabApproval, YnabRestore, YnabTransactionInput, YnabWrite } from "@/contracts/types";
 import { YnabError, YnabNotFoundError, YnabRateLimitedError, YnabRefusedError, type YnabClient } from "./api";
-import type { YnabTransactionWire } from "./types";
+import type { YnabTransactionPatch, YnabTransactionWire } from "./types";
 
 /** Where the end of YNAB's rate-limit wait is kept (device-only, so a reload still waits). */
 export const YNAB_BUSY_KEY = "tradetracker-ynab-busy-until";
@@ -55,6 +55,8 @@ export interface YnabWriter {
    * While YNAB's hour is used up it rejects with the busy line and sends nothing.
    */
   approve(approvals: readonly YnabApproval[]): Promise<void>;
+  /** Puts approved transactions back as they were (unapproved, in their old category), in one PATCH; awaited and unqueued like approve. */
+  restore(restores: readonly YnabRestore[]): Promise<void>;
   retry(clientId: string): Promise<void>;
   discard(clientId: string): Promise<void>;
   status(): Promise<OutboxStatus>;
@@ -191,6 +193,28 @@ export function createYnabWriter(options: YnabWriterOptions): YnabWriter {
     }
   }
 
+  /** One awaited PATCH of existing transactions (approve, restore): a failure rejects with its plain sentence and nothing is kept to try again. */
+  async function patchBulk(patches: YnabTransactionPatch[]): Promise<void> {
+    if (patches.length === 0) return;
+    const until = busyUntil();
+    if (until > Date.now()) throw new Error(busyLine(until));
+    if (until) storage?.removeItem(YNAB_BUSY_KEY);
+    const connection = await connections.getConnection();
+    if (!connection) throw new Error("YNAB is not connected.");
+    const client = await options.getClient();
+    if (!client) throw new Error("The key is locked, so the YNAB token cannot be opened.");
+    try {
+      await client.updateTransactions(connection.budgetId, patches);
+    } catch (err) {
+      if (err instanceof YnabRateLimitedError) throw beBusy(err.retryAfterMs);
+      if (err instanceof YnabNotFoundError) throw new Error("One of those is no longer in YNAB. Open Clean up again.");
+      if (err instanceof YnabError && err.status !== undefined && err.status >= 400 && err.status < 500) {
+        throw new Error(`YNAB did not accept these (${err.status}).`);
+      }
+      throw err;
+    }
+  }
+
   const outbox = createOutbox<YnabWrite>({
     table: repo.table,
     sender: (item, { signal }) => send(item, signal),
@@ -227,27 +251,14 @@ export function createYnabWriter(options: YnabWriterOptions): YnabWriter {
       await outbox.enqueue({ kind: "delete", localId });
     },
     async approve(approvals) {
-      if (approvals.length === 0) return;
-      const until = busyUntil();
-      if (until > Date.now()) throw new Error(busyLine(until));
-      if (until) storage?.removeItem(YNAB_BUSY_KEY);
-      const connection = await connections.getConnection();
-      if (!connection) throw new Error("YNAB is not connected.");
-      const client = await options.getClient();
-      if (!client) throw new Error("The key is locked, so the YNAB token cannot be opened.");
-      try {
-        await client.updateTransactions(
-          connection.budgetId,
-          approvals.map((a) => ({ id: a.id, ...(a.categoryId ? { category_id: a.categoryId } : {}), approved: true })),
-        );
-      } catch (err) {
-        if (err instanceof YnabRateLimitedError) throw beBusy(err.retryAfterMs);
-        if (err instanceof YnabNotFoundError) throw new Error("One of those is no longer in YNAB. Open Clean up again.");
-        if (err instanceof YnabError && err.status !== undefined && err.status >= 400 && err.status < 500) {
-          throw new Error(`YNAB did not accept these (${err.status}).`);
-        }
-        throw err;
-      }
+      await patchBulk(
+        approvals.map((a) => ({ id: a.id, ...(a.categoryId ? { category_id: a.categoryId } : {}), approved: true })),
+      );
+    },
+    async restore(restores) {
+      await patchBulk(
+        restores.map((r) => ({ id: r.id, category_id: r.categoryId, approved: false })),
+      );
     },
     retry: (clientId) => outbox.retry(clientId),
     discard: (clientId) => outbox.discard(clientId),

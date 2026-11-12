@@ -12,6 +12,7 @@ import type {
   YnabPayee,
   YnabOutboxItem,
   YnabLink,
+  YnabPayeeRule,
   FamilyCard,
 } from "../contracts/types";
 
@@ -28,6 +29,7 @@ export class TradeTrackerDB extends Dexie {
   ynabPayees!: EntityTable<YnabPayee, "id">;
   ynabOutbox!: EntityTable<YnabOutboxItem, "clientId">;
   ynabLinks!: EntityTable<YnabLink, "localId">;
+  ynabPayeeRules!: EntityTable<YnabPayeeRule, "key">;
   familyCards!: EntityTable<FamilyCard, "id">;
 
   constructor() {
@@ -91,6 +93,11 @@ export class TradeTrackerDB extends Dexie {
     // Version 11: the family's cards (a card's last four, whose it is, the YNAB account it maps to); one card per last four.
     this.version(11).stores({
       familyCards: "id, &lastFour",
+    });
+
+    // Version 12: the payee rules (Clean up's "Always"): a payee's key, the category its unapproved transactions are approved into.
+    this.version(12).stores({
+      ynabPayeeRules: "key, budgetId",
     });
   }
 }
