@@ -431,3 +431,30 @@ describe("Food and Household only where the merchant has been seen (his words, 2
     expect([...seenCategoryIds("Never Seen", budget, tally)]).toEqual([]);
   });
 });
+
+describe("askKind: what a payee's spend is for", () => {
+  it("asks the sort-charge guesser with the kinds of spend as the categories, and answers the kind", async () => {
+    const { askKind, SPEND_KINDS } = await import("./suggest");
+    const seen: SortChargeRequest[] = [];
+    const kind = await askKind("Puracy Naturals", async (request) => {
+      seen.push(request);
+      return { category: "cleaning supplies", why: "Puracy makes household cleaners." };
+    });
+    expect(kind).toBe("Cleaning supplies");
+    expect(seen[0]!.merchant).toBe("Puracy Naturals");
+    expect(seen[0]!.categories.map((c) => c.name)).toEqual([...SPEND_KINDS]);
+    expect(seen[0]!.tally).toEqual([]);
+  });
+
+  it("answers null for Other, for a name that is no kind, and for an answer with no why", async () => {
+    const { askKind } = await import("./suggest");
+    expect(await askKind("X", async () => ({ category: "Other", why: "No idea." }))).toBeNull();
+    expect(await askKind("X", async () => ({ category: "Groceries", why: "Food." }))).toBeNull();
+    expect(await askKind("X", async () => ({ category: "Pet care", why: "" }))).toBeNull();
+  });
+
+  it("lets a refusal through, so the caller can stop asking", async () => {
+    const { askKind } = await import("./suggest");
+    await expect(askKind("X", async () => { throw new NotAllowed("unlicensed"); })).rejects.toBeInstanceOf(NotAllowed);
+  });
+});

@@ -378,3 +378,23 @@ export function resolveGrouping(answer: SortChargeAnswer, categories: readonly Y
   const categoryId = answer.category ? idOf(answer.category) : undefined;
   return categoryId === undefined ? null : { why, grouping: { categoryId } };
 }
+
+// --- what a payee's spend is for -------------------------------------------------------------------------------------------
+
+/**
+ * The kinds of spend Budget ideas groups payees by (src/ynab/budget-ideas.ts): by what a spend is for, not by brand. The sort-charge
+ * grind is asked which of these a payee is, as if they were the categories on offer; "Other" means none fits and the payee stands alone.
+ */
+export const SPEND_KINDS = ["Cleaning supplies", "Home & yard", "Home repair", "Pet care", "Gifts", "Clothing", "Health & beauty", "Car", "Kids", "Electronics", "Hobbies", "Other"] as const;
+export const OTHER_KIND = "Other";
+
+const KIND_CATEGORIES: readonly YnabCategory[] = SPEND_KINDS.map((name) => ({ id: `kind:${name}`, groupId: "kinds", groupName: "Kinds of spend", name, hidden: false }));
+
+/** What a payee's spend is for, in the words of SPEND_KINDS, asked of the same guesser; null when it says Other or cannot be used. */
+export async function askKind(payee: string, ask: SortChargeAsk, signal?: AbortSignal): Promise<string | null> {
+  const answer = await ask(buildRequest({ merchant: payee, amount: 1 }, KIND_CATEGORIES, [], undefined, null), signal);
+  const found = resolveSuggestion(answer, KIND_CATEGORIES, 1);
+  if (!found || !("categoryId" in found)) return null;
+  const kind = KIND_CATEGORIES.find((c) => c.id === found.categoryId)?.name;
+  return kind && kind !== OTHER_KIND ? kind : null;
+}
