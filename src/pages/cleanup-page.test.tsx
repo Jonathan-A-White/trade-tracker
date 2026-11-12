@@ -780,6 +780,24 @@ describe("Clean up: a transfer says what moved (his words, 2026-11-12: 'transfer
     expect(screen.getByRole("button", { name: "Approve 0" })).toBeDisabled();
   });
 
+  it("leaves the category YNAB holds on the budget side of a move to a tracking account untouched when approved", async () => {
+    const user = userEvent.setup();
+    ynab.budgets[0]!.accounts = [accountOf("pnc", "PNC Checking"), accountOf("inv", "Brokerage", "otherAsset", false)];
+    ynab.transactions.push(
+      unapproved("Transfer : Brokerage", "c1", "2026-02-17", { id: "tr1", account_id: "pnc", amount: -250_000, category_name: "Groceries", transfer_account_id: "inv", transfer_transaction_id: "tr2" }),
+      row("Transfer : PNC Checking", null, "2026-02-17", { id: "tr2", account_id: "inv", amount: 250_000, transfer_account_id: "pnc", transfer_transaction_id: "tr1" }),
+    );
+    renderPage();
+    const card = await screen.findByRole("group", { name: "Transfer : Brokerage" });
+    expect(within(card).getByText("Tracking account move: $250.00 from PNC Checking to Brokerage, 2026-02-17")).toBeInTheDocument();
+    expect(within(card).queryByRole("combobox")).not.toBeInTheDocument();
+    expect(within(card).getByRole("checkbox", { name: "Approve $250.00 on 2026-02-17" })).toBeChecked();
+    await user.click(screen.getByRole("button", { name: "Approve 1" }));
+    await waitFor(() => expect(patches()).toHaveLength(1));
+    expect((patches()[0]?.body as { transactions: unknown[] }).transactions).toEqual([{ id: "tr1", approved: true }]);
+    expect(byId("tr1")).toMatchObject({ approved: true, category_id: "c1" });
+  });
+
   it("says a savings move and a loan payment in their own words", async () => {
     ynab.budgets[0]!.accounts = [accountOf("pnc", "PNC Checking"), accountOf("sav", "Ally Savings", "savings"), accountOf("mtg", "Home Mortgage", "mortgage", false)];
     ynab.transactions.push(

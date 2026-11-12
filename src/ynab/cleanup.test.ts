@@ -3,7 +3,7 @@ import { db } from "@/db/database";
 import { YnabRepository } from "@/db/repositories/ynab-repository";
 import { createYnabClient } from "./api";
 import { CLEANUP_PAGE, SURE_FROM, buildItems, checkNumberOf, groupPage, loadCleanup, offeredCategories, pageAfter, payeeHistory, suggestForPayee, withHeldNotes } from "./cleanup";
-import { fakeYnab, groupOf } from "./fake-ynab";
+import { accountOf, fakeYnab, groupOf, type FakeYnabTransaction } from "./fake-ynab";
 import type { YnabTransactionWire } from "./types";
 
 const cat = (id: string, name: string, groupName = "Food"): YnabCategory => ({ id, groupId: groupName, groupName, name, hidden: false });
@@ -436,5 +436,79 @@ describe("a charge a payee rule held because its category lacks the money", () =
     expect(one!.note).toBe("Held for you: Groceries is short by $7.50 for this.");
     expect(two!.note).toBe("Held for you: Groceries is short by $1,234.50 for this. Already in Groceries in YNAB; only needs approving");
     expect(other!.note).toBeUndefined();
+  });
+});
+
+describe("both sides of a transfer are a transfer (his words, 2026-11-12: 'make sure transfers are treated appropriately on both sides')", () => {
+  const groups = [
+    groupOf("gi", "Internal Master Category", [["unc", "Uncategorized"], ["rta", "Inflow: Ready to Assign"]]),
+    groupOf("g1", "Food", [["c1", "Groceries"]]),
+    groupOf("g3", "Surprises", [["c4", "Stuff I Forgot to Budget For"]]),
+  ];
+  // the Governor's example: $6,925.28 from PNC Checking to Citi Double Cash on 2026-02-17, both sides unapproved
+  const outflow = { id: "pnc1", account_id: "pnc", date: "2026-02-17", amount: -6_925_280, payee_name: "Transfer : Citi Double Cash", category_id: null, approved: false, transfer_account_id: "citi", transfer_transaction_id: "citi1" };
+  const inflow = { id: "citi1", account_id: "citi", date: "2026-02-17", amount: 6_925_280, payee_name: "Transfer : PNC Checking", category_id: null, approved: false, transfer_account_id: "pnc", transfer_transaction_id: "pnc1" };
+
+  beforeEach(async () => {
+    await Promise.all(db.tables.map((t) => t.clear()));
+    const repo = new YnabRepository();
+    await repo.saveConnection({ budgetId: "b1", budgetName: "Our Budget" });
+    await repo.applyCategories(groups, 1);
+    await repo.applyAccounts([accountOf("pnc", "PNC Checking"), accountOf("citi", "Citi Double Cash", "creditCard"), accountOf("inv", "Brokerage", "otherAsset", false)], 1);
+  });
+
+  const load = async (rows: object[]) => {
+    const ynab = fakeYnab("good", [{ id: "b1", name: "Our Budget", categoryGroups: groups, accounts: [], payees: [] }]);
+    ynab.transactions.push(...(rows as FakeYnabTransaction[]));
+    return loadCleanup(createYnabClient("good", ynab.fetch), "b1", Date.parse("2026-11-12"));
+  };
+
+  it("lists the credit card payment's outflow and inflow as a fixed Transfer: no category, unticked, never Ready to Assign", async () => {
+    const { items } = await load([outflow, inflow]);
+    expect(items.map((i) => i.id).sort()).toEqual(["citi1", "pnc1"]);
+    for (const item of items) {
+      expect(item).toMatchObject({ fixedLabel: "Transfer", categoryId: null, ticked: false, open: false });
+      expect(item.note).toBe("Credit card payment: $6,925.28 from PNC Checking to Citi Double Cash, 2026-02-17");
+    }
+  });
+
+  it("does not ask the AI for either side: neither is open, and the fallback and Ready to Assign are not chosen", async () => {
+    const { items, categories } = await load([outflow, inflow]);
+    expect(items.every((i) => !i.open && i.categoryId !== "c4" && i.categoryId !== "rta")).toBe(true);
+    // the inflow category is on offer for money in, but a transfer's inflow is not offered it
+    expect(categories.map((c) => c.id)).toContain("rta");
+    expect(items.find((i) => i.id === "citi1")!.seen).toEqual([]);
+  });
+
+  it("is a transfer whether or not the other side is read, and whatever the payee text says", async () => {
+    const { items } = await load([{ ...inflow, payee_name: "Citi Double Cash", transfer_transaction_id: null }]);
+    expect(items[0]).toMatchObject({ fixedLabel: "Transfer", categoryId: null, ticked: false, confidence: "unsure" });
+  });
+
+  it("counts neither side toward any payee's earlier charges or inflows", () => {
+    const rows = [
+      { ...tx("Citi Double Cash", "c1", "2026-01-01"), transfer_account_id: "pnc" },
+      { ...tx("Citi Double Cash", "c1", "2026-01-02"), transfer_account_id: "pnc" },
+      { ...tx("Citi Double Cash", "c1", "2026-01-03"), transfer_account_id: "pnc" },
+      { ...tx("Citi Double Cash", "rta", "2026-01-04", { amount: 50_000 }), transfer_account_id: "pnc" },
+      { ...tx("Citi Double Cash", "rta", "2026-01-05", { amount: 50_000 }), transfer_account_id: "pnc" },
+    ];
+    const history = payeeHistory(rows, none);
+    expect(history.size).toBe(0);
+    // so an ordinary payee of the same name learns nothing from them
+    const [charge, refund] = buildItems(
+      [tx("Citi Double Cash", null, "2026-02-01", { id: "x1", approved: false }), tx("Citi Double Cash", null, "2026-02-02", { id: "x2", approved: false, amount: 5_000 })],
+      { categories: [...categories, cat("rta", "Inflow: Ready to Assign", "Internal Master Category")], history, tally: null, notCounted: none },
+    );
+    expect(charge).toMatchObject({ categoryId: "c4", confidence: "unsure", ticked: false });
+    expect(refund).toMatchObject({ categoryId: "rta", confidence: "unsure", ticked: false });
+  });
+
+  it("keeps YNAB's own category on the budget side of a move to a tracking account, and does not force it to none", async () => {
+    // YNAB lets a budget account's side of a move to an off-budget account carry a category
+    const toTracking = { ...outflow, id: "tr1", payee_name: "Transfer : Brokerage", category_id: "c1", category_name: "Groceries", transfer_account_id: "inv", transfer_transaction_id: null };
+    const { items } = await load([toTracking]);
+    expect(items[0]).toMatchObject({ fixedLabel: "Transfer", categoryId: null, ynabCategoryId: "c1", ticked: false });
+    expect(items[0]!.note).toBe("Tracking account move: $6,925.28 from PNC Checking to Brokerage, 2026-02-17");
   });
 });
