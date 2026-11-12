@@ -1,5 +1,5 @@
 import type { YnabCategory } from "@/contracts/types";
-import { CLEANUP_PAGE, SURE_FROM, buildItems, groupPage, pageAfter, payeeHistory, suggestForPayee } from "./cleanup";
+import { CLEANUP_PAGE, SURE_FROM, buildItems, checkNumberOf, groupPage, pageAfter, payeeHistory, suggestForPayee } from "./cleanup";
 import type { YnabTransactionWire } from "./types";
 
 const cat = (id: string, name: string, groupName = "Food"): YnabCategory => ({ id, groupId: groupName, groupName, name, hidden: false });
@@ -143,5 +143,47 @@ describe("the cleanup's rules", () => {
     expect(pageAfter(items, 0).map((i) => i.id)).toHaveLength(20);
     expect(pageAfter(items, 40).map((i) => i.id)).toEqual(["i40", "i41", "i42", "i43", "i44"]);
     expect(pageAfter(items, 45)).toEqual([]);
+  });
+});
+
+describe("checks (his words, 2026-11-12)", () => {
+  const ctx = { categories, history: payeeHistory([], none), tally: null, notCounted: none };
+
+  it("knows a check by its payee text: CHECK <number>, as YNAB writes it from the bank", () => {
+    expect(checkNumberOf("CHECK 1089 *8368")).toBe("1089");
+    expect(checkNumberOf("  check 77")).toBe("77");
+    expect(checkNumberOf("Check #1090 *8368")).toBe("1090");
+    expect(checkNumberOf("Checkers Drive-In")).toBeNull();
+    expect(checkNumberOf("Trader Joe's")).toBeNull();
+    expect(checkNumberOf("Check Into Cash")).toBeNull();
+  });
+
+  it("sorts checks after every other transaction, even an older one, and each check is its own card", () => {
+    const rows = [
+      tx("CHECK 1089 *8368", null, "2026-01-22", { approved: false, id: "k1" }),
+      tx("CHECK 1090 *8368", null, "2026-01-23", { approved: false, id: "k2" }),
+      tx("CHECK 1089 *8368", null, "2026-02-01", { approved: false, id: "k3" }),
+      tx("Mystery", null, "2026-10-03", { approved: false }),
+      tx("Shell", null, "2026-10-04", { approved: false }),
+    ];
+    const items = buildItems(rows, ctx);
+    expect(items.map((i) => i.payee)).toEqual(["Mystery", "Shell", "CHECK 1089 *8368", "CHECK 1090 *8368", "CHECK 1089 *8368"]);
+    expect(items.map((i) => i.check)).toEqual([undefined, undefined, "1089", "1090", "1089"]);
+    const groups = groupPage(items);
+    expect(groups.map((g) => [g.payee, g.items.length])).toEqual([
+      ["Mystery", 1],
+      ["Shell", 1],
+      ["CHECK 1089 *8368", 1],
+      ["CHECK 1090 *8368", 1],
+      ["CHECK 1089 *8368", 1],
+    ]);
+    expect(new Set(groups.map((g) => g.key)).size).toBe(5);
+  });
+
+  it("keeps a check with a sure group last too, and never learns a payee from a check's history", () => {
+    const history = payeeHistory([tx("CHECK 1089 *8368", "c1", "2026-09-01"), tx("CHECK 1089 *8368", "c1", "2026-09-02"), tx("CHECK 1089 *8368", "c1", "2026-09-03")], none);
+    expect(history.size).toBe(0);
+    const [check] = buildItems([tx("CHECK 1089 *8368", null, "2026-01-22", { approved: false })], { ...ctx, history });
+    expect(check).toMatchObject({ categoryId: "c4", confidence: "unsure", ticked: false, open: false });
   });
 });

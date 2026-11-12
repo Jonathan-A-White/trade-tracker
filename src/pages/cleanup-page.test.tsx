@@ -1,4 +1,4 @@
-import { render, screen, waitFor, within } from "@testing-library/react";
+import { fireEvent, render, screen, waitFor, within } from "@testing-library/react";
 import userEvent from "@testing-library/user-event";
 import { MemoryRouter, useRoutes } from "react-router";
 import { tapSettings } from "pwa-kit/tap";
@@ -13,7 +13,11 @@ import { SortProvider, type SortSeams } from "@/sort/sort-context";
 import type { SortChargeAsk } from "@/sort/suggest";
 import { createYnabClient } from "@/ynab/api";
 import { fakeYnab, groupOf, type FakeYnab, type FakeYnabTransaction } from "@/ynab/fake-ynab";
+import type { CheckReader } from "@/ynab/check-read";
 import { YNAB_BUSY_KEY, createYnabWriter } from "@/ynab/writer";
+
+// the browser's canvas makes the JPEG; here the picture is kept as it came
+vi.mock("@/scanner/capture-still", async (original) => ({ ...(await original<typeof import("@/scanner/capture-still")>()), stillFromFile: async (file: Blob) => file }));
 
 const noWebAuthn: PasskeyPort = {
   isAvailable: () => false,
@@ -488,5 +492,165 @@ describe("Clean up: Always", () => {
     renderPage();
     expect(await screen.findByRole("group", { name: "Trader Joe's" })).toBeInTheDocument();
     expect(patches()).toHaveLength(1);
+  });
+});
+
+describe("Clean up: the Checks pile (his words, 2026-11-12)", () => {
+  const jpeg = () => new File([new Uint8Array([1, 2, 3])], "check.jpg", { type: "image/jpeg" });
+  const checks = () =>
+    ynab.transactions.push(
+      unapproved("CHECK 1089 *8368", null, "2026-01-22", { id: "ck1", amount: -15_000 }),
+      unapproved("CHECK 1090 *8368", null, "2026-01-23", { id: "ck2", amount: -40_000 }),
+    );
+  const diner: CheckReader = async () => ({ payTo: "Joe's Diner", memo: "lunch", category: "Eating Out", confidence: "high", why: "A diner." });
+  const writes = () => ynab.requests.filter((r) => r.method !== "GET");
+
+  beforeEach(() => {
+    Object.assign(URL, { createObjectURL: vi.fn(() => "blob:check"), revokeObjectURL: vi.fn() });
+  });
+
+  it("lists each check after every other card under a Checks heading, with its number, date and amount", async () => {
+    checks();
+    renderPage();
+    await screen.findByRole("group", { name: "Trader Joe's" });
+    const names = screen.getAllByRole("group").filter((g) => g.tagName === "SECTION").map((g) => g.getAttribute("aria-label"));
+    expect(names).toEqual(["Trader Joe's", "Costco", "Mystery Shop", "Shell", "CHECK 1089 *8368", "CHECK 1090 *8368"]);
+    const heading = screen.getByRole("heading", { name: "Checks" });
+    expect(heading.compareDocumentPosition(groupOfPayee("Shell")) & Node.DOCUMENT_POSITION_PRECEDING).toBeTruthy();
+    expect(heading.compareDocumentPosition(groupOfPayee("CHECK 1089 *8368")) & Node.DOCUMENT_POSITION_FOLLOWING).toBeTruthy();
+    expect(groupOfPayee("CHECK 1089 *8368")).toHaveTextContent("$15.00");
+    expect(groupOfPayee("CHECK 1089 *8368")).toHaveTextContent("2026-01-22");
+    expect(groupOfPayee("CHECK 1090 *8368")).toHaveTextContent("$40.00");
+    // a check is not a payee to learn: no Always, no AI asked of the payee text, unsure and unticked
+    expect(within(groupOfPayee("CHECK 1089 *8368")).queryByRole("button", { name: /^Always/ })).not.toBeInTheDocument();
+    expect(within(groupOfPayee("CHECK 1089 *8368")).getByText("Unsure")).toBeInTheDocument();
+    expect(within(groupOfPayee("CHECK 1089 *8368")).getByRole("checkbox", { name: /^Approve / })).not.toBeChecked();
+  });
+
+  it("has no Checks heading when no check is waiting", async () => {
+    renderPage();
+    await screen.findByRole("group", { name: "Trader Joe's" });
+    expect(screen.queryByRole("heading", { name: "Checks" })).not.toBeInTheDocument();
+  });
+
+  it("keeps an image he adds on the device, shows it as a thumbnail that opens full size, and sends nothing to YNAB", async () => {
+    checks();
+    const user = userEvent.setup();
+    renderPage({ readCheck: null });
+    const card = await screen.findByRole("group", { name: "CHECK 1089 *8368" });
+    expect(within(card).getByRole("button", { name: "Add check image" })).toBeInTheDocument();
+    await user.upload(within(card).getByTestId("check-file-input"), jpeg());
+
+    const thumb = await within(card).findByRole("img", { name: "Image of check 1089" });
+    expect(thumb).toHaveAttribute("src", "blob:check");
+    const kept = await db.checkImages.get("ck1");
+    expect(kept?.image).toBeDefined();
+    expect(kept?.addedAt).toBeGreaterThan(0);
+    expect(await db.checkImages.get("ck2")).toBeUndefined();
+    expect(writes()).toHaveLength(0);
+
+    await user.click(within(card).getByRole("button", { name: "Open the image of check 1089 full size" }));
+    const dialog = screen.getByRole("dialog");
+    expect(within(dialog).getByRole("img", { name: "Check 1089, full size" })).toBeInTheDocument();
+    await user.click(within(dialog).getByRole("button", { name: "Close" }));
+    expect(screen.queryByRole("dialog")).not.toBeInTheDocument();
+  });
+
+  it("takes an image pasted on the card", async () => {
+    checks();
+    renderPage({ readCheck: null });
+    const card = await screen.findByRole("group", { name: "CHECK 1090 *8368" });
+    fireEvent.paste(card, { clipboardData: { files: [jpeg()], items: [] } });
+    expect(await within(card).findByRole("img", { name: "Image of check 1090" })).toBeInTheDocument();
+    expect(await db.checkImages.get("ck2")).toBeDefined();
+  });
+
+  it("reads the image for the payee and memo, suggests the category from them with its why, and writes nothing until Approve", async () => {
+    checks();
+    const user = userEvent.setup();
+    const readCheck = vi.fn(diner);
+    renderPage({ readCheck });
+    const card = await screen.findByRole("group", { name: "CHECK 1089 *8368" });
+    await user.upload(within(card).getByTestId("check-file-input"), jpeg());
+
+    await waitFor(() => expect(within(card).getByLabelText("Category for CHECK 1089 *8368")).toHaveValue("c2"));
+    expect(readCheck).toHaveBeenCalledTimes(1);
+    const [request, photo] = readCheck.mock.calls[0]!;
+    expect(request).toMatchObject({ check: "CHECK 1089 *8368", date: "2026-01-22", amount: 15 });
+    expect(request.categories.map((c) => c.name)).toContain("Eating Out");
+    expect(request.categories.map((c) => c.name)).not.toContain("Uncategorized");
+    expect(photo).toBeInstanceOf(Blob);
+    expect(card).toHaveTextContent("Joe's Diner");
+    expect(card).toHaveTextContent("lunch");
+    expect(within(card).getByText("Likely")).toBeInTheDocument();
+    expect(writes()).toHaveLength(0);
+
+    // the read is kept with the image: opening again asks nothing more
+    expect((await db.checkImages.get("ck1"))?.read).toMatchObject({ payTo: "Joe's Diner", category: "Eating Out" });
+  });
+
+  it("writes the payee read into the YNAB memo on Approve, and the payee text is left as YNAB has it", async () => {
+    checks();
+    const user = userEvent.setup();
+    renderPage({ readCheck: diner });
+    const card = await screen.findByRole("group", { name: "CHECK 1089 *8368" });
+    await user.upload(within(card).getByTestId("check-file-input"), jpeg());
+    await waitFor(() => expect(within(card).getByLabelText("Category for CHECK 1089 *8368")).toHaveValue("c2"));
+
+    await user.click(within(card).getByRole("checkbox", { name: /^Approve / }));
+    await user.click(screen.getByRole("button", { name: "Approve 3" }));
+    await waitFor(() => expect(patches()).toHaveLength(1));
+    const sent = (patches()[0]?.body as { transactions: Record<string, unknown>[] }).transactions;
+    expect(sent).toContainEqual({ id: "ck1", category_id: "c2", memo: "Paid to Joe's Diner (lunch)", approved: true });
+    expect(ynab.transactions.find((t) => t.id === "ck1")).toMatchObject({ payee_name: "CHECK 1089 *8368", approved: true });
+    // an image never goes to YNAB, and a check with no read has no memo written
+    expect(JSON.stringify(patches()[0]?.body)).not.toContain("blob");
+    expect(sent.find((t) => t.id === "tj1")).not.toHaveProperty("memo");
+  });
+
+  it("shows the kept image and its read when Clean up is opened again, and asks the mill nothing", async () => {
+    checks();
+    const user = userEvent.setup();
+    const first = renderPage({ readCheck: diner });
+    const card = await screen.findByRole("group", { name: "CHECK 1089 *8368" });
+    await user.upload(within(card).getByTestId("check-file-input"), jpeg());
+    await waitFor(() => expect(within(card).getByLabelText("Category for CHECK 1089 *8368")).toHaveValue("c2"));
+    first.unmount();
+
+    const readCheck = vi.fn(diner);
+    renderPage({ readCheck });
+    const again = await screen.findByRole("group", { name: "CHECK 1089 *8368" });
+    expect(await within(again).findByRole("img", { name: "Image of check 1089" })).toBeInTheDocument();
+    expect(within(again).getByLabelText("Category for CHECK 1089 *8368")).toHaveValue("c2");
+    expect(again).toHaveTextContent("Joe's Diner");
+    expect(readCheck).not.toHaveBeenCalled();
+    // the other check has none
+    expect(within(groupOfPayee("CHECK 1090 *8368")).queryByRole("img")).not.toBeInTheDocument();
+  });
+
+  it("keeps the image and says so when the read fails, leaving the category as it was", async () => {
+    checks();
+    const user = userEvent.setup();
+    renderPage({
+      readCheck: async () => {
+        throw new Error("The factory could not answer this one.");
+      },
+    });
+    const card = await screen.findByRole("group", { name: "CHECK 1089 *8368" });
+    await user.upload(within(card).getByTestId("check-file-input"), jpeg());
+    expect(await within(card).findByText(/could not be read/i)).toBeInTheDocument();
+    expect(await within(card).findByRole("img", { name: "Image of check 1089" })).toBeInTheDocument();
+    expect(within(card).getByLabelText("Category for CHECK 1089 *8368")).toHaveValue("c4");
+    expect((await db.checkImages.get("ck1"))?.read).toBeUndefined();
+  });
+
+  it("will not name Groceries for a payee read, which falls to Stuff I Forgot to Budget For", async () => {
+    checks();
+    const user = userEvent.setup();
+    renderPage({ readCheck: async () => ({ payTo: "Farmer Joe", memo: "eggs", category: "Groceries", confidence: "high", why: "Eggs." }) });
+    const card = await screen.findByRole("group", { name: "CHECK 1089 *8368" });
+    await user.upload(within(card).getByTestId("check-file-input"), jpeg());
+    await waitFor(() => expect(card).toHaveTextContent("Farmer Joe"));
+    expect(within(card).getByLabelText("Category for CHECK 1089 *8368")).toHaveValue("c4");
   });
 });

@@ -17,6 +17,7 @@ import { PayeeRuleRepository, approveByRules } from "@/ynab/payee-rules";
 import { YnabRepository } from "@/db/repositories/ynab-repository";
 import { refreshTally as readYnabTally } from "@/ynab/tally";
 import { openToken } from "@/ynab/token";
+import { CHECK_READ_DEADLINE_MS, makeCheckReadAsk, type CheckReader } from "@/ynab/check-read";
 import { createYnabWriter, type YnabWriter } from "@/ynab/writer";
 import { makeReceiptClient } from "@/services/lookup-client";
 import { reconcileReceipt } from "@/services/receipt-reconcile";
@@ -65,6 +66,10 @@ export interface SortSeams {
   suggestTimeoutMs?: number;
   /** reads a photographed receipt; null reads nothing (the app's own is the factory's, only on a licensed key) */
   readReceipt?: ReceiptReader | null;
+  /** reads a check image for its payee and memo (Clean up); null reads nothing (the app's own is the factory's, only on a licensed key) */
+  readCheck?: CheckReader | null;
+  /** how long Clean up waits for a check image to be read */
+  checkTimeoutMs?: number;
   /** how long the sheet waits for the receipt to be read, and again for its lines to be grouped */
   receiptTimeoutMs?: number;
   pollMs?: number;
@@ -134,10 +139,10 @@ function useApproveByRules(writer: SortWriter | null, enabled: boolean, seamClie
 export function SortProvider({ children, ...seams }: SortSeams & { children: ReactNode }) {
   const appWriter = useAppWriter(seams.writer === undefined);
   useApproveByRules(seams.writer === undefined ? appWriter : seams.writer, seams.approveOnOpen !== false, seams.ynabClient);
-  const { client, writer, me, approveOnOpen, refreshBalances, refreshTally, ynabClient, suggest, suggestTimeoutMs, readReceipt, receiptTimeoutMs, pollMs, feedTiming, balanceTiming } = seams;
+  const { client, writer, me, approveOnOpen, refreshBalances, refreshTally, ynabClient, suggest, suggestTimeoutMs, readReceipt, readCheck, checkTimeoutMs, receiptTimeoutMs, pollMs, feedTiming, balanceTiming } = seams;
   const value = useMemo<SortSeams>(
-    () => ({ client, writer: writer === undefined ? appWriter : writer, me, approveOnOpen, refreshBalances, refreshTally, ynabClient, suggest, suggestTimeoutMs, readReceipt, receiptTimeoutMs, pollMs, feedTiming, balanceTiming }),
-    [client, writer, appWriter, me, approveOnOpen, refreshBalances, refreshTally, ynabClient, suggest, suggestTimeoutMs, readReceipt, receiptTimeoutMs, pollMs, feedTiming, balanceTiming],
+    () => ({ client, writer: writer === undefined ? appWriter : writer, me, approveOnOpen, refreshBalances, refreshTally, ynabClient, suggest, suggestTimeoutMs, readReceipt, readCheck, checkTimeoutMs, receiptTimeoutMs, pollMs, feedTiming, balanceTiming }),
+    [client, writer, appWriter, me, approveOnOpen, refreshBalances, refreshTally, ynabClient, suggest, suggestTimeoutMs, readReceipt, readCheck, checkTimeoutMs, receiptTimeoutMs, pollMs, feedTiming, balanceTiming],
   );
   return <SortContext.Provider value={value}>{children}</SortContext.Provider>;
 }
@@ -221,6 +226,24 @@ function useAppSuggest(): SortChargeAsk | null {
   );
 }
 
+/** The check read is the AI too: asked only on a licensed key, the key read when it asks. */
+function useAppReadCheck(): CheckReader | null {
+  const { door, getKey, backendUrl } = useFactory();
+  const licenceNow = useLicenceNow();
+  const licensed = door === "licensed";
+  return useMemo<CheckReader | null>(
+    () =>
+      licensed
+        ? async (request, photo, signal) => {
+            const key = getKey();
+            if (!key) throw new Error("The factory is locked.");
+            return makeCheckReadAsk(backendUrl, key, licenceNow)(request, photo, signal);
+          }
+        : null,
+    [licensed, getKey, backendUrl, licenceNow],
+  );
+}
+
 /** What the Clean up screen reads and writes with. */
 export interface CleanupDeps {
   /** opens a YNAB client for a read */
@@ -232,12 +255,16 @@ export interface CleanupDeps {
   /** asks the mill where a payee's charge goes; null when the AI is not allowed */
   suggest: SortChargeAsk | null;
   suggestTimeoutMs: number;
+  /** reads a check image for its payee and memo; null when the AI is not allowed, and then the image is only kept */
+  readCheck: CheckReader | null;
+  checkTimeoutMs: number;
 }
 
 export function useCleanupDeps(): CleanupDeps {
   const seams = useContext(SortContext);
   const clientFor = useYnabClientFor();
   const appSuggest = useAppSuggest();
+  const appReadCheck = useAppReadCheck();
   const { approve, restore } = seams.writer ?? {};
   const seamClient = seams.ynabClient;
   const getClient = useCallback(() => (seamClient ? seamClient() : clientFor("the transactions")), [seamClient, clientFor]);
@@ -247,6 +274,8 @@ export function useCleanupDeps(): CleanupDeps {
     restore: restore ?? null,
     suggest: seams.suggest !== undefined ? seams.suggest : appSuggest,
     suggestTimeoutMs: seams.suggestTimeoutMs ?? SUGGEST_DEADLINE_MS,
+    readCheck: seams.readCheck !== undefined ? seams.readCheck : appReadCheck,
+    checkTimeoutMs: seams.checkTimeoutMs ?? CHECK_READ_DEADLINE_MS,
   };
 }
 

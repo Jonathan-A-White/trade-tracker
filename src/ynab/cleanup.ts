@@ -2,9 +2,11 @@
 // Sure is the only word that pre-ticks: the payee's last SURE_FROM categorized, approved transactions in YNAB all used one category.
 // Nothing here writes; the writer's approve() does, on his tap (or, for a payee with a rule, src/ynab/payee-rules.ts before this lists it).
 import type { YnabCategory } from "@/contracts/types";
+import { CheckImageRepository } from "@/db/repositories/check-image-repository";
 import { YnabRepository } from "@/db/repositories/ynab-repository";
 import { fallbackCategory, seenCategoryIds, suggestAtOnce } from "@/sort/suggest";
 import type { YnabClient } from "./api";
+import { memoFor, resolveCheckRead, type CheckRead } from "./check-read";
 import { INTERNAL_GROUP, TALLY_WINDOW_DAYS, day, readTally, type Tally } from "./tally";
 import type { YnabTransactionWire } from "./types";
 
@@ -29,6 +31,17 @@ export interface HistoryEntry {
   categoryId: string;
 }
 
+/**
+ * A check's payee text in YNAB: 'CHECK <number>', then the bank's account tail (the Governor's example: 'CHECK 1089 *8368'). The
+ * number alone says which check; the pile of checks at the end of Clean up is every transaction this matches.
+ */
+export const CHECK_PAYEE = /^check\s+#?(\d+)\b/i;
+
+/** The check number of a payee text that is a check ('CHECK 1089 *8368' gives '1089'), else null. */
+export function checkNumberOf(payee: string): string | null {
+  return CHECK_PAYEE.exec(payee.trim())?.[1] ?? null;
+}
+
 /** Per payee (its name, trimmed, lower case): the categorized, approved transactions, newest first. */
 export type PayeeHistory = Map<string, HistoryEntry[]>;
 
@@ -46,7 +59,8 @@ export function payeeHistory(rows: readonly YnabTransactionWire[], notCounted: R
   const history: PayeeHistory = new Map();
   for (const row of rows) {
     const payee = row.payee_name?.trim();
-    if (!payee || row.deleted || row.approved === false || row.transfer_account_id) continue;
+    // a check is not a payee to learn from: each is its own card and only its image says who was paid
+    if (!payee || checkNumberOf(payee) !== null || row.deleted || row.approved === false || row.transfer_account_id) continue;
     if (row.subtransactions && row.subtransactions.length > 0) continue;
     if (isUncategorized(row.category_id, row.category_name, notCounted)) continue;
     const key = payeeKey(payee);
@@ -106,6 +120,10 @@ export interface CleanupItem {
   seen: string[];
   /** nothing known of the payee: it holds Stuff I Forgot to Budget For until the AI answers or he chooses, which closes it */
   open: boolean;
+  /** the check number, when the payee is a check ('CHECK 1089 *8368'): such an item sits in the Checks pile, its own card */
+  check?: string;
+  /** the memo to write on Approve (from a check image's read); none leaves YNAB's memo as it is */
+  writeMemo?: string;
 }
 
 export interface CleanupContext {
@@ -117,8 +135,14 @@ export interface CleanupContext {
   notCounted: ReadonlySet<string>;
 }
 
+/** The order of the list: every check after every other transaction, then oldest first. */
+export function compareItems(a: { check?: boolean | string; date: string; id: string }, b: { check?: boolean | string; date: string; id: string }): number {
+  if (!!a.check !== !!b.check) return a.check ? 1 : -1;
+  return a.date < b.date ? -1 : a.date > b.date ? 1 : a.id < b.id ? -1 : 1;
+}
+
 /**
- * The unapproved transactions as items, oldest first; the sure ones are ticked. A categorized one keeps its own category. A payee
+ * The unapproved transactions as items, oldest first, the checks after all the rest; the sure ones are ticked. A categorized one keeps its own category. A payee
  * nothing is known of goes to Stuff I Forgot to Budget For, unticked (the Governor, 2026-11-11), left without a category only when the
  * budget has none such.
  */
@@ -130,19 +154,23 @@ export function buildItems(rows: readonly YnabTransactionWire[], context: Cleanu
     if (!suggested.has(key)) suggested.set(key, suggestForPayee(payee, history, categories, tally));
     return suggested.get(key)!;
   };
+  const orderOf = (r: YnabTransactionWire) => ({ check: checkNumberOf(r.payee_name?.trim() ?? "") ?? undefined, date: r.date, id: r.id! });
   return rows
     .filter((r) => !r.deleted && r.approved !== true && typeof r.id === "string")
-    .sort((a, b) => (a.date < b.date ? -1 : a.date > b.date ? 1 : a.id! < b.id! ? -1 : 1))
+    .sort((a, b) => compareItems(orderOf(a), orderOf(b)))
     .map((row): CleanupItem => {
       const payee = row.payee_name?.trim() || "No payee";
-      const base = { id: row.id!, date: row.date, payee, key: payeeKey(payee), amount: row.amount / 1000, memo: row.memo?.trim() ?? "", ynabCategoryId: row.category_id ?? null, seen: [] as string[], open: false };
+      const check = checkNumberOf(payee);
+      // each check is its own card: its key is the transaction's, so one check never merges with another
+      const key = check === null ? payeeKey(payee) : `check:${row.id}`;
+      const base = { id: row.id!, date: row.date, payee, key, amount: row.amount / 1000, memo: row.memo?.trim() ?? "", ynabCategoryId: row.category_id ?? null, seen: [] as string[], open: false, ...(check === null ? {} : { check }) };
       if (row.subtransactions && row.subtransactions.length > 0) {
         return { ...base, categoryId: null, fixedLabel: "Split", confidence: "unsure", why: "Split in YNAB.", ticked: false };
       }
       if (row.transfer_account_id) {
         return { ...base, categoryId: null, fixedLabel: "Transfer", confidence: "unsure", why: "A transfer.", ticked: false };
       }
-      const found = suggestion(payee);
+      const found = check === null ? suggestion(payee) : null;
       const seen = [...new Set([...(history.get(payeeKey(payee)) ?? []).map((e) => e.categoryId), ...seenCategoryIds(payee, categories, tally)])];
       if (!isUncategorized(row.category_id, row.category_name, notCounted)) {
         const own = categories.find((c) => c.id === row.category_id);
@@ -155,13 +183,36 @@ export function buildItems(rows: readonly YnabTransactionWire[], context: Cleanu
       }
       if (found) return { ...base, seen, categoryId: found.categoryId, confidence: found.confidence, why: found.why, ticked: found.confidence === "sure" };
       const forgot = fallbackCategory(categories);
+      if (check !== null) {
+        // its image will say who was paid; until then it holds the fallback, not asked of the AI by its payee text
+        return { ...base, seen, categoryId: forgot?.id ?? null, confidence: "unsure", why: "Add the check's image and it is read for who was paid.", ticked: false };
+      }
       return forgot
         ? { ...base, seen, open: true, categoryId: forgot.id, confidence: "unsure", why: `Nothing here to go by, so ${forgot.name}.`, ticked: false }
         : { ...base, seen, open: true, categoryId: null, confidence: "unsure", why: "Nothing here to go by.", ticked: false };
     });
 }
 
-export interface CleanupGroup<T extends { key: string; payee: string; amount: number; confidence: Confidence } = CleanupItem> {
+/**
+ * An item with a check image's read applied: the category it suggests (kept as it was when none), the why naming what was read, never
+ * ticked, and the memo to write on Approve. A split or a transfer keeps its fixed label and takes only the memo.
+ */
+export function applyCheckRead(item: CleanupItem, read: CheckRead): CleanupItem {
+  const writeMemo = memoFor(item.memo, read);
+  const memoPatch = writeMemo && writeMemo !== item.memo ? { writeMemo } : {};
+  if (item.fixedLabel) return { ...item, ...memoPatch };
+  return {
+    ...item,
+    ...memoPatch,
+    ...(read.categoryId ? { categoryId: read.categoryId } : {}),
+    confidence: read.categoryId ? read.confidence : "unsure",
+    why: read.why,
+    ticked: false,
+    open: false,
+  };
+}
+
+export interface CleanupGroup<T extends { key: string; payee: string; amount: number; confidence: Confidence; check?: string } = CleanupItem> {
   key: string;
   payee: string;
   items: T[];
@@ -169,8 +220,11 @@ export interface CleanupGroup<T extends { key: string; payee: string; amount: nu
   total: number;
 }
 
-/** A page's items by payee: the groups holding a sure one first, otherwise the oldest first; in a group the sure ones first. */
-export function groupPage<T extends { key: string; payee: string; amount: number; confidence: Confidence }>(items: readonly T[]): CleanupGroup<T>[] {
+/**
+ * A page's items by payee: the groups holding a sure one first, otherwise the oldest first; in a group the sure ones first. Each check
+ * is a group of its own and the checks come last, oldest first.
+ */
+export function groupPage<T extends { key: string; payee: string; amount: number; confidence: Confidence; check?: string }>(items: readonly T[]): CleanupGroup<T>[] {
   const groups = new Map<string, CleanupGroup<T>>();
   for (const item of items) {
     const group = groups.get(item.key) ?? { key: item.key, payee: item.payee, items: [], total: 0 };
@@ -180,7 +234,9 @@ export function groupPage<T extends { key: string; payee: string; amount: number
   }
   const sure = (g: CleanupGroup<T>) => g.items.some((i) => i.confidence === "sure");
   const ordered = [...groups.values()].map((g) => ({ ...g, items: [...g.items.filter((i) => i.confidence === "sure"), ...g.items.filter((i) => i.confidence !== "sure")] }));
-  return [...ordered.filter(sure), ...ordered.filter((g) => !sure(g))];
+  const isCheck = (g: CleanupGroup<T>) => g.items.some((i) => i.check !== undefined);
+  const others = ordered.filter((g) => !isCheck(g));
+  return [...others.filter(sure), ...others.filter((g) => !sure(g)), ...ordered.filter(isCheck)];
 }
 
 /** The page of CLEANUP_PAGE items that starts at `start`. */
@@ -212,6 +268,13 @@ export async function loadCleanup(
     client.transactionsSince(budgetId, day(now - TALLY_WINDOW_DAYS * 24 * 60 * 60_000)),
   ]);
   const tally = readTally();
-  const items = buildItems(unapproved, { categories, history: payeeHistory(past, notCounted), tally: tally?.budgetId === budgetId ? tally : null, notCounted });
+  const built = buildItems(unapproved, { categories, history: payeeHistory(past, notCounted), tally: tally?.budgetId === budgetId ? tally : null, notCounted });
+  // a check whose image was read on an earlier visit has that read applied again; the mill is not asked twice
+  const kept = await new CheckImageRepository().many(built.filter((i) => i.check !== undefined).map((i) => i.id));
+  const items = built.map((item) => {
+    const answer = kept.get(item.id)?.read;
+    const read = answer && resolveCheckRead(answer, categories);
+    return read ? applyCheckRead(item, read) : item;
+  });
   return { items, categories };
 }

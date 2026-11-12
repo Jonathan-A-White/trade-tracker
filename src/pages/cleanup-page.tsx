@@ -3,19 +3,24 @@
 // Nothing reaches YNAB until he taps Approve, and then only the ticked ones, in one request. "Always <category>" on a card approves all
 // of that payee's unapproved transactions at once and keeps a payee rule (src/ynab/payee-rules.ts): the payee's new ones are approved as
 // they are read, before this lists them; Undo takes the last "Always" back for 10 seconds, and Payee rules lists the rules to remove.
+// A check (payee text 'CHECK <number>') is its own card in a Checks pile at the end: "Add check image" keeps an image on the device
+// (never sent to YNAB), and the mill reads its payee and memo to suggest the category; Approve writes the payee read into the memo.
 import { useLiveQuery } from "dexie-react-hooks";
-import { useCallback, useEffect, useMemo, useRef, useState } from "react";
+import { useCallback, useEffect, useMemo, useRef, useState, type ClipboardEvent } from "react";
 import { Link } from "react-router";
 import type { YnabCategory } from "@/contracts/types";
 import { PageHeader } from "@/components/layout/page-header";
 import { db } from "@/db/database";
+import { CheckImageRepository } from "@/db/repositories/check-image-repository";
 import { YnabRepository } from "@/db/repositories/ynab-repository";
+import { RECEIPT_STILL, stillFromFile } from "@/scanner/capture-still";
 import { useYnabOn } from "@/settings/connections";
 import { useCleanupDeps } from "@/sort/sort-context";
 import { buildRequest, readHistory, resolveSuggestion, tallyFor } from "@/sort/suggest";
 import { money } from "@/sort/waiting";
 import { refreshCache } from "@/ynab/cache";
-import { groupPage, loadCleanup, pageAfter, type CleanupGroup, type CleanupItem, type Confidence } from "@/ynab/cleanup";
+import { resolveCheckRead } from "@/ynab/check-read";
+import { applyCheckRead, compareItems, groupPage, loadCleanup, pageAfter, type CleanupGroup, type CleanupItem, type Confidence } from "@/ynab/cleanup";
 import { PayeeRuleRepository, setAlways, undoAlways, unapprovedWithRules, type AlwaysDone } from "@/ynab/payee-rules";
 import { readTally } from "@/ynab/tally";
 
@@ -159,6 +164,130 @@ function GroupCard({
   );
 }
 
+/** An object URL for a blob, made while it is shown. */
+function useBlobUrl(blob: Blob | undefined): string | undefined {
+  const [url, setUrl] = useState<string>();
+  useEffect(() => {
+    if (!blob || typeof URL.createObjectURL !== "function") return;
+    const objectUrl = URL.createObjectURL(blob);
+    // set after the effect body, so StrictMode's re-run never shows a revoked URL
+    let live = true;
+    queueMicrotask(() => {
+      if (live) setUrl(objectUrl);
+    });
+    return () => {
+      live = false;
+      URL.revokeObjectURL(objectUrl);
+      setUrl(undefined);
+    };
+  }, [blob]);
+  return url;
+}
+
+/** The image of a check as a thumbnail that opens full size. */
+function CheckThumb({ image, check }: { image: Blob; check: string }) {
+  const url = useBlobUrl(image);
+  const [open, setOpen] = useState(false);
+  if (!url) return null;
+  return (
+    <>
+      <button type="button" aria-label={`Open the image of check ${check} full size`} className="block overflow-hidden rounded-lg border border-gray-300 dark:border-gray-600" onClick={() => setOpen(true)}>
+        <img src={url} alt={`Image of check ${check}`} className="h-24 w-auto max-w-full object-cover" />
+      </button>
+      {open && (
+        <div role="dialog" aria-modal="true" aria-label={`Check ${check}`} className="fixed inset-0 z-50 flex flex-col gap-3 overflow-auto bg-black/90 p-3">
+          <button type="button" className={`${SECONDARY} self-end`} onClick={() => setOpen(false)}>
+            Close
+          </button>
+          <img src={url} alt={`Check ${check}, full size`} className="mx-auto h-auto max-w-full" />
+        </div>
+      )}
+    </>
+  );
+}
+
+/** One check, its own card in the Checks pile: its number, date and amount, the image he adds, and the category the read suggests. */
+function CheckCard({
+  group,
+  categories,
+  image,
+  note,
+  onItemCategory,
+  onTick,
+  onImage,
+}: {
+  group: CleanupGroup;
+  categories: readonly YnabCategory[];
+  image: Blob | undefined;
+  /** what is happening to its image now, or what went wrong */
+  note: string | undefined;
+  onItemCategory: (id: string, categoryId: string) => void;
+  onTick: (id: string, on: boolean) => void;
+  onImage: (item: CleanupItem, file: Blob) => void;
+}) {
+  const item = group.items[0]!;
+  const number = item.check ?? "";
+  const what = `${said(item.amount)} on ${item.date}`;
+  const file = useRef<HTMLInputElement>(null);
+  const pasted = (event: ClipboardEvent) => {
+    const picture = [...(event.clipboardData?.files ?? [])].find((f) => f.type.startsWith("image/"));
+    if (!picture) return;
+    event.preventDefault();
+    onImage(item, picture);
+  };
+  return (
+    <section role="group" aria-label={group.payee} onPaste={pasted} className="space-y-2 rounded-lg border border-gray-200 dark:border-gray-700 bg-white dark:bg-gray-800 p-3">
+      <div className="flex flex-wrap items-baseline justify-between gap-x-3">
+        <h3 className="min-w-0 break-words text-base font-semibold text-gray-900 dark:text-gray-100">{group.payee}</h3>
+        <Badge confidence={item.confidence} />
+      </div>
+      <label className="flex min-h-12 items-center gap-3">
+        <input
+          type="checkbox"
+          className="h-5 w-5 shrink-0"
+          aria-label={`Approve ${what}`}
+          checked={item.ticked}
+          disabled={item.categoryId === null && !item.fixedLabel}
+          onChange={(e) => onTick(item.id, e.target.checked)}
+        />
+        <span className="min-w-0 flex-1 text-base text-gray-900 dark:text-gray-100">
+          {said(item.amount)} <span className="text-sm text-gray-600 dark:text-gray-400">· {item.date}</span>
+        </span>
+      </label>
+      {item.memo && <p className="break-words text-sm text-gray-600 dark:text-gray-400">{item.memo}</p>}
+      {item.writeMemo && <p className="break-words text-sm text-gray-700 dark:text-gray-300">Memo on approve: {item.writeMemo}</p>}
+      <p className="text-xs text-gray-600 dark:text-gray-400">{item.why}</p>
+      {item.fixedLabel ? (
+        <p className="text-sm font-medium text-gray-800 dark:text-gray-200">{item.fixedLabel}</p>
+      ) : (
+        <CategorySelect label={`Category for ${group.payee}`} value={item.categoryId ?? ""} categories={categories} onChange={(id) => onItemCategory(item.id, id)} />
+      )}
+      {image && <CheckThumb image={image} check={number} />}
+      <button type="button" className={`${SECONDARY} w-full`} onClick={() => file.current?.click()}>
+        {image ? "Replace check image" : "Add check image"}
+      </button>
+      <input
+        ref={file}
+        type="file"
+        accept="image/*"
+        className="hidden"
+        data-testid="check-file-input"
+        onChange={(e) => {
+          const picked = e.target.files?.[0];
+          e.target.value = "";
+          if (picked) onImage(item, picked);
+        }}
+      />
+      <p className="text-xs text-gray-600 dark:text-gray-400">Take a photo, choose a file, or paste an image here. It stays on this phone and never goes to YNAB.</p>
+      {note && (
+        <p role="status" className="text-sm text-gray-800 dark:text-gray-200">
+          {note}
+        </p>
+      )}
+    </section>
+  );
+}
+
 /** The payee rules: each with its payee, category and how many it has approved; Remove stops it and changes nothing already written. */
 function PayeeRules() {
   const rules = useLiveQuery(() => new PayeeRuleRepository().list(), []);
@@ -186,7 +315,7 @@ function PayeeRules() {
 export default function CleanupPage() {
   const on = useYnabOn();
   const deps = useCleanupDeps();
-  const { getClient, approve, restore, suggest, suggestTimeoutMs } = deps;
+  const { getClient, approve, restore, suggest, suggestTimeoutMs, readCheck, checkTimeoutMs } = deps;
   const [phase, setPhase] = useState<Phase>({ state: "loading" });
   const [items, setItems] = useState<CleanupItem[]>([]);
   const [categories, setCategories] = useState<YnabCategory[]>([]);
@@ -197,6 +326,7 @@ export default function CleanupPage() {
   const [ruleError, setRuleError] = useState<string | null>(null);
   const [undoable, setUndoable] = useState<Undoable | null>(null);
   const [showRules, setShowRules] = useState(false);
+  const [checkNotes, setCheckNotes] = useState<Record<string, string>>({});
   const asked = useRef(new Set<string>());
 
   // read YNAB afresh on opening and when he goes through them again
@@ -233,6 +363,10 @@ export default function CleanupPage() {
 
   const page = useMemo(() => pageAfter(items, start), [items, start]);
   const groups = useMemo(() => groupPage(page), [page]);
+  const checkIds = useMemo(() => page.filter((i) => i.check !== undefined).map((i) => i.id), [page]);
+  const checkIdsKey = checkIds.join("\u0000");
+  // the images kept for the checks on this page
+  const images = useLiveQuery(async () => new Map([...(await new CheckImageRepository().many(checkIds))].map(([id, row]) => [id, row.image])), [checkIdsKey]);
 
   // a payee nothing else knows holds Stuff I Forgot to Budget For and is asked of the AI, one at a time; its answer replaces that
   // unsure and unticked, and never names Food or Household for a payee not seen there before
@@ -283,6 +417,43 @@ export default function CleanupPage() {
   const onTickAll = (key: string, ticked: boolean) =>
     change((i) => i.key === key && page.some((p) => p.id === i.id) && (i.categoryId !== null || !!i.fixedLabel), { ticked });
 
+  const note = (id: string, text: string | null) =>
+    setCheckNotes((all) => {
+      const rest = Object.fromEntries(Object.entries(all).filter(([key]) => key !== id));
+      return text === null ? rest : { ...rest, [id]: text };
+    });
+
+  // an image he adds is kept on the device first, then read by the mill (when allowed) for the payee and memo; a failed read leaves
+  // the image kept and the card as it was
+  async function addImage(item: CleanupItem, file: Blob) {
+    let image: Blob;
+    try {
+      image = await stillFromFile(file, RECEIPT_STILL);
+    } catch {
+      note(item.id, "That picture could not be used. Try another.");
+      return;
+    }
+    const repo = new CheckImageRepository();
+    const kept = await repo.put(item.id, image);
+    if (!readCheck) return note(item.id, null);
+    note(item.id, "Reading the image…");
+    const run = new AbortController();
+    const deadline = setTimeout(() => run.abort(), checkTimeoutMs);
+    try {
+      const request = { check: item.payee, date: item.date, amount: Math.abs(item.amount), categories: categories.slice(0, 150).map((c) => ({ name: c.name.slice(0, 60) })) };
+      const answer = await readCheck(request, image, run.signal);
+      await repo.setRead(item.id, kept.addedAt, answer);
+      const read = resolveCheckRead(answer, categories);
+      if (read) setItems((all) => all.map((i) => (i.id === item.id ? applyCheckRead(i, read) : i)));
+      note(item.id, read ? null : "The image was read, but it said nothing to go by.");
+    } catch (err) {
+      const why = run.signal.aborted ? "The factory took too long." : err instanceof Error && err.message ? err.message : "The factory did not answer.";
+      note(item.id, `The image is kept, but it could not be read: ${why}`);
+    } finally {
+      clearTimeout(deadline);
+    }
+  }
+
   // Undo is there for ten seconds after "Always"
   useEffect(() => {
     if (!undoable) return;
@@ -323,7 +494,7 @@ export default function CleanupPage() {
     try {
       await undoAlways(undoable.done, restore);
       const back = undoable.items;
-      setItems((all) => [...all, ...back].sort((a, b) => (a.date < b.date ? -1 : a.date > b.date ? 1 : a.id < b.id ? -1 : 1)));
+      setItems((all) => [...all, ...back].sort(compareItems));
       setStart(0);
       setUndoable(null);
     } catch (err) {
@@ -340,7 +511,7 @@ export default function CleanupPage() {
     setSaving(true);
     setWriteError(null);
     try {
-      await approve(picked.map((i) => ({ id: i.id, ...(i.fixedLabel || i.categoryId === null ? {} : { categoryId: i.categoryId }) })));
+      await approve(picked.map((i) => ({ id: i.id, ...(i.fixedLabel || i.categoryId === null ? {} : { categoryId: i.categoryId }), ...(i.writeMemo ? { memo: i.writeMemo } : {}) })));
       const gone = new Set(picked.map((i) => i.id));
       setItems((all) => all.filter((i) => !gone.has(i.id)));
       // the ones left unticked are passed by: the next page starts after them
@@ -412,9 +583,26 @@ export default function CleanupPage() {
             <p className="text-sm text-gray-600 dark:text-gray-400">
               Showing {start + 1}–{start + page.length} of {left}, oldest first. Nothing goes to YNAB until you tap Approve.
             </p>
-            {groups.map((group) => (
-              <GroupCard key={group.key} group={group} categories={categories} onGroupCategory={onGroupCategory} onItemCategory={onItemCategory} onTick={onTick} onTickAll={onTickAll} onAlways={approve ? (g, id) => void always(g, id) : null} busy={saving} />
-            ))}
+            {groups.map((group, at) =>
+              group.items[0]?.check !== undefined ? (
+                <div key={group.key} className="space-y-3">
+                  {groups[at - 1]?.items[0]?.check === undefined && (
+                    <h2 className="pt-2 text-lg font-semibold text-gray-900 dark:text-gray-100">Checks</h2>
+                  )}
+                  <CheckCard
+                    group={group}
+                    categories={categories}
+                    image={images?.get(group.items[0].id)}
+                    note={checkNotes[group.items[0].id]}
+                    onItemCategory={onItemCategory}
+                    onTick={onTick}
+                    onImage={(item, file) => void addImage(item, file)}
+                  />
+                </div>
+              ) : (
+                <GroupCard key={group.key} group={group} categories={categories} onGroupCategory={onGroupCategory} onItemCategory={onItemCategory} onTick={onTick} onTickAll={onTickAll} onAlways={approve ? (g, id) => void always(g, id) : null} busy={saving} />
+              ),
+            )}
             {writeError && (
               <p role="alert" className="text-base text-red-700 dark:text-red-400">
                 {writeError}
