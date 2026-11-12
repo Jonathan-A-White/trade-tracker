@@ -12,6 +12,7 @@ import { SETTING_PREFIX } from "@/settings/connections";
 import { HISTORY_KEY, LEARNED_KEY } from "@/sort/suggest";
 import { HANDED_KEY, ME_KEY, SORTED_KEY } from "@/sort/waiting";
 import { KEPT_FEED_KEY, PENDING_CLAIMS_KEY } from "@/sort/useAlerts";
+import { CHARGES_KEY, DISMISSED_KEY, IDEA_SETTINGS_KEY, INTRODUCED_KEY, KINDS_KEY } from "@/ynab/budget-ideas";
 import { TALLY_FAILED_KEY, TALLY_KEY } from "@/ynab/tally";
 import { YNAB_TOKEN_KEY } from "@/ynab/token";
 import { YNAB_BUSY_KEY } from "@/ynab/writer";
@@ -52,6 +53,11 @@ export const OWNED_KEYS: readonly OwnedKey[] = [
   { key: YNAB_BUSY_KEY, note: "YNAB's rate-limit wait: a service's clock." },
   { key: TALLY_KEY, data: true, note: "YNAB's tally of the Governor's payees and categories." },
   { key: TALLY_FAILED_KEY, note: "When the tally's last read of YNAB failed: a clock." },
+  { key: KINDS_KEY, data: true, note: "What each payee's spend is for, as the AI said, for Budget ideas." },
+  { key: CHARGES_KEY, data: true, note: "The charges to Stuff I Forgot to Budget For last read from YNAB, for Budget ideas." },
+  { key: DISMISSED_KEY, data: true, note: "The Budget ideas the Governor answered Not now or Never." },
+  { key: INTRODUCED_KEY, data: true, note: "The Budget ideas first shown this month." },
+  { key: IDEA_SETTINGS_KEY, note: "Setting: what a Budget idea must pass (dollars over a year, or charges)." },
   { key: HANDED_KEY, data: true, note: "The alerts this phone handed to the other person." },
   { key: SORTED_KEY, data: true, note: "What was sorted lately, by this phone or seen gone from the feed." },
   { key: HISTORY_KEY, data: true, note: "The categories chosen for a sort, newest last." },

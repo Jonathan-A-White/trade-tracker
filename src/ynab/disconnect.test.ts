@@ -3,6 +3,7 @@ import { db } from "@/db/database";
 import { YnabRepository } from "@/db/repositories/ynab-repository";
 import { LEARNED_KEY } from "@/sort/suggest";
 import { createYnabClient } from "./api";
+import { CHARGES_KEY, KINDS_KEY, dismiss, readDismissed, readIdeaSettings, writeCharges, writeIdeaSettings, writeKind } from "./budget-ideas";
 import { disconnectYnab } from "./disconnect";
 import { fakeYnab, groupOf, type FakeYnab } from "./fake-ynab";
 import { TALLY_FAILED_KEY, TALLY_KEY, readTally, refreshTally } from "./tally";
@@ -52,6 +53,18 @@ describe("turning YNAB off", () => {
     await disconnectYnab(new vault.MemoryStorage());
     expect(await db.ynabRuleApprovals.count()).toBe(0);
     expect(await db.ynabPayeeRules.count()).toBe(1);
+  });
+
+  it("forgets the payee kinds and the charges Budget ideas read, and keeps his answers and thresholds", async () => {
+    writeKind("Blueland", "Cleaning supplies");
+    writeCharges({ budgetId: "b1", readAt: 1, charges: [] });
+    dismiss("kind:cleaning supplies", "never");
+    writeIdeaSettings({ minSpend: 200, minCharges: 4 });
+    await disconnectYnab(new vault.MemoryStorage());
+    expect(localStorage.getItem(KINDS_KEY)).toBeNull();
+    expect(localStorage.getItem(CHARGES_KEY)).toBeNull();
+    expect(Object.keys(readDismissed())).toEqual(["kind:cleaning supplies"]);
+    expect(readIdeaSettings().minSpend).toBe(200);
   });
 
   it("forgets that a read failed, so turning YNAB on again is not made to wait the hour", async () => {
