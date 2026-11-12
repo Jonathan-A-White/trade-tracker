@@ -1,0 +1,17 @@
+{
+  "description": "A staged check made out to a dental group with a copay memo: the payee and memo are read, and the category is Health, not a food or household one.",
+  "schemaVersion": "1.0",
+  "request": {
+    "check": "CHECK 1089 *8368",
+    "date": "2026-01-22",
+    "amount": 15,
+    "categories": [{"name":"Groceries"},{"name":"Eating Out"},{"name":"Household"},{"name":"Health"},{"name":"Gas"},{"name":"Stuff I Forgot to Budget For"}]
+  },
+  "photos": ["dental-copay-check.jpg"],
+  "expect": {
+    "payTo": { "matches": "(?i)riverside dental" },
+    "memo": { "matches": "(?i)cleaning" },
+    "category": "Health",
+    "why": { "present": true }
+  }
+}

@@ -1,0 +1,42 @@
+{
+  "$schema": "http://json-schema.org/draft-07/schema#",
+  "$id": "check-read-answer-1.0",
+  "title": "Check Read answer 1.0",
+  "description": "Who the check is made out to, its memo line, a suggested category when one fits, how sure the read is, and a one-line why.",
+  "type": "object",
+  "additionalProperties": false,
+  "required": [
+    "payTo",
+    "memo",
+    "confidence",
+    "why"
+  ],
+  "properties": {
+    "payTo": {
+      "type": "string",
+      "maxLength": 120
+    },
+    "memo": {
+      "type": "string",
+      "maxLength": 120
+    },
+    "category": {
+      "type": "string",
+      "minLength": 1,
+      "maxLength": 60
+    },
+    "confidence": {
+      "type": "string",
+      "enum": [
+        "high",
+        "medium",
+        "low"
+      ]
+    },
+    "why": {
+      "type": "string",
+      "minLength": 1,
+      "maxLength": 200
+    }
+  }
+}

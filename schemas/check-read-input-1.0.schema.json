@@ -1,0 +1,48 @@
+{
+  "$schema": "http://json-schema.org/draft-07/schema#",
+  "$id": "check-read-input-1.0",
+  "title": "Check Read input 1.0",
+  "description": "One paper check that cleared the family's bank, as the budget lists it (its payee text, date and amount), and the budget's categories. The check's image is the one photo sent with it.",
+  "type": "object",
+  "additionalProperties": false,
+  "required": [
+    "check",
+    "date",
+    "amount",
+    "categories"
+  ],
+  "properties": {
+    "check": {
+      "type": "string",
+      "minLength": 1,
+      "maxLength": 120
+    },
+    "date": {
+      "type": "string",
+      "pattern": "^[0-9]{4}-[0-9]{2}-[0-9]{2}$"
+    },
+    "amount": {
+      "type": "number",
+      "exclusiveMinimum": 0
+    },
+    "categories": {
+      "type": "array",
+      "minItems": 1,
+      "maxItems": 150,
+      "items": {
+        "type": "object",
+        "additionalProperties": false,
+        "required": [
+          "name"
+        ],
+        "properties": {
+          "name": {
+            "type": "string",
+            "minLength": 1,
+            "maxLength": 60
+          }
+        }
+      }
+    }
+  }
+}
