@@ -17,7 +17,7 @@ import { ME_KEY } from "@/sort/waiting";
 import { createYnabClient } from "@/ynab/api";
 import { fakeYnab, groupOf, type FakeYnab, type FakeYnabTransaction } from "@/ynab/fake-ynab";
 import { monthsBefore } from "@/ynab/budget-ideas";
-import { PayeeRuleRepository } from "@/ynab/payee-rules";
+import { PayeeRuleRepository, SHORT_RULE_KEY } from "@/ynab/payee-rules";
 import { day } from "@/ynab/tally";
 import { createYnabWriter } from "@/ynab/writer";
 
@@ -285,6 +285,39 @@ describe("Home: Approved for you (what the payee rules approved)", () => {
     await waitFor(async () => expect(await new PayeeRuleRepository().get("chewy")).toBeUndefined());
     expect(screen.getByRole("heading", { name: "Approved for you · 1" })).toBeInTheDocument();
     expect(screen.queryByRole("button", { name: "Stop this rule" })).not.toBeInTheDocument();
+  });
+
+  describe("when the rule's category lacks the money (his words, 2026-11-12)", () => {
+    const withFun = [...groups, groupOf("g2", "Fun", [["c3", "Fun Money", 5_000]])];
+
+    beforeEach(async () => {
+      localStorage.removeItem(SHORT_RULE_KEY);
+      ynab.budgets[0]!.categoryGroups = withFun;
+      await new YnabRepository().applyCategories(withFun, 2);
+      await new PayeeRuleRepository().put({ key: "chewy", budgetId: "b1", payee: "Chewy", categoryId: "c3", createdAt: 1, approved: 0 });
+    });
+
+    it("approves it and the row says how far over budget the category went", async () => {
+      ynab.transactions.push(tx("t1", "Chewy"), tx("t2", "Chewy", { amount: -1_000 }));
+      renderYnabHome();
+      expect(await screen.findByRole("heading", { name: "Approved for you · 2" })).toBeInTheDocument();
+      const rows = within(screen.getByRole("list", { name: "Approved for you" })).getAllByRole("listitem");
+      const big = rows.find((r) => r.textContent?.includes("$43.12"))!;
+      expect(big).toHaveTextContent("over budget by $38.12 in Fun Money");
+      expect(ynab.transactions.find((t) => t.id === "t1")?.approved).toBe(true);
+    });
+
+    it("with 'Leave it for me' it is not approved, and waits in Clean up with the shortfall", async () => {
+      localStorage.setItem(SHORT_RULE_KEY, "hold");
+      ynab.transactions.push(tx("t1", "Chewy"));
+      const user = userEvent.setup();
+      renderYnabHome();
+      expect(await screen.findByText("Start New Trip")).toBeInTheDocument();
+      await user.click(screen.getByRole("link", { name: "Clean up" }));
+      expect(await screen.findByText("Held for you: Fun Money is short by $38.12 for this.")).toBeInTheDocument();
+      expect(ynab.transactions.find((t) => t.id === "t1")?.approved).toBe(false);
+      expect(screen.queryByText(/Approved for you/)).not.toBeInTheDocument();
+    });
   });
 
   it("draws nothing when no rule has approved anything", async () => {

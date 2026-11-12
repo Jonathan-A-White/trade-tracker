@@ -13,6 +13,7 @@ import { HISTORY_KEY, LEARNED_KEY } from "@/sort/suggest";
 import { HANDED_KEY, ME_KEY, SORTED_KEY } from "@/sort/waiting";
 import { KEPT_FEED_KEY, PENDING_CLAIMS_KEY } from "@/sort/useAlerts";
 import { CHARGES_KEY, DISMISSED_KEY, IDEA_SETTINGS_KEY, INTRODUCED_KEY, KINDS_KEY } from "@/ynab/budget-ideas";
+import { SHORT_RULE_KEY } from "@/ynab/payee-rules";
 import { TALLY_FAILED_KEY, TALLY_KEY } from "@/ynab/tally";
 import { YNAB_TOKEN_KEY } from "@/ynab/token";
 import { YNAB_BUSY_KEY } from "@/ynab/writer";
@@ -58,6 +59,7 @@ export const OWNED_KEYS: readonly OwnedKey[] = [
   { key: DISMISSED_KEY, data: true, note: "The Budget ideas the Governor answered Not now or Never." },
   { key: INTRODUCED_KEY, data: true, note: "The Budget ideas first shown this month." },
   { key: IDEA_SETTINGS_KEY, note: "Setting: what a Budget idea must pass (dollars over a year, or charges)." },
+  { key: SHORT_RULE_KEY, note: "Setting: whether a payee rule approves a charge its category lacks the money for (and notes it), or leaves it for the Governor." },
   { key: HANDED_KEY, data: true, note: "The alerts this phone handed to the other person." },
   { key: SORTED_KEY, data: true, note: "What was sorted lately, by this phone or seen gone from the feed." },
   { key: HISTORY_KEY, data: true, note: "The categories chosen for a sort, newest last." },

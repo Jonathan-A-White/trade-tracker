@@ -88,6 +88,38 @@ function inTurn<T>(job: () => Promise<T>): Promise<T> {
 const ruleable = (row: YnabTransactionWire): boolean =>
   typeof row.id === "string" && !row.deleted && row.approved !== true && !row.transfer_account_id && !(row.subtransactions && row.subtransactions.length > 0) && !!row.payee_name?.trim();
 
+/** What a rule does when its category lacks the money for a charge: 'approve' approves it and notes the shortfall, 'hold' leaves it for him in Clean up. A setting; PROVISIONAL default 'approve' (his words, 2026-11-12: "Right now though, auto approve should note but disregard lack of funds"). */
+export type ShortRule = "approve" | "hold";
+export const SHORT_RULE_KEY = "tradetracker-short-rule";
+
+export function readShortRule(): ShortRule {
+  try {
+    return localStorage.getItem(SHORT_RULE_KEY) === "hold" ? "hold" : "approve";
+  } catch {
+    return "approve";
+  }
+}
+export function writeShortRule(value: ShortRule): void {
+  try {
+    localStorage.setItem(SHORT_RULE_KEY, value);
+  } catch {
+    // a full or blocked store only costs the next read
+  }
+}
+
+/** A charge a rule left for him because its category lacks the money (the setting 'Leave it for me'). Dollars. */
+export interface HeldByRule {
+  categoryId: string;
+  short: number;
+}
+
+/** The dollars `amount` (milliunits, negative out) lacks in a category holding `balance` dollars; null when it holds enough, the balance is unknown, or it is money in. */
+function shortfall(balance: number | undefined, amount: number): number | null {
+  if (balance === undefined || !(amount < 0)) return null;
+  const lack = Math.round((-amount / 1000 - balance) * 100) / 100;
+  return lack > 0 ? lack : null;
+}
+
 export interface RulesRead {
   /** the unapproved transactions left after the rules' approvals */
   rows: YnabTransactionWire[];
@@ -95,6 +127,8 @@ export interface RulesRead {
   approved: number;
   /** why the rules' write failed; null when it did not (or there was none to make) */
   error: string | null;
+  /** the transactions (by id) a rule left unapproved because its category lacks the money, with the category and the shortfall */
+  held: Record<string, HeldByRule>;
 }
 
 /**
@@ -106,28 +140,43 @@ export interface RulesRead {
 export function unapprovedWithRules(client: YnabClient, budgetId: string, approve: Approve | null): Promise<RulesRead> {
   return inTurn(async () => {
     const rows = await client.unapprovedTransactions(budgetId);
-    if (!approve) return { rows, approved: 0, error: null };
+    if (!approve) return { rows, approved: 0, error: null, held: {} };
     // the record is a convenience: a failure to keep or tidy it must never stop the rules
     const undone = await approvals.undoneIds(budgetId).catch(() => new Set<string>());
     await approvals.prune(budgetId, new Set(rows.map((r) => r.id ?? "")), Date.now()).catch(() => {});
     const rules = await repo.list(budgetId);
-    if (rules.length === 0) return { rows, approved: 0, error: null };
+    if (rules.length === 0) return { rows, approved: 0, error: null, held: {} };
     const { categories, inflow } = offeredCategories(await new YnabRepository().listCategories());
     const offered = new Set(categories.map((c) => c.id));
     const byKey = new Map(rules.filter((r) => offered.has(r.categoryId)).map((r) => [r.key, r]));
-    const picks = rows.flatMap((row) => {
+    const candidates = rows.flatMap((row) => {
       // one he put back from Home stays his to decide
       const rule = ruleable(row) && !undone.has(row.id!) ? byKey.get(payeeKey(row.payee_name!)) : undefined;
       // a rule into Ready to Assign (made on an inflow) takes money in only: an outflow of the same payee is left to him
       if (rule && rule.categoryId === inflow?.id && !(row.amount > 0)) return [];
       return rule ? [{ row, rule }] : [];
     });
-    if (picks.length === 0) return { rows, approved: 0, error: null };
+    if (candidates.length === 0) return { rows, approved: 0, error: null, held: {} };
+    // each category's available now (a fresh read; the cache when YNAB cannot be asked), less what this same read already puts into it
+    const balances = await availableNow(client, budgetId);
+    const hold = readShortRule() === "hold";
+    const held: Record<string, HeldByRule> = {};
+    const picks: { row: YnabTransactionWire; rule: YnabPayeeRule; short: number | null }[] = [];
+    for (const { row, rule } of candidates) {
+      const short = shortfall(balances.get(rule.categoryId), row.amount);
+      if (short !== null && hold) {
+        held[row.id!] = { categoryId: rule.categoryId, short };
+        continue;
+      }
+      picks.push({ row, rule, short });
+      if (row.amount < 0 && balances.has(rule.categoryId)) balances.set(rule.categoryId, balances.get(rule.categoryId)! + row.amount / 1000);
+    }
+    if (picks.length === 0) return { rows, approved: 0, error: null, held };
     try {
       await approve(picks.map((p) => ({ id: p.row.id!, categoryId: p.rule.categoryId })));
     } catch (err) {
       const why = err instanceof Error ? err.message : "YNAB did not answer.";
-      return { rows, approved: 0, error: `Could not approve ${picks.length} from payee rules: ${why}` };
+      return { rows, approved: 0, error: `Could not approve ${picks.length} from payee rules: ${why}`, held };
     }
     const counts = new Map<string, number>();
     for (const p of picks) counts.set(p.rule.key, (counts.get(p.rule.key) ?? 0) + 1);
@@ -146,13 +195,29 @@ export function unapprovedWithRules(client: YnabClient, budgetId: string, approv
           categoryId: p.rule.categoryId,
           previousCategoryId: p.row.category_id ?? null,
           approvedAt: at,
+          ...(p.short === null ? {} : { shortBy: p.short }),
           undone: false,
         })),
       )
       .catch(() => {});
     const gone = new Set(picks.map((p) => p.row.id));
-    return { rows: rows.filter((r) => !gone.has(r.id)), approved: picks.length, error: null };
+    return { rows: rows.filter((r) => !gone.has(r.id)), approved: picks.length, error: null, held };
   });
+}
+
+/** Each category's available in dollars, read from YNAB now; the cached ones when that read fails. A category with no balance is not in the map. */
+async function availableNow(client: YnabClient, budgetId: string): Promise<Map<string, number>> {
+  const balances = new Map<string, number>();
+  try {
+    for (const group of (await client.categoryGroups(budgetId)).rows) {
+      for (const c of group.categories) if (typeof c.balance === "number") balances.set(c.id, c.balance / 1000);
+    }
+    return balances;
+  } catch {
+    balances.clear();
+    for (const c of await new YnabRepository().listCategories().catch(() => [])) if (c.balance !== undefined) balances.set(c.id, c.balance);
+    return balances;
+  }
 }
 
 /** When the app opens: the rules approve what they can, whatever screen is open. Silent on failure; the next load tries again. */

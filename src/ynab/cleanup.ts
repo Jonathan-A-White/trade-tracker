@@ -299,6 +299,23 @@ export function buildItems(rows: readonly YnabTransactionWire[], context: Cleanu
 }
 
 /**
+ * The items a payee rule left for him because its category lacks the money (the setting 'Leave it for me'), each with a first line
+ * naming the category and the shortfall. Its own category is not changed.
+ */
+export function withHeldNotes(items: readonly CleanupItem[], held: Readonly<Record<string, { categoryId: string; short: number }>>, categories: readonly YnabCategory[]): CleanupItem[] {
+  if (Object.keys(held).length === 0) return [...items];
+  return items.map((item) => {
+    const h = held[item.id];
+    if (!h) return item;
+    const name = categories.find((c) => c.id === h.categoryId)?.name ?? "its category";
+    const line = `Held for you: ${name} is short by ${shortMoney(h.short)} for this.`;
+    return { ...item, note: item.note ? `${line} ${item.note}` : line };
+  });
+}
+
+const shortMoney = (dollars: number): string => new Intl.NumberFormat("en-US", { style: "currency", currency: "USD" }).format(dollars);
+
+/**
  * An item with a check image's read applied: the category it suggests (kept as it was when none), the why naming what was read, never
  * ticked, and the memo to write on Approve. A split or a transfer keeps its fixed label and takes only the memo.
  */

@@ -80,6 +80,17 @@ describe("Settings > YNAB", () => {
     expect(JSON.parse(localStorage.getItem("tradetracker-budget-ideas-settings")!)).toEqual({ minSpend: 200, minCharges: 5 });
   });
 
+  it("keeps the choice for a payee rule whose category is short, starting on Approve and note", async () => {
+    const user = userEvent.setup();
+    renderSettings();
+    const choice = await screen.findByLabelText("Auto-approve when the category is short");
+    expect(choice).toHaveValue("approve");
+    await user.selectOptions(choice, "Leave it for me");
+    expect(localStorage.getItem("tradetracker-short-rule")).toBe("hold");
+    await user.selectOptions(choice, "Approve and note");
+    expect(localStorage.getItem("tradetracker-short-rule")).toBe("approve");
+  });
+
   it("with no key yet, turning it on says to make the key first, and Check waits", async () => {
     const user = userEvent.setup();
     renderSettings();

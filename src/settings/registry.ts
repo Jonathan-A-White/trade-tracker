@@ -104,6 +104,13 @@ export const ROWS: readonly SettingsRow<SectionId>[] = rowsInOrder<SectionId, Se
     help: "A group is proposed when it passes the dollars above over twelve months, or this many charges. Default 3.",
   },
   {
+    key: "rule-short",
+    section: "ynab",
+    label: "Auto-approve when the category is short",
+    hint: "What a payee rule does with a charge its category does not have the money for.",
+    help: "Approve and note (the default) approves it and says on Home how far over budget the category went. Leave it for me does not approve it: it waits in Clean up with the shortfall.",
+  },
+  {
     key: "family",
     section: "family",
     label: "Family",

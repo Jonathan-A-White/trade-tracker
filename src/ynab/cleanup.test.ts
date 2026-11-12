@@ -2,7 +2,7 @@ import type { YnabAccount, YnabCategory } from "@/contracts/types";
 import { db } from "@/db/database";
 import { YnabRepository } from "@/db/repositories/ynab-repository";
 import { createYnabClient } from "./api";
-import { CLEANUP_PAGE, SURE_FROM, buildItems, checkNumberOf, groupPage, loadCleanup, offeredCategories, pageAfter, payeeHistory, suggestForPayee } from "./cleanup";
+import { CLEANUP_PAGE, SURE_FROM, buildItems, checkNumberOf, groupPage, loadCleanup, offeredCategories, pageAfter, payeeHistory, suggestForPayee, withHeldNotes } from "./cleanup";
 import { fakeYnab, groupOf } from "./fake-ynab";
 import type { YnabTransactionWire } from "./types";
 
@@ -423,5 +423,18 @@ describe("already categorized in YNAB, only unapproved (his words, 2026-11-12: '
   it("says so for a category this screen does not offer, and cannot change it", () => {
     const [item] = buildItems([tx("Costco", "hidden1", "2026-10-03", { approved: false, category_name: "Old Stuff" })], ctx());
     expect(item).toMatchObject({ fixedLabel: "Old Stuff", ticked: false, note: "Already in Old Stuff in YNAB; only needs approving" });
+  });
+});
+
+describe("a charge a payee rule held because its category lacks the money", () => {
+  it("says which category is short and by how much, keeping any other note", () => {
+    const [plain, already] = buildItems(
+      [tx("Costco", null, "2026-10-03", { id: "a", approved: false }), tx("Costco", "c1", "2026-10-04", { id: "b", approved: false, category_name: "Groceries" })],
+      { categories, history: new Map(), tally: null, notCounted: none, accounts: [] },
+    );
+    const [one, two, other] = withHeldNotes([plain!, already!, { ...plain!, id: "z" }], { a: { categoryId: "c1", short: 7.5 }, b: { categoryId: "c1", short: 1234.5 } }, categories);
+    expect(one!.note).toBe("Held for you: Groceries is short by $7.50 for this.");
+    expect(two!.note).toBe("Held for you: Groceries is short by $1,234.50 for this. Already in Groceries in YNAB; only needs approving");
+    expect(other!.note).toBeUndefined();
   });
 });

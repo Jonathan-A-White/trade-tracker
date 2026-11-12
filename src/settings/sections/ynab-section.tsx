@@ -9,6 +9,7 @@ import { browserStorage } from "@/services/factory-service";
 import { YnabRefusedError, createYnabClient } from "@/ynab/api";
 import { connectBudget, refreshCache } from "@/ynab/cache";
 import { readIdeaSettings, writeIdeaSettings } from "@/ynab/budget-ideas";
+import { readShortRule, writeShortRule, type ShortRule } from "@/ynab/payee-rules";
 import { disconnectYnab } from "@/ynab/disconnect";
 import { openToken, sealToken } from "@/ynab/token";
 import type { YnabBudgetSummary } from "@/ynab/types";
@@ -40,6 +41,8 @@ export function YnabSection() {
   const [ideas, setIdeas] = useState(readIdeaSettings);
   // what is typed in the two fields, kept as typed so a field can be cleared and retyped; only a valid number is saved
   const [typed, setTyped] = useState(() => ({ spend: String(ideas.minSpend), charges: String(ideas.minCharges) }));
+
+  const [shortRule, setShortRule] = useState<ShortRule>(readShortRule);
 
   const connected = on && !!connection;
   const switchedOn = connected || setup;
@@ -254,6 +257,23 @@ export function YnabSection() {
             }}
             className={INPUT_CLASS}
           />
+        </label>
+      </SettingRow>
+      <SettingRow settingKey="rule-short">
+        <label className="block space-y-1">
+          <span className="text-xs text-gray-600 dark:text-gray-400">Auto-approve when the category is short</span>
+          <select
+            value={shortRule}
+            onChange={(e) => {
+              const next: ShortRule = e.target.value === "hold" ? "hold" : "approve";
+              setShortRule(next);
+              writeShortRule(next);
+            }}
+            className={INPUT_CLASS}
+          >
+            <option value="approve">Approve and note</option>
+            <option value="hold">Leave it for me</option>
+          </select>
         </label>
       </SettingRow>
 

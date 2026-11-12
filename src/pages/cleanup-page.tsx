@@ -20,7 +20,7 @@ import { buildRequest, readHistory, resolveSuggestion, tallyFor } from "@/sort/s
 import { money } from "@/sort/waiting";
 import { refreshCache } from "@/ynab/cache";
 import { resolveCheckRead } from "@/ynab/check-read";
-import { applyCheckRead, compareItems, groupPage, isInflowCategory, loadCleanup, pageAfter, type CleanupGroup, type CleanupItem, type Confidence } from "@/ynab/cleanup";
+import { applyCheckRead, compareItems, groupPage, isInflowCategory, loadCleanup, pageAfter, withHeldNotes, type CleanupGroup, type CleanupItem, type Confidence } from "@/ynab/cleanup";
 import { PayeeRuleRepository, setAlways, undoAlways, unapprovedWithRules, type AlwaysDone } from "@/ynab/payee-rules";
 import { readTally } from "@/ynab/tally";
 
@@ -353,7 +353,7 @@ export default function CleanupPage() {
         setRuleError(read.error);
         asked.current = new Set();
         setCategories(loaded.categories);
-        setItems(loaded.items);
+        setItems(withHeldNotes(loaded.items, read.held, loaded.categories));
         setStart(0);
         setWriteError(null);
         setPhase({ state: "ready" });

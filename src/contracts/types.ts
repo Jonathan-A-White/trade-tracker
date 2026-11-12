@@ -373,6 +373,8 @@ export interface YnabRuleApproval {
   /** the category it had before (null: none), put back by Undo */
   previousCategoryId: string | null;
   approvedAt: number;
+  /** Dollars the category lacked for it when the rule approved it (the category went over budget by this much); absent when it held enough or its balance was not known */
+  shortBy?: number;
   /** Undone from Home: not listed again, and the rule leaves it alone while YNAB holds it unapproved */
   undone: boolean;
 }

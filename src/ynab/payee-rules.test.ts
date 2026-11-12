@@ -2,7 +2,7 @@ import { db } from "@/db/database";
 import { YnabRepository } from "@/db/repositories/ynab-repository";
 import { createYnabClient } from "./api";
 import { fakeYnab, groupOf, type FakeYnab, type FakeYnabTransaction } from "./fake-ynab";
-import { PayeeRuleRepository, RuleApprovalRepository, RULE_APPROVAL_DAYS, setAlways, undoAlways, undoRuleApproval, unapprovedWithRules } from "./payee-rules";
+import { PayeeRuleRepository, RuleApprovalRepository, RULE_APPROVAL_DAYS, SHORT_RULE_KEY, readShortRule, setAlways, undoAlways, undoRuleApproval, unapprovedWithRules, writeShortRule } from "./payee-rules";
 import { createYnabWriter, type YnabWriter } from "./writer";
 
 const groups = [groupOf("gi", "Internal Master Category", [["unc", "Uncategorized"], ["rta", "Inflow: Ready to Assign"]]), groupOf("g1", "Food", [["c1", "Groceries"], ["c2", "Eating Out"]])];
@@ -239,5 +239,86 @@ describe("what the rules approved is kept for Home", () => {
     ynab.transactions[0]!.approved = true; // he approved it in YNAB
     await unapprovedWithRules(client(), "b1", writer.approve);
     expect(await db.ynabRuleApprovals.count()).toBe(0);
+  });
+});
+
+describe("a rule's category that lacks the money (his words, 2026-11-12)", () => {
+  const approvals = new RuleApprovalRepository();
+
+  beforeEach(async () => {
+    localStorage.removeItem(SHORT_RULE_KEY);
+    // Fun Money holds $5.00 of available
+    const withBalance = [...groups, groupOf("g2", "Fun", [["c3", "Fun Money", 5_000]])];
+    ynab.budgets[0]!.categoryGroups = withBalance;
+    await new YnabRepository().applyCategories(withBalance, 2);
+  });
+
+  it("defaults to approving and noting", () => {
+    expect(readShortRule()).toBe("approve");
+    writeShortRule("hold");
+    expect(readShortRule()).toBe("hold");
+    localStorage.setItem(SHORT_RULE_KEY, "nonsense");
+    expect(readShortRule()).toBe("approve");
+  });
+
+  it("approves anyway by default and records how far over budget it left the category", async () => {
+    await rule("shell", "c3");
+    ynab.transactions.push(tx("t1", "Shell", { amount: -12_500 }));
+    const read = await unapprovedWithRules(client(), "b1", writer.approve);
+    expect(read.approved).toBe(1);
+    expect(read.held).toEqual({});
+    expect(ynab.transactions[0]).toMatchObject({ approved: true, category_id: "c3" });
+    expect((await approvals.recent("b1"))[0]).toMatchObject({ id: "t1", shortBy: 7.5 });
+  });
+
+  it("notes nothing when the category holds enough, or its balance is not known", async () => {
+    await rule("shell", "c3");
+    await rule("chewy", "c1");
+    ynab.transactions.push(tx("t1", "Shell", { amount: -5_000 }), tx("t2", "Chewy", { amount: -900_000 }));
+    await unapprovedWithRules(client(), "b1", writer.approve);
+    const kept = await approvals.recent("b1");
+    expect(kept).toHaveLength(2);
+    expect(kept.every((a) => a.shortBy === undefined)).toBe(true);
+  });
+
+  it("counts what the same read already put into the category", async () => {
+    await rule("shell", "c3");
+    ynab.transactions.push(tx("t1", "Shell", { amount: -3_000 }), tx("t2", "Shell", { amount: -3_000 }));
+    await unapprovedWithRules(client(), "b1", writer.approve);
+    const kept = await approvals.recent("b1");
+    expect(kept.find((a) => a.id === "t1")?.shortBy).toBeUndefined();
+    expect(kept.find((a) => a.id === "t2")?.shortBy).toBe(1);
+  });
+
+  it("with the setting on Leave it for me, does not approve a short one, lists it with its shortfall, and approves the rest", async () => {
+    writeShortRule("hold");
+    await rule("shell", "c3");
+    await rule("chewy", "c1");
+    ynab.transactions.push(tx("t1", "Shell", { amount: -12_500 }), tx("t2", "Chewy"));
+    const read = await unapprovedWithRules(client(), "b1", writer.approve);
+    expect(read.approved).toBe(1);
+    expect(read.rows.map((r) => r.id)).toEqual(["t1"]);
+    expect(read.held).toEqual({ t1: { categoryId: "c3", short: 7.5 } });
+    expect(ynab.transactions.find((t) => t.id === "t1")).toMatchObject({ approved: false, category_id: null });
+    expect(ynab.transactions.find((t) => t.id === "t2")?.approved).toBe(true);
+    expect((await approvals.recent("b1")).map((a) => a.id)).toEqual(["t2"]);
+    expect((await rules.get("shell"))?.approved).toBe(0);
+  });
+
+  it("with the setting on Leave it for me still approves one the category can cover", async () => {
+    writeShortRule("hold");
+    await rule("shell", "c3");
+    ynab.transactions.push(tx("t1", "Shell", { amount: -5_000 }));
+    const read = await unapprovedWithRules(client(), "b1", writer.approve);
+    expect(read.approved).toBe(1);
+    expect(read.held).toEqual({});
+  });
+
+  it("never calls money in short", async () => {
+    writeShortRule("hold");
+    await rule("shell", "c3");
+    ynab.transactions.push(tx("t1", "Shell", { amount: 40_000 }));
+    const read = await unapprovedWithRules(client(), "b1", writer.approve);
+    expect(read.approved).toBe(1);
   });
 });

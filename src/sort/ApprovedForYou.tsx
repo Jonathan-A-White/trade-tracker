@@ -67,6 +67,11 @@ export function ApprovedForYou() {
             <span className="text-sm text-gray-600 dark:text-gray-400">
               {dayLine(a.date)} · {name.get(a.categoryId) ?? "a category no longer in YNAB"}
             </span>
+            {a.shortBy !== undefined && (
+              <span className="text-sm font-medium text-amber-700 dark:text-amber-400">
+                over budget by {money(a.shortBy)} in {name.get(a.categoryId) ?? "a category no longer in YNAB"}
+              </span>
+            )}
             <span className="flex flex-wrap gap-2">
               <button type="button" disabled={!restore || busy !== null} onClick={() => void undo(a.id)} className={SMALL_BUTTON}>
                 Undo
