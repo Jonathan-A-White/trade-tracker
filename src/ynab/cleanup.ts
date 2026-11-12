@@ -1,10 +1,11 @@
 // The Clean up screen's rules: YNAB's unapproved transactions, each given the category its payee usually goes to and how sure that is.
 // Sure is the only word that pre-ticks: the payee's last SURE_FROM categorized, approved transactions in YNAB all used one category.
 // Nothing here writes; the writer's approve() does, on his tap (or, for a payee with a rule, src/ynab/payee-rules.ts before this lists it).
-import type { YnabCategory } from "@/contracts/types";
+import type { YnabAccount, YnabCategory } from "@/contracts/types";
 import { CheckImageRepository } from "@/db/repositories/check-image-repository";
 import { YnabRepository } from "@/db/repositories/ynab-repository";
 import { fallbackCategory, seenCategoryIds, suggestAtOnce } from "@/sort/suggest";
+import { money } from "@/sort/waiting";
 import type { YnabClient } from "./api";
 import { memoFor, resolveCheckRead, type CheckRead } from "./check-read";
 import { INTERNAL_GROUP, TALLY_WINDOW_DAYS, day, readTally, type Tally } from "./tally";
@@ -158,6 +159,8 @@ export interface CleanupItem {
   check?: string;
   /** the memo to write on Approve (from a check image's read); none leaves YNAB's memo as it is */
   writeMemo?: string;
+  /** a plain first line, said above the why: what a transfer moved, the parts of a split, or that YNAB already holds the category */
+  note?: string;
 }
 
 export interface CleanupContext {
@@ -169,7 +172,56 @@ export interface CleanupContext {
   notCounted: ReadonlySet<string>;
   /** YNAB's Inflow: Ready to Assign, where an inflow goes; also in `categories` so it can be chosen. Absent when the budget has none cached. */
   inflow?: YnabCategory;
+  /** YNAB's accounts, cached: a transfer names its two accounts and their kind from these */
+  accounts?: readonly YnabAccount[];
+  /** every transaction read (the unapproved and the recent past): a transfer's other side is looked for among them */
+  known?: readonly YnabTransactionWire[];
 }
+
+const LOAN_TYPES = new Set(["mortgage", "autoLoan", "studentLoan", "personalLoan", "medicalDebt", "otherDebt", "otherLiability", "lineOfCredit"]);
+const UNKNOWN_ACCOUNT = "another account";
+
+/** The kind of a transfer from its two accounts' YNAB types; 'Transfer' when either account is not known. */
+export function transferKind(a: YnabAccount | undefined, b: YnabAccount | undefined): string {
+  if (!a || !b) return "Transfer";
+  const card = (x: YnabAccount) => x.type === "creditCard";
+  if (card(a) && card(b)) return "Move between credit cards";
+  if (card(a) || card(b)) return "Credit card payment";
+  if (LOAN_TYPES.has(a.type) || LOAN_TYPES.has(b.type)) return "Loan payment";
+  if (!a.onBudget || !b.onBudget) return "Tracking account move";
+  if (a.type === "savings" || b.type === "savings") return "Savings move";
+  return "Move between your own bank accounts";
+}
+
+/**
+ * A transfer card in plain words (the Governor, 2026-11-12): the note says what moved, from which account to which and of what kind;
+ * the why says whether YNAB holds the other side. Sure only when that side is there and approved; matched but not approved (or not
+ * among the transactions read) is likely; with no match it is unsure. None of them has a category: approving writes approved only.
+ */
+function describeTransfer(row: YnabTransactionWire, accounts: readonly YnabAccount[], known: ReadonlyMap<string, YnabTransactionWire>): Pick<CleanupItem, "note" | "why" | "confidence" | "ticked"> {
+  const mine = accounts.find((a) => a.id === row.account_id);
+  const other = accounts.find((a) => a.id === row.transfer_account_id);
+  const [from, to] = row.amount < 0 ? [mine, other] : [other, mine];
+  const kind = transferKind(mine, other);
+  const note = `${kind}: ${money(Math.abs(row.amount) / 1000)} from ${from?.name ?? UNKNOWN_ACCOUNT} to ${to?.name ?? UNKNOWN_ACCOUNT}, ${row.date}`;
+  const where = other?.name ?? UNKNOWN_ACCOUNT;
+  if (!row.transfer_transaction_id) return { note, why: `No matching transaction in ${where} yet.`, confidence: "unsure", ticked: false };
+  const side = known.get(row.transfer_transaction_id);
+  if (side && !side.deleted && side.approved === true) return { note, why: `YNAB has the other side in ${where}, and it is approved.`, confidence: "sure", ticked: true };
+  if (side && !side.deleted) return { note, why: `YNAB has the other side in ${where}, not approved yet.`, confidence: "likely", ticked: false };
+  return { note, why: `YNAB has the other side in ${where}.`, confidence: "likely", ticked: false };
+}
+
+/** A split's parts as one sentence: '$20.00 Groceries, $10.00 Household'. */
+function describeSplit(row: YnabTransactionWire, categories: readonly YnabCategory[], accounts: readonly YnabAccount[]): string {
+  const parts = (row.subtransactions ?? []).filter((p) => !p.deleted);
+  const where = (p: (typeof parts)[number]) =>
+    p.transfer_account_id ? `transfer to ${accounts.find((a) => a.id === p.transfer_account_id)?.name ?? UNKNOWN_ACCOUNT}` : (p.category_name?.trim() || categories.find((c) => c.id === p.category_id)?.name || "no category");
+  return `Split in YNAB into ${parts.length === 1 ? "1 part" : `${parts.length} parts`}: ${parts.map((p) => `${money(Math.abs(p.amount) / 1000)} ${where(p)}`).join(", ")}.`;
+}
+
+/** What is said first of a transaction YNAB already has in a category. */
+const alreadyIn = (category: string): string => `Already in ${category} in YNAB; only needs approving`;
 
 /** The order of the list: every check after every other transaction, then oldest first. */
 export function compareItems(a: { check?: boolean | string; date: string; id: string }, b: { check?: boolean | string; date: string; id: string }): number {
@@ -185,6 +237,8 @@ export function compareItems(a: { check?: boolean | string; date: string; id: st
  */
 export function buildItems(rows: readonly YnabTransactionWire[], context: CleanupContext): CleanupItem[] {
   const { categories, history, tally, notCounted } = context;
+  const accounts = context.accounts ?? [];
+  const known = new Map([...(context.known ?? []), ...rows].flatMap((r) => (r.id ? [[r.id, r] as const] : [])));
   const inflowCategory = context.inflow ?? categories.find(isInflowCategory);
   // a charge is judged among the spending categories; Ready to Assign is for money in
   const spending = categories.filter((c) => !isInflowCategory(c));
@@ -206,10 +260,10 @@ export function buildItems(rows: readonly YnabTransactionWire[], context: Cleanu
       const key = check === null ? payeeKey(payee) : `check:${row.id}`;
       const base = { id: row.id!, date: row.date, payee, key, amount: row.amount / 1000, memo: row.memo?.trim() ?? "", ynabCategoryId: row.category_id ?? null, seen: [] as string[], open: false, ...(check === null ? {} : { check }) };
       if (row.subtransactions && row.subtransactions.length > 0) {
-        return { ...base, categoryId: null, fixedLabel: "Split", confidence: "unsure", why: "Split in YNAB.", ticked: false };
+        return { ...base, categoryId: null, fixedLabel: "Split", note: describeSplit(row, categories, accounts), confidence: "unsure", why: "Approving it keeps its parts as they are.", ticked: false };
       }
       if (row.transfer_account_id) {
-        return { ...base, categoryId: null, fixedLabel: "Transfer", confidence: "unsure", why: "A transfer.", ticked: false };
+        return { ...base, categoryId: null, fixedLabel: "Transfer", ...describeTransfer(row, accounts, known) };
       }
       const isInflow = check === null && row.amount > 0;
       const found = check === null ? suggestion(payee, isInflow) : null;
@@ -217,11 +271,14 @@ export function buildItems(rows: readonly YnabTransactionWire[], context: Cleanu
       if (!isUncategorized(row.category_id, row.category_name, notCounted)) {
         const own = categories.find((c) => c.id === row.category_id);
         if (!own) {
-          return { ...base, categoryId: null, fixedLabel: row.category_name?.trim() || "Another category", confidence: "unsure", why: "Already categorized in YNAB.", ticked: false };
+          const name = row.category_name?.trim() || "Another category";
+          return { ...base, categoryId: null, fixedLabel: name, note: alreadyIn(name), confidence: "unsure", why: "This screen cannot change that category; approving keeps it.", ticked: false };
         }
+        // YNAB already holds the category: what is checked is whether the payee's history agrees with it, and an agreeing one is ticked
         const agrees = found?.categoryId === own.id;
         const confidence: Confidence = agrees ? found.confidence : "unsure";
-        return { ...base, seen, categoryId: own.id, confidence, why: agrees ? found.why : `YNAB has it in ${own.name}.`, ticked: confidence === "sure" };
+        const why = check !== null ? "Add the check's image and it is read for who was paid." : agrees ? found.why : found ? `Its history here went to ${categories.find((c) => c.id === found.categoryId)?.name ?? "another category"}, not ${own.name}.` : "Nothing in its history to check that.";
+        return { ...base, seen, categoryId: own.id, note: alreadyIn(own.name), confidence, why, ticked: agrees };
       }
       if (found) return { ...base, seen, categoryId: found.categoryId, confidence: found.confidence, why: found.why, ticked: found.confidence === "sure" };
       if (isInflow) {
@@ -252,7 +309,8 @@ export function applyCheckRead(item: CleanupItem, read: CheckRead): CleanupItem 
   return {
     ...item,
     ...memoPatch,
-    ...(read.categoryId ? { categoryId: read.categoryId } : {}),
+    // the read's category replaces what YNAB held, so "Already in <category>" no longer says what the card will do
+    ...(read.categoryId ? { categoryId: read.categoryId, note: undefined } : {}),
     confidence: read.categoryId ? read.confidence : "unsure",
     why: read.why,
     ticked: false,
@@ -315,13 +373,15 @@ export async function loadCleanup(
   now: number = Date.now(),
   read?: readonly YnabTransactionWire[],
 ): Promise<{ items: CleanupItem[]; categories: YnabCategory[] }> {
-  const { categories, notCounted, inflow } = offeredCategories(await new YnabRepository().listCategories());
+  const repo = new YnabRepository();
+  const { categories, notCounted, inflow } = offeredCategories(await repo.listCategories());
+  const accounts = await repo.listAccounts();
   const [unapproved, past] = await Promise.all([
     read ?? client.unapprovedTransactions(budgetId),
     client.transactionsSince(budgetId, day(now - TALLY_WINDOW_DAYS * 24 * 60 * 60_000)),
   ]);
   const tally = readTally();
-  const built = buildItems(unapproved, { categories, history: payeeHistory(past, notCounted), tally: tally?.budgetId === budgetId ? tally : null, notCounted, inflow });
+  const built = buildItems(unapproved, { categories, history: payeeHistory(past, notCounted), tally: tally?.budgetId === budgetId ? tally : null, notCounted, inflow, accounts, known: [...past, ...unapproved] });
   // a check whose image was read on an earlier visit has that read applied again; the mill is not asked twice
   const kept = await new CheckImageRepository().many(built.filter((i) => i.check !== undefined).map((i) => i.id));
   const items = built.map((item) => {

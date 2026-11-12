@@ -149,6 +149,7 @@ function GroupCard({
                 {item.confidence !== best && <Badge confidence={item.confidence} />}
               </label>
               {item.memo && <p className="break-words pl-8 text-sm text-gray-600 dark:text-gray-400">{item.memo}</p>}
+              {item.note && <p className="break-words pl-8 text-sm text-gray-800 dark:text-gray-200">{item.note}</p>}
               <p className="pl-8 text-xs text-gray-600 dark:text-gray-400">{item.why}</p>
               {item.fixedLabel ? (
                 <p className="pl-8 text-sm font-medium text-gray-800 dark:text-gray-200">{item.fixedLabel}</p>
@@ -259,6 +260,7 @@ function CheckCard({
       </label>
       {item.memo && <p className="break-words text-sm text-gray-600 dark:text-gray-400">{item.memo}</p>}
       {item.writeMemo && <p className="break-words text-sm text-gray-700 dark:text-gray-300">Memo on approve: {item.writeMemo}</p>}
+      {item.note && <p className="break-words text-sm text-gray-800 dark:text-gray-200">{item.note}</p>}
       <p className="text-xs text-gray-600 dark:text-gray-400">{item.why}</p>
       {item.fixedLabel ? (
         <p className="text-sm font-medium text-gray-800 dark:text-gray-200">{item.fixedLabel}</p>
