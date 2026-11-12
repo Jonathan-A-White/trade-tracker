@@ -8,7 +8,8 @@
 import { useLiveQuery } from "dexie-react-hooks";
 import { useCallback, useEffect, useMemo, useRef, useState, type ClipboardEvent } from "react";
 import { Link } from "react-router";
-import type { YnabCategory } from "@/contracts/types";
+import type { CheckImage, YnabCategory } from "@/contracts/types";
+import { ConfirmDialog } from "@/components/feedback/confirm-dialog";
 import { PageHeader } from "@/components/layout/page-header";
 import { db } from "@/db/database";
 import { CheckImageRepository } from "@/db/repositories/check-image-repository";
@@ -219,6 +220,8 @@ function CheckCard({
   onItemCategory,
   onTick,
   onImage,
+  canUndo,
+  onUndo,
 }: {
   group: CleanupGroup;
   categories: readonly YnabCategory[];
@@ -228,6 +231,9 @@ function CheckCard({
   onItemCategory: (id: string, categoryId: string) => void;
   onTick: (id: string, on: boolean) => void;
   onImage: (item: CleanupItem, file: Blob) => void;
+  /** an image he replaced is still kept, until he leaves the card */
+  canUndo: boolean;
+  onUndo: (item: CleanupItem) => void;
 }) {
   const item = group.items[0]!;
   const number = item.check ?? "";
@@ -284,6 +290,14 @@ function CheckCard({
         }}
       />
       <p className="text-xs text-gray-600 dark:text-gray-400">Take a photo, choose a file, or paste an image here. It stays on this phone and never goes to YNAB.</p>
+      {canUndo && (
+        <p className="flex flex-wrap items-center gap-x-3 text-sm text-gray-800 dark:text-gray-200">
+          The earlier image was replaced.
+          <button type="button" className="min-h-12 px-2 font-semibold underline" onClick={() => onUndo(item)}>
+            Undo
+          </button>
+        </p>
+      )}
       {note && (
         <p role="status" className="text-sm text-gray-800 dark:text-gray-200">
           {note}
@@ -332,6 +346,10 @@ export default function CleanupPage() {
   const [undoable, setUndoable] = useState<Undoable | null>(null);
   const [showRules, setShowRules] = useState(false);
   const [checkNotes, setCheckNotes] = useState<Record<string, string>>({});
+  // a second image waiting for his answer to "Replace the check image?", and the images he has replaced on this page (kept for Undo
+  // until he leaves the card: the rows are tied to the page they were replaced on)
+  const [pendingImage, setPendingImage] = useState<{ item: CleanupItem; file: Blob } | null>(null);
+  const [replacedOn, setReplacedOn] = useState<{ page: string; rows: Record<string, CheckImage> }>({ page: "", rows: {} });
   const asked = useRef(new Set<string>());
 
   // read YNAB afresh on opening and when he goes through them again
@@ -370,6 +388,8 @@ export default function CleanupPage() {
   const groups = useMemo(() => groupPage(page), [page]);
   const checkIds = useMemo(() => page.filter((i) => i.check !== undefined).map((i) => i.id), [page]);
   const checkIdsKey = checkIds.join("\u0000");
+  const pageKey = `${round}:${start}:${checkIdsKey}`;
+  const replaced = replacedOn.page === pageKey ? replacedOn.rows : {};
   // the images kept for the checks on this page
   const images = useLiveQuery(async () => new Map([...(await new CheckImageRepository().many(checkIds))].map(([id, row]) => [id, row.image])), [checkIdsKey]);
 
@@ -431,7 +451,7 @@ export default function CleanupPage() {
 
   // an image he adds is kept on the device first, then read by the mill (when allowed) for the payee and memo; a failed read leaves
   // the image kept and the card as it was
-  async function addImage(item: CleanupItem, file: Blob) {
+  async function addImage(item: CleanupItem, file: Blob, previous?: CheckImage) {
     let image: Blob;
     try {
       image = await stillFromFile(file, RECEIPT_STILL);
@@ -440,6 +460,7 @@ export default function CleanupPage() {
       return;
     }
     const repo = new CheckImageRepository();
+    if (previous) setReplacedOn((now) => ({ page: pageKey, rows: { ...(now.page === pageKey ? now.rows : {}), [item.id]: previous } }));
     const kept = await repo.put(item.id, image);
     if (!readCheck) return note(item.id, null);
     note(item.id, "Reading the image…");
@@ -448,6 +469,8 @@ export default function CleanupPage() {
     try {
       const request = { check: item.payee, date: item.date, amount: Math.abs(item.amount), categories: categories.filter((c) => !isInflowCategory(c)).slice(0, 150).map((c) => ({ name: c.name.slice(0, 60) })) };
       const answer = await readCheck(request, image, run.signal);
+      // the image was put back by Undo while the mill was reading: the read is of an image no longer on the card
+      if ((await repo.get(item.id))?.addedAt !== kept.addedAt) return note(item.id, null);
       await repo.setRead(item.id, kept.addedAt, answer);
       const read = resolveCheckRead(answer, categories);
       if (read) setItems((all) => all.map((i) => (i.id === item.id ? applyCheckRead(i, read) : i)));
@@ -458,6 +481,31 @@ export default function CleanupPage() {
     } finally {
       clearTimeout(deadline);
     }
+  }
+
+  // a second image on a check that has one is asked about first; the first image of a check is just kept
+  async function offerImage(item: CleanupItem, file: Blob) {
+    if (await new CheckImageRepository().get(item.id)) setPendingImage({ item, file });
+    else await addImage(item, file);
+  }
+
+  async function replaceImage() {
+    const pending = pendingImage;
+    if (!pending) return;
+    setPendingImage(null);
+    const previous = await new CheckImageRepository().get(pending.item.id);
+    await addImage(pending.item, pending.file, previous);
+  }
+
+  // Undo puts the replaced image back, with its read, and what that read suggested
+  async function undoImage(item: CleanupItem) {
+    const previous = replaced[item.id];
+    if (!previous) return;
+    await new CheckImageRepository().restore(previous);
+    setReplacedOn((now) => ({ page: now.page, rows: Object.fromEntries(Object.entries(now.rows).filter(([id]) => id !== item.id)) }));
+    note(item.id, null);
+    const read = previous.read ? resolveCheckRead(previous.read, categories) : null;
+    if (read) setItems((all) => all.map((i) => (i.id === item.id ? applyCheckRead(i, read) : i)));
   }
 
   // Undo is there for ten seconds after "Always"
@@ -566,6 +614,15 @@ export default function CleanupPage() {
             </button>
           </p>
         )}
+        <ConfirmDialog
+          open={pendingImage !== null}
+          title="Replace the check image?"
+          message="The image on this check is replaced by the new one. You can undo it on the card until you leave it."
+          confirmLabel="Replace"
+          cancelLabel="Keep"
+          onConfirm={() => void replaceImage()}
+          onCancel={() => setPendingImage(null)}
+        />
         {phase.state === "loading" && <p role="status" className="text-base text-gray-700 dark:text-gray-300">Reading the transactions…</p>}
         {phase.state === "failed" && (
           <div role="alert" className="space-y-2">
@@ -602,7 +659,9 @@ export default function CleanupPage() {
                     note={checkNotes[group.items[0].id]}
                     onItemCategory={onItemCategory}
                     onTick={onTick}
-                    onImage={(item, file) => void addImage(item, file)}
+                    onImage={(item, file) => void offerImage(item, file)}
+                    canUndo={replaced[group.items[0].id] !== undefined}
+                    onUndo={(item) => void undoImage(item)}
                   />
                 </div>
               ) : (

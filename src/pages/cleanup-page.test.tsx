@@ -644,6 +644,46 @@ describe("Clean up: the Checks pile (his words, 2026-11-12)", () => {
     expect((await db.checkImages.get("ck1"))?.read).toBeUndefined();
   });
 
+  it("asks 'Replace the check image?' before a second image replaces the first: Keep leaves it, Replace keeps the old one undoable on the card", async () => {
+    checks();
+    const user = userEvent.setup();
+    renderPage({ readCheck: null });
+    const card = await screen.findByRole("group", { name: "CHECK 1089 *8368" });
+    await user.upload(within(card).getByTestId("check-file-input"), jpeg());
+    await within(card).findByRole("img", { name: "Image of check 1089" });
+    const first = await db.checkImages.get("ck1");
+    expect(within(card).queryByRole("button", { name: "Undo" })).not.toBeInTheDocument();
+
+    // Keep: nothing changes
+    await user.upload(within(card).getByTestId("check-file-input"), new File([new Uint8Array([9, 9])], "second.jpg", { type: "image/jpeg" }));
+    expect(await screen.findByText("Replace the check image?")).toBeInTheDocument();
+    expect((await db.checkImages.get("ck1"))?.addedAt).toBe(first?.addedAt);
+    await user.click(screen.getByRole("button", { name: "Keep" }));
+    expect(screen.queryByText("Replace the check image?")).not.toBeInTheDocument();
+    expect((await db.checkImages.get("ck1"))?.addedAt).toBe(first?.addedAt);
+    expect(within(card).queryByRole("button", { name: "Undo" })).not.toBeInTheDocument();
+
+    // Replace: the new one is kept and Undo brings the first back
+    await new Promise((r) => setTimeout(r, 5));
+    await user.upload(within(card).getByTestId("check-file-input"), new File([new Uint8Array([9, 9])], "second.jpg", { type: "image/jpeg" }));
+    await user.click(await screen.findByRole("button", { name: "Replace" }));
+    await waitFor(async () => expect((await db.checkImages.get("ck1"))?.addedAt).not.toBe(first?.addedAt));
+    await user.click(await within(card).findByRole("button", { name: "Undo" }));
+    await waitFor(async () => expect((await db.checkImages.get("ck1"))?.addedAt).toBe(first?.addedAt));
+    expect(within(card).queryByRole("button", { name: "Undo" })).not.toBeInTheDocument();
+    expect(await within(card).findByRole("img", { name: "Image of check 1089" })).toBeInTheDocument();
+  });
+
+  it("does not ask for the first image of a check", async () => {
+    checks();
+    const user = userEvent.setup();
+    renderPage({ readCheck: null });
+    const card = await screen.findByRole("group", { name: "CHECK 1089 *8368" });
+    await user.upload(within(card).getByTestId("check-file-input"), jpeg());
+    await within(card).findByRole("img", { name: "Image of check 1089" });
+    expect(screen.queryByText("Replace the check image?")).not.toBeInTheDocument();
+  });
+
   it("will not name Groceries for a payee read, which falls to Stuff I Forgot to Budget For", async () => {
     checks();
     const user = userEvent.setup();

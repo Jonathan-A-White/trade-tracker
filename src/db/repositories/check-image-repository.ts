@@ -20,6 +20,11 @@ export class CheckImageRepository {
     return row;
   }
 
+  /** Puts back a row as it was (Undo of a replaced image): the image, when it was added and its read. */
+  async restore(row: CheckImage): Promise<void> {
+    await db.checkImages.put(row);
+  }
+
   /** Keeps what the mill read from the image added at `addedAt`; nothing when the image has since been replaced. */
   async setRead(transactionId: string, addedAt: number, read: CheckReadAnswer): Promise<void> {
     await db.transaction("rw", db.checkImages, async () => {
