@@ -20,7 +20,7 @@ import { buildRequest, readHistory, resolveSuggestion, tallyFor } from "@/sort/s
 import { money } from "@/sort/waiting";
 import { refreshCache } from "@/ynab/cache";
 import { resolveCheckRead } from "@/ynab/check-read";
-import { applyCheckRead, compareItems, groupPage, loadCleanup, pageAfter, type CleanupGroup, type CleanupItem, type Confidence } from "@/ynab/cleanup";
+import { applyCheckRead, compareItems, groupPage, isInflowCategory, loadCleanup, pageAfter, type CleanupGroup, type CleanupItem, type Confidence } from "@/ynab/cleanup";
 import { PayeeRuleRepository, setAlways, undoAlways, unapprovedWithRules, type AlwaysDone } from "@/ynab/payee-rules";
 import { readTally } from "@/ynab/tally";
 
@@ -55,6 +55,9 @@ const bestOf = (items: readonly CleanupItem[]): Confidence => items.reduce<Confi
 function Badge({ confidence }: { confidence: Confidence }) {
   return <span className={`rounded-full px-2 py-0.5 text-xs font-medium ${BADGE[confidence]}`}>{WORD[confidence]}</span>;
 }
+
+/** Ready to Assign is for money in: a list for an outflow leaves it out. */
+const choicesFor = (categories: readonly YnabCategory[], moneyIn: boolean): readonly YnabCategory[] => (moneyIn ? categories : categories.filter((c) => !isInflowCategory(c)));
 
 /** The categories as a list narrowed by their group; `value` "" says none (or, for a group, that its transactions differ). */
 function CategorySelect({ label, value, categories, onChange, mixed = false }: { label: string; value: string; categories: readonly YnabCategory[]; onChange: (id: string) => void; mixed?: boolean }) {
@@ -114,7 +117,7 @@ function GroupCard({
       <p className="text-sm text-gray-600 dark:text-gray-400">
         {plural(group.items.length)} · {said(group.total)}
       </p>
-      {editable.length > 0 && <CategorySelect label={`Category for ${group.payee}`} value={shared} mixed={mixed} categories={categories} onChange={(id) => onGroupCategory(group.key, id)} />}
+      {editable.length > 0 && <CategorySelect label={`Category for ${group.payee}`} value={shared} mixed={mixed} categories={choicesFor(categories, group.items.some((i) => i.amount > 0))} onChange={(id) => onGroupCategory(group.key, id)} />}
       {onAlways && sharedName && (
         <button type="button" disabled={busy} className={`${SECONDARY} w-full`} onClick={() => onAlways(group, shared)}>
           Always {sharedName}
@@ -152,7 +155,7 @@ function GroupCard({
               ) : (
                 group.items.length > 1 && (
                   <div className="pl-8">
-                    <CategorySelect label={`Category for ${what}`} value={item.categoryId ?? ""} categories={categories} onChange={(id) => onItemCategory(item.id, id)} />
+                    <CategorySelect label={`Category for ${what}`} value={item.categoryId ?? ""} categories={choicesFor(categories, item.amount > 0)} onChange={(id) => onItemCategory(item.id, id)} />
                   </div>
                 )
               )}
@@ -260,7 +263,7 @@ function CheckCard({
       {item.fixedLabel ? (
         <p className="text-sm font-medium text-gray-800 dark:text-gray-200">{item.fixedLabel}</p>
       ) : (
-        <CategorySelect label={`Category for ${group.payee}`} value={item.categoryId ?? ""} categories={categories} onChange={(id) => onItemCategory(item.id, id)} />
+        <CategorySelect label={`Category for ${group.payee}`} value={item.categoryId ?? ""} categories={choicesFor(categories, item.amount > 0)} onChange={(id) => onItemCategory(item.id, id)} />
       )}
       {image && <CheckThumb image={image} check={number} />}
       <button type="button" className={`${SECONDARY} w-full`} onClick={() => file.current?.click()}>
@@ -385,10 +388,11 @@ export default function CleanupPage() {
         const amount = Math.abs(items.find((i) => i.payee === payee)?.amount ?? 0);
         const deadline = setTimeout(() => run.abort(), suggestTimeoutMs);
         try {
-          const tally = tallyFor(payee, readTally(), categories);
-          const answer = await suggest(buildRequest({ merchant: payee, amount }, categories, readHistory(payee), undefined, tally), run.signal);
+          const spending = categories.filter((c) => !isInflowCategory(c));
+          const tally = tallyFor(payee, readTally(), spending);
+          const answer = await suggest(buildRequest({ merchant: payee, amount }, spending, readHistory(payee), undefined, tally), run.signal);
           const seen = new Set(items.find((i) => i.payee === payee)?.seen ?? []);
-          const found = resolveSuggestion(answer, categories, amount, seen);
+          const found = resolveSuggestion(answer, spending, amount, seen);
           if (found && "categoryId" in found && !cancelled) {
             setItems((all) => all.map((i) => (i.key === key && !i.fixedLabel && i.open ? { ...i, categoryId: found.categoryId, why: found.why, open: false } : i)));
           }
@@ -440,7 +444,7 @@ export default function CleanupPage() {
     const run = new AbortController();
     const deadline = setTimeout(() => run.abort(), checkTimeoutMs);
     try {
-      const request = { check: item.payee, date: item.date, amount: Math.abs(item.amount), categories: categories.slice(0, 150).map((c) => ({ name: c.name.slice(0, 60) })) };
+      const request = { check: item.payee, date: item.date, amount: Math.abs(item.amount), categories: categories.filter((c) => !isInflowCategory(c)).slice(0, 150).map((c) => ({ name: c.name.slice(0, 60) })) };
       const answer = await readCheck(request, image, run.signal);
       await repo.setRead(item.id, kept.addedAt, answer);
       const read = resolveCheckRead(answer, categories);

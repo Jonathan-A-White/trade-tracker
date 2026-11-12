@@ -654,3 +654,32 @@ describe("Clean up: the Checks pile (his words, 2026-11-12)", () => {
     expect(within(card).getByLabelText("Category for CHECK 1089 *8368")).toHaveValue("c4");
   });
 });
+
+describe("Clean up: an inflow (his words, 2026-11-12: 'Inflow should go to Ready to Assign')", () => {
+  it("suggests Ready to Assign for a $108.93 Chase Rewards inflow, and Always makes a Ready to Assign rule", async () => {
+    const user = userEvent.setup();
+    await new YnabRepository().applyCategories(
+      [groupOf("gi", "Internal Master Category", [["unc", "Uncategorized"], ["rta", "Inflow: Ready to Assign"]]), groupOf("g1", "Food", [["c1", "Groceries"], ["c2", "Eating Out"]]), groupOf("g2", "Home", [["c3", "Household"]]), groupOf("g3", "Surprises", [["c4", "Stuff I Forgot to Budget For"]])],
+      2,
+    );
+    ynab.transactions.push(unapproved("Chase Rewards", null, "2026-03-17", { id: "cr1", amount: 108_930 }));
+    renderPage();
+    const chase = await screen.findByRole("group", { name: "Chase Rewards" });
+    expect(within(chase).getByRole("combobox", { name: "Category for Chase Rewards" })).toHaveValue("rta");
+    expect(within(chase).getByText(/Ready to Assign/, { selector: "p" })).toBeInTheDocument();
+    expect(within(chase).queryByText(/Stuff I Forgot to Budget For/, { selector: "p" })).not.toBeInTheDocument();
+    expect(within(chase).getByText("Unsure")).toBeInTheDocument();
+    await user.click(within(chase).getByRole("button", { name: "Always Inflow: Ready to Assign" }));
+
+    await waitFor(() => expect(screen.queryByRole("group", { name: "Chase Rewards" })).not.toBeInTheDocument());
+    expect(ynab.transactions.find((t) => t.id === "cr1")).toMatchObject({ approved: true, category_id: "rta" });
+    expect(await db.ynabPayeeRules.get("chase rewards")).toMatchObject({ categoryId: "rta", approved: 1 });
+  });
+
+  it("does not offer Ready to Assign for a charge", async () => {
+    await new YnabRepository().applyCategories([groupOf("gi", "Internal Master Category", [["unc", "Uncategorized"], ["rta", "Inflow: Ready to Assign"]])], 2);
+    renderPage();
+    const tj = await screen.findByRole("group", { name: "Trader Joe's" });
+    expect(within(tj).queryByRole("option", { name: "Inflow: Ready to Assign" })).not.toBeInTheDocument();
+  });
+});
