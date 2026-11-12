@@ -46,6 +46,14 @@ describe("turning YNAB off", () => {
     expect(readTally()).toBeNull();
   });
 
+  it("forgets what the payee rules approved (a copy of his YNAB data) and keeps the rules", async () => {
+    await db.ynabRuleApprovals.put({ id: "t1", budgetId: "b1", ruleKey: "chewy", payee: "Chewy", amount: -1000, date: "2026-11-10", categoryId: "c1", previousCategoryId: null, approvedAt: 1, undone: false });
+    await db.ynabPayeeRules.put({ key: "chewy", budgetId: "b1", payee: "Chewy", categoryId: "c1", createdAt: 1, approved: 1 });
+    await disconnectYnab(new vault.MemoryStorage());
+    expect(await db.ynabRuleApprovals.count()).toBe(0);
+    expect(await db.ynabPayeeRules.count()).toBe(1);
+  });
+
   it("forgets that a read failed, so turning YNAB on again is not made to wait the hour", async () => {
     localStorage.setItem(TALLY_FAILED_KEY, String(NOW));
     await disconnectYnab(new vault.MemoryStorage());

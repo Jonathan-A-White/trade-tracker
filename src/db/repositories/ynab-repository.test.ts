@@ -59,9 +59,7 @@ describe("YnabRepository", () => {
   it("clears the connection and everything cached", async () => {
     await repo.saveConnection({ budgetId: "b1", budgetName: "Our Budget" });
     await repo.applyPayees([payeeOf("p1", "Trader Joe's")], 4);
-    await db.ynabRuleApprovals.put({ id: "t1", budgetId: "b1", ruleKey: "chewy", payee: "Chewy", amount: -1000, date: "2026-11-10", categoryId: "c1", previousCategoryId: null, approvedAt: 1, undone: false });
     await repo.clearAll();
-    expect(await db.ynabRuleApprovals.count()).toBe(0);
     expect(await repo.getConnection()).toBeUndefined();
     expect(await db.ynabPayees.count()).toBe(0);
   });

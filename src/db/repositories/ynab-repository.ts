@@ -86,13 +86,11 @@ export class YnabRepository {
 
   /** Forgets the connection and every cached list. */
   async clearAll(): Promise<void> {
-    await db.transaction("rw", [db.ynabConnection, db.ynabCategories, db.ynabAccounts, db.ynabPayees, db.ynabRuleApprovals], async () => {
+    await db.transaction("rw", [db.ynabConnection, db.ynabCategories, db.ynabAccounts, db.ynabPayees], async () => {
       await db.ynabConnection.clear();
       await db.ynabCategories.clear();
       await db.ynabAccounts.clear();
       await db.ynabPayees.clear();
-      // what the rules approved is a copy of YNAB data too
-      await db.ynabRuleApprovals.clear();
     });
   }
 }
