@@ -673,7 +673,7 @@ export default function CleanupPage() {
                 {writeError}
               </p>
             )}
-            <div className="sticky bottom-16 flex flex-wrap gap-2 bg-gray-50 dark:bg-gray-900 py-2">
+            <div className="sticky bottom-(--tt-nav-h) flex flex-wrap gap-2 bg-gray-50 dark:bg-gray-900 py-2">
               <button
                 type="button"
                 disabled={!approve || picked.length === 0 || saving}
