@@ -10,9 +10,14 @@ import { fakeAlerts, type FakeAlerts } from "@/family/fake-alerts";
 import { reloadPage } from "@/move/reload";
 import { appRoutes } from "@/routes";
 import type { PasskeyPort } from "@/services/passkey";
-import { setFamilyOn } from "@/settings/connections";
+import { YnabRepository } from "@/db/repositories/ynab-repository";
+import { setFamilyOn, setYnabOn } from "@/settings/connections";
 import { SortProvider, type SortSeams } from "@/sort/sort-context";
 import { ME_KEY } from "@/sort/waiting";
+import { createYnabClient } from "@/ynab/api";
+import { fakeYnab, groupOf, type FakeYnab, type FakeYnabTransaction } from "@/ynab/fake-ynab";
+import { PayeeRuleRepository } from "@/ynab/payee-rules";
+import { createYnabWriter } from "@/ynab/writer";
 
 vi.mock("@/move/reload", () => ({ reloadPage: vi.fn() }));
 
@@ -210,5 +215,79 @@ describe("Home: Moving from the old address", () => {
     renderHome({ me: "Jonathan" });
     expect(await screen.findByText(/Unpacked: 1 stores, 0 items, 0 trips, 0 prices, 0 photos\./)).toBeInTheDocument();
     expect(screen.queryByRole("button", { name: LINE })).not.toBeInTheDocument();
+  });
+});
+
+describe("Home: Approved for you (what the payee rules approved)", () => {
+  const groups = [groupOf("gi", "Internal Master Category", [["unc", "Uncategorized"], ["rta", "Inflow: Ready to Assign"]]), groupOf("g1", "Food", [["c1", "Groceries"], ["c2", "Eating Out"]])];
+  let ynab: FakeYnab;
+  const tx = (id: string, payee: string, over: Partial<FakeYnabTransaction> = {}): FakeYnabTransaction => ({
+    id,
+    account_id: "a1",
+    date: "2026-11-10",
+    amount: -43_120,
+    payee_name: payee,
+    category_id: null,
+    approved: false,
+    ...over,
+  });
+
+  function renderYnabHome() {
+    const client = createYnabClient("good", ynab.fetch);
+    const writer = createYnabWriter({ getClient: async () => client });
+    return renderHome({ writer, ynabClient: async () => client, me: "Jonathan" });
+  }
+
+  beforeEach(async () => {
+    ynab = fakeYnab("good", [{ id: "b1", name: "Our Budget", categoryGroups: groups, accounts: [], payees: [] }]);
+    const repo = new YnabRepository();
+    await repo.saveConnection({ budgetId: "b1", budgetName: "Our Budget" });
+    await repo.applyCategories(groups, 1);
+    await setYnabOn(true);
+    await new PayeeRuleRepository().put({ key: "chewy", budgetId: "b1", payee: "Chewy", categoryId: "c1", createdAt: 1, approved: 0 });
+  });
+
+  it("lists what a rule approved with payee, amount, date and category, and Undo puts one back to Waiting / Clean up, keeping the rule", async () => {
+    ynab.transactions.push(tx("t1", "Chewy"), tx("t2", "Chewy", { amount: -9_990, date: "2026-11-11" }), tx("t3", "Shell"));
+    const user = userEvent.setup();
+    renderYnabHome();
+
+    expect(await screen.findByRole("heading", { name: "Approved for you · 2" })).toBeInTheDocument();
+    const list = screen.getByRole("list", { name: "Approved for you" });
+    const rows = within(list).getAllByRole("listitem");
+    expect(rows).toHaveLength(2);
+    expect(rows.map((r) => r.textContent).join("|")).toMatch(/Chewy/);
+    const first = rows.find((r) => r.textContent?.includes("$43.12"))!;
+    expect(first).toHaveTextContent("Chewy");
+    expect(first).toHaveTextContent("Nov 10");
+    expect(first).toHaveTextContent("Groceries");
+    expect(ynab.transactions.map((t) => [t.id, t.approved])).toEqual([["t1", true], ["t2", true], ["t3", false]]);
+
+    await user.click(within(first).getByRole("button", { name: "Undo" }));
+    expect(await screen.findByRole("heading", { name: "Approved for you · 1" })).toBeInTheDocument();
+    expect(ynab.transactions.map((t) => [t.id, t.approved, t.category_id])).toEqual([["t1", false, null], ["t2", true, "c1"], ["t3", false, null]]);
+    expect((await new PayeeRuleRepository().get("chewy"))?.categoryId).toBe("c1");
+
+    // and it is waiting in Clean up again, not approved a second time by the rule
+    await user.click(screen.getByRole("link", { name: "Clean up" }));
+    expect((await screen.findAllByLabelText("Approve $43.12 on 2026-11-10")).length).toBeGreaterThan(0);
+    expect(ynab.transactions.find((t) => t.id === "t1")?.approved).toBe(false);
+  });
+
+  it("'Stop this rule' takes the rule away and leaves what it approved listed", async () => {
+    ynab.transactions.push(tx("t1", "Chewy"));
+    const user = userEvent.setup();
+    renderYnabHome();
+    expect(await screen.findByRole("heading", { name: "Approved for you · 1" })).toBeInTheDocument();
+    await user.click(screen.getByRole("button", { name: "Stop this rule" }));
+    await waitFor(async () => expect(await new PayeeRuleRepository().get("chewy")).toBeUndefined());
+    expect(screen.getByRole("heading", { name: "Approved for you · 1" })).toBeInTheDocument();
+    expect(screen.queryByRole("button", { name: "Stop this rule" })).not.toBeInTheDocument();
+  });
+
+  it("draws nothing when no rule has approved anything", async () => {
+    renderYnabHome();
+    expect(await screen.findByText("Start New Trip")).toBeInTheDocument();
+    expect(screen.queryByText(/Approved for you/)).not.toBeInTheDocument();
   });
 });

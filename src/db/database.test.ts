@@ -48,7 +48,7 @@ describe("TradeTrackerDB upgrade to version 7", () => {
     const upgraded = new TradeTrackerDB();
     await upgraded.open();
 
-    expect(upgraded.verno).toBe(13);
+    expect(upgraded.verno).toBe(14);
     expect((await upgraded.stores.get("s1"))?.name).toBe("Stop & Shop");
     expect((await upgraded.items.get("i1"))?.barcode).toBe("0123");
     const line = await upgraded.tripItems.get("ti1");
@@ -103,7 +103,7 @@ describe("TradeTrackerDB upgrade to version 8", () => {
     const upgraded = new TradeTrackerDB();
     await upgraded.open();
 
-    expect(upgraded.verno).toBe(13);
+    expect(upgraded.verno).toBe(14);
     const trip = await upgraded.trips.get("t1");
     expect(trip?.scannedSubtotal).toBe(7);
     expect(trip?.budget).toBe(50);
@@ -160,7 +160,7 @@ describe("TradeTrackerDB upgrade to version 9", () => {
     const upgraded = new TradeTrackerDB();
     await upgraded.open();
 
-    expect(upgraded.verno).toBe(13);
+    expect(upgraded.verno).toBe(14);
     expect((await upgraded.stores.get("s1"))?.name).toBe("Stop & Shop");
     expect((await upgraded.trips.get("t1"))?.scannedSubtotal).toBe(7);
     expect(await upgraded.ynabConnection.count()).toBe(0);
@@ -215,7 +215,7 @@ describe("TradeTrackerDB upgrade to version 10", () => {
     const upgraded = new TradeTrackerDB();
     await upgraded.open();
 
-    expect(upgraded.verno).toBe(13);
+    expect(upgraded.verno).toBe(14);
     expect((await upgraded.stores.get("s1"))?.name).toBe("Stop & Shop");
     expect((await upgraded.ynabConnection.get("connection"))?.budgetName).toBe("Our Budget");
     expect(await upgraded.ynabOutbox.count()).toBe(0);
@@ -272,7 +272,7 @@ describe("TradeTrackerDB upgrade to version 11", () => {
     const upgraded = new TradeTrackerDB();
     await upgraded.open();
 
-    expect(upgraded.verno).toBe(13);
+    expect(upgraded.verno).toBe(14);
     expect((await upgraded.stores.get("s1"))?.name).toBe("Stop & Shop");
     expect((await upgraded.ynabLinks.get("l1"))?.ynabId).toBe("y1");
     expect(await upgraded.familyCards.count()).toBe(0);
@@ -323,7 +323,7 @@ describe("TradeTrackerDB upgrade to version 12", () => {
     const upgraded = new TradeTrackerDB();
     await upgraded.open();
 
-    expect(upgraded.verno).toBe(13);
+    expect(upgraded.verno).toBe(14);
     expect((await upgraded.stores.get("s1"))?.name).toBe("Stop & Shop");
     expect((await upgraded.familyCards.get("k1"))?.owner).toBe("Jonathan");
     expect(await upgraded.ynabPayeeRules.count()).toBe(0);
@@ -375,7 +375,7 @@ describe("TradeTrackerDB upgrade to version 13", () => {
     const upgraded = new TradeTrackerDB();
     await upgraded.open();
 
-    expect(upgraded.verno).toBe(13);
+    expect(upgraded.verno).toBe(14);
     expect((await upgraded.stores.get("s1"))?.name).toBe("Stop & Shop");
     expect((await upgraded.ynabPayeeRules.get("chewy"))?.payee).toBe("Chewy");
     expect(await upgraded.checkImages.count()).toBe(0);

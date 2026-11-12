@@ -13,6 +13,7 @@ import type {
   YnabOutboxItem,
   YnabLink,
   YnabPayeeRule,
+  YnabRuleApproval,
   FamilyCard,
   CheckImage,
 } from "../contracts/types";
@@ -31,6 +32,7 @@ export class TradeTrackerDB extends Dexie {
   ynabOutbox!: EntityTable<YnabOutboxItem, "clientId">;
   ynabLinks!: EntityTable<YnabLink, "localId">;
   ynabPayeeRules!: EntityTable<YnabPayeeRule, "key">;
+  ynabRuleApprovals!: EntityTable<YnabRuleApproval, "id">;
   familyCards!: EntityTable<FamilyCard, "id">;
   checkImages!: EntityTable<CheckImage, "transactionId">;
 
@@ -105,6 +107,11 @@ export class TradeTrackerDB extends Dexie {
     // Version 13: the check images Clean up keeps on the device, one per YNAB transaction (the image and the mill's read of it).
     this.version(13).stores({
       checkImages: "transactionId",
+    });
+
+    // Version 14: what the payee rules approved without his tapping (Home's "Approved for you"), one per YNAB transaction.
+    this.version(14).stores({
+      ynabRuleApprovals: "id, budgetId, approvedAt",
     });
   }
 }

@@ -355,6 +355,28 @@ export interface YnabPayeeRule {
   approved: number;
 }
 
+/** A transaction a payee rule approved without his tapping, kept so Home can show it and Undo it (Home's "Approved for you"). One per YNAB transaction. */
+export interface YnabRuleApproval {
+  /** the YNAB transaction id */
+  id: string;
+  budgetId: string;
+  /** the rule's payee key */
+  ruleKey: string;
+  /** the payee as YNAB names it */
+  payee: string;
+  /** milliunits, as YNAB holds it (negative: money out) */
+  amount: number;
+  /** YYYY-MM-DD, the transaction's date */
+  date: string;
+  /** the category the rule approved it into */
+  categoryId: string;
+  /** the category it had before (null: none), put back by Undo */
+  previousCategoryId: string | null;
+  approvedAt: number;
+  /** Undone from Home: not listed again, and the rule leaves it alone while YNAB holds it unapproved */
+  undone: boolean;
+}
+
 /** One write waiting in the YNAB outbox. `localId` names the transaction in this app (and is its marker in YNAB's memo). */
 export type YnabWrite =
   | { kind: "create"; localId: string; transaction: YnabTransactionInput }

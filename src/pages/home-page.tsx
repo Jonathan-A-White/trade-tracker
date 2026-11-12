@@ -8,6 +8,7 @@ import { StatCard } from "@/components/data-display/stat-card";
 import { TripCard } from "@/components/data-display/trip-card";
 import { useYnabOn } from "@/settings/connections";
 import { useFamilyFeed } from "@/sort/sort-context";
+import { ApprovedForYou } from "@/sort/ApprovedForYou";
 import { WaitingCard } from "@/sort/WaitingCard";
 
 export function HomePage() {
@@ -90,6 +91,7 @@ export function HomePage() {
           />
         )}
         <WaitingCard family={family} />
+        <ApprovedForYou />
         {ynabOn && (
           <Link
             to="/cleanup"

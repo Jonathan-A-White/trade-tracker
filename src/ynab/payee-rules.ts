@@ -1,7 +1,7 @@
 // Payee rules: Clean up's "Always <category>" on a payee card approves every unapproved transaction of that payee into that category
 // and keeps a rule, so the payee's new unapproved transactions are approved as they are read, before Clean up lists anything.
 // Every write goes through the YNAB writer's approve() and restore() (src/ynab/writer.ts), passed in; nothing here calls YNAB's write API.
-import type { YnabApproval, YnabPayeeRule, YnabRestore } from "@/contracts/types";
+import type { YnabApproval, YnabPayeeRule, YnabRestore, YnabRuleApproval } from "@/contracts/types";
 import { db } from "@/db/database";
 import { YnabRepository } from "@/db/repositories/ynab-repository";
 import type { YnabClient } from "./api";
@@ -39,7 +39,42 @@ export class PayeeRuleRepository {
   }
 }
 
+/** How long Home keeps listing what a rule approved. PROVISIONAL (the Governor to confirm). */
+export const RULE_APPROVAL_DAYS = 7;
+const DAY_MS = 86_400_000;
+
+/** What the rules approved, kept for Home to show and Undo. */
+export class RuleApprovalRepository {
+  /** The not-undone approvals of the last RULE_APPROVAL_DAYS days in the budget, newest first. */
+  async recent(budgetId: string, now: number = Date.now()): Promise<YnabRuleApproval[]> {
+    const rows = await db.ynabRuleApprovals.where("approvedAt").aboveOrEqual(now - RULE_APPROVAL_DAYS * DAY_MS).toArray();
+    return rows.filter((a) => a.budgetId === budgetId && !a.undone).sort((a, b) => b.approvedAt - a.approvedAt);
+  }
+
+  async put(rows: readonly YnabRuleApproval[]): Promise<void> {
+    await db.ynabRuleApprovals.bulkPut([...rows]);
+  }
+
+  /** The ids Undo has put back: the rules leave these alone. */
+  async undoneIds(budgetId: string): Promise<Set<string>> {
+    const rows = await db.ynabRuleApprovals.where("budgetId").equals(budgetId).toArray();
+    return new Set(rows.filter((a) => a.undone).map((a) => a.id));
+  }
+
+  async markUndone(id: string): Promise<void> {
+    await db.ynabRuleApprovals.update(id, { undone: true });
+  }
+
+  /** Forgets old records, and the undone ones YNAB no longer holds unapproved (they are no longer in `unapprovedIds`). */
+  async prune(budgetId: string, unapprovedIds: ReadonlySet<string>, now: number = Date.now()): Promise<void> {
+    const rows = await db.ynabRuleApprovals.where("budgetId").equals(budgetId).toArray();
+    const stale = rows.filter((a) => (a.undone ? !unapprovedIds.has(a.id) : a.approvedAt < now - RULE_APPROVAL_DAYS * DAY_MS));
+    if (stale.length > 0) await db.ynabRuleApprovals.bulkDelete(stale.map((a) => a.id));
+  }
+}
+
 const repo = new PayeeRuleRepository();
+const approvals = new RuleApprovalRepository();
 
 /** The rules are applied one load at a time, so two loads at once never write the same transaction twice. */
 let tail: Promise<unknown> = Promise.resolve();
@@ -72,13 +107,17 @@ export function unapprovedWithRules(client: YnabClient, budgetId: string, approv
   return inTurn(async () => {
     const rows = await client.unapprovedTransactions(budgetId);
     if (!approve) return { rows, approved: 0, error: null };
+    // the record is a convenience: a failure to keep or tidy it must never stop the rules
+    const undone = await approvals.undoneIds(budgetId).catch(() => new Set<string>());
+    await approvals.prune(budgetId, new Set(rows.map((r) => r.id ?? "")), Date.now()).catch(() => {});
     const rules = await repo.list(budgetId);
     if (rules.length === 0) return { rows, approved: 0, error: null };
     const { categories, inflow } = offeredCategories(await new YnabRepository().listCategories());
     const offered = new Set(categories.map((c) => c.id));
     const byKey = new Map(rules.filter((r) => offered.has(r.categoryId)).map((r) => [r.key, r]));
     const picks = rows.flatMap((row) => {
-      const rule = ruleable(row) ? byKey.get(payeeKey(row.payee_name!)) : undefined;
+      // one he put back from Home stays his to decide
+      const rule = ruleable(row) && !undone.has(row.id!) ? byKey.get(payeeKey(row.payee_name!)) : undefined;
       // a rule into Ready to Assign (made on an inflow) takes money in only: an outflow of the same payee is left to him
       if (rule && rule.categoryId === inflow?.id && !(row.amount > 0)) return [];
       return rule ? [{ row, rule }] : [];
@@ -94,6 +133,23 @@ export function unapprovedWithRules(client: YnabClient, budgetId: string, approv
     for (const p of picks) counts.set(p.rule.key, (counts.get(p.rule.key) ?? 0) + 1);
     // the write landed: a failure to count it must not make it look as if it had not
     await Promise.all([...counts].map(([key, n]) => repo.addApproved(key, n))).catch(() => {});
+    const at = Date.now();
+    await approvals
+      .put(
+        picks.map((p) => ({
+          id: p.row.id!,
+          budgetId,
+          ruleKey: p.rule.key,
+          payee: p.row.payee_name!.trim(),
+          amount: p.row.amount,
+          date: p.row.date,
+          categoryId: p.rule.categoryId,
+          previousCategoryId: p.row.category_id ?? null,
+          approvedAt: at,
+          undone: false,
+        })),
+      )
+      .catch(() => {});
     const gone = new Set(picks.map((p) => p.row.id));
     return { rows: rows.filter((r) => !gone.has(r.id)), approved: picks.length, error: null };
   });
@@ -141,5 +197,13 @@ export async function undoAlways(done: AlwaysDone, restore: Restore): Promise<vo
     await restore(done.restores);
     if (done.previous) await repo.put(done.previous);
     else await repo.remove(done.key);
+  });
+}
+
+/** Home's Undo: puts the transaction back (unapproved, in the category it had) in one PATCH, then marks it so the rule leaves it alone. The rule is kept. */
+export async function undoRuleApproval(approval: YnabRuleApproval, restore: Restore): Promise<void> {
+  return inTurn(async () => {
+    await restore([{ id: approval.id, categoryId: approval.previousCategoryId }]);
+    await approvals.markUndone(approval.id);
   });
 }

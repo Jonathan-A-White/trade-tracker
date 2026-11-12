@@ -2,7 +2,7 @@ import { db } from "@/db/database";
 import { YnabRepository } from "@/db/repositories/ynab-repository";
 import { createYnabClient } from "./api";
 import { fakeYnab, groupOf, type FakeYnab, type FakeYnabTransaction } from "./fake-ynab";
-import { PayeeRuleRepository, setAlways, undoAlways, unapprovedWithRules } from "./payee-rules";
+import { PayeeRuleRepository, RuleApprovalRepository, RULE_APPROVAL_DAYS, setAlways, undoAlways, undoRuleApproval, unapprovedWithRules } from "./payee-rules";
 import { createYnabWriter, type YnabWriter } from "./writer";
 
 const groups = [groupOf("gi", "Internal Master Category", [["unc", "Uncategorized"], ["rta", "Inflow: Ready to Assign"]]), groupOf("g1", "Food", [["c1", "Groceries"], ["c2", "Eating Out"]])];
@@ -170,5 +170,74 @@ describe("Always", () => {
     await expect(undoAlways(done, writer.restore)).rejects.toThrow();
     expect(await rules.get("chewy")).toBeDefined();
     expect(ynab.transactions[0]?.approved).toBe(true);
+  });
+});
+
+describe("what the rules approved is kept for Home", () => {
+  const approvals = new RuleApprovalRepository();
+
+  it("records each transaction a rule approved, with its payee, amount, date, category and the category it had", async () => {
+    await rule("chewy");
+    ynab.transactions.push(tx("t1", "Chewy", { amount: -12_340, date: "2026-11-10" }), tx("t2", "Chewy", { category_id: "c2" }), tx("t3", "Shell"));
+    await unapprovedWithRules(client(), "b1", writer.approve);
+    const kept = await approvals.recent("b1");
+    expect(kept.map((a) => a.id).sort()).toEqual(["t1", "t2"]);
+    expect(kept.find((a) => a.id === "t1")).toMatchObject({ ruleKey: "chewy", payee: "Chewy", amount: -12_340, date: "2026-11-10", categoryId: "c1", previousCategoryId: null, undone: false });
+    expect(kept.find((a) => a.id === "t2")?.previousCategoryId).toBe("c2");
+  });
+
+  it("records nothing when the write fails, and nothing for a transaction he approved himself", async () => {
+    await rule("chewy");
+    ynab.transactions.push(tx("t1", "Chewy"));
+    ynab.failNextBulk = 500;
+    await unapprovedWithRules(client(), "b1", writer.approve);
+    expect(await approvals.recent("b1")).toEqual([]);
+    await setAlways({ budgetId: "b1", payee: "Chewy", key: "chewy", categoryId: "c1", items: [{ id: "t1", ynabCategoryId: null }] }, writer.approve);
+    expect(await approvals.recent("b1")).toEqual([]);
+  });
+
+  it("lists only the last RULE_APPROVAL_DAYS days, of the budget asked for", async () => {
+    const now = Date.now();
+    const base = { ruleKey: "chewy", payee: "Chewy", amount: -1000, date: "2026-11-01", categoryId: "c1", previousCategoryId: null, undone: false };
+    await db.ynabRuleApprovals.bulkPut([
+      { ...base, id: "new", budgetId: "b1", approvedAt: now - 1000 },
+      { ...base, id: "old", budgetId: "b1", approvedAt: now - (RULE_APPROVAL_DAYS + 1) * 86_400_000 },
+      { ...base, id: "other", budgetId: "b2", approvedAt: now },
+    ]);
+    expect((await approvals.recent("b1")).map((a) => a.id)).toEqual(["new"]);
+  });
+
+  it("Undo puts it back unapproved and as it was, keeps the rule, and the rule does not approve it again", async () => {
+    await rule("chewy");
+    ynab.transactions.push(tx("t1", "Chewy"), tx("t2", "Chewy"));
+    await unapprovedWithRules(client(), "b1", writer.approve);
+    const [first] = (await approvals.recent("b1")).filter((a) => a.id === "t1");
+    await undoRuleApproval(first!, writer.restore);
+    expect(ynab.transactions.map((t) => [t.id, t.approved, t.category_id])).toEqual([["t1", false, null], ["t2", true, "c1"]]);
+    expect(await rules.get("chewy")).toBeDefined();
+    expect((await approvals.recent("b1")).map((a) => a.id)).toEqual(["t2"]);
+    const again = await unapprovedWithRules(client(), "b1", writer.approve);
+    expect(again.rows.map((r) => r.id)).toEqual(["t1"]);
+    expect(ynab.transactions.find((t) => t.id === "t1")?.approved).toBe(false);
+  });
+
+  it("a failed Undo changes nothing", async () => {
+    await rule("chewy");
+    ynab.transactions.push(tx("t1", "Chewy"));
+    await unapprovedWithRules(client(), "b1", writer.approve);
+    const [first] = await approvals.recent("b1");
+    ynab.failNextBulk = 500;
+    await expect(undoRuleApproval(first!, writer.restore)).rejects.toThrow();
+    expect((await approvals.recent("b1")).map((a) => a.id)).toEqual(["t1"]);
+  });
+
+  it("forgets an undone one once YNAB no longer holds it unapproved", async () => {
+    await rule("chewy");
+    ynab.transactions.push(tx("t1", "Chewy"));
+    await unapprovedWithRules(client(), "b1", writer.approve);
+    await undoRuleApproval((await approvals.recent("b1"))[0]!, writer.restore);
+    ynab.transactions[0]!.approved = true; // he approved it in YNAB
+    await unapprovedWithRules(client(), "b1", writer.approve);
+    expect(await db.ynabRuleApprovals.count()).toBe(0);
   });
 });
