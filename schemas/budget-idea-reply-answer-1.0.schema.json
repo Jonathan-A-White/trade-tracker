@@ -1,0 +1,23 @@
+{
+  "$schema": "http://json-schema.org/draft-07/schema#",
+  "$id": "budget-idea-reply-answer-1.0",
+  "title": "Budget Idea Reply answer 1.0",
+  "description": "What to do with the idea given the shopper's words: revise it (name, amount, cadence), retire it, or explain it; a short sentence to show; the payees his words rule out; his reason in a short line to remember.",
+  "type": "object",
+  "additionalProperties": false,
+  "required": ["outcome", "say"],
+  "properties": {
+    "outcome": { "type": "string", "enum": ["revise", "retire", "explain"] },
+    "say": { "type": "string", "minLength": 1, "maxLength": 240 },
+    "name": { "type": "string", "minLength": 1, "maxLength": 80 },
+    "amount": { "type": "number", "exclusiveMinimum": 0 },
+    "cadence": { "type": "string", "enum": ["monthly", "yearly"] },
+    "dueDate": { "type": "string", "pattern": "^\\d{4}-\\d{2}-\\d{2}$" },
+    "rulesOut": {
+      "type": "array",
+      "maxItems": 10,
+      "items": { "type": "string", "minLength": 1, "maxLength": 120 }
+    },
+    "remember": { "type": "string", "minLength": 1, "maxLength": 160 }
+  }
+}

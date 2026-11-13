@@ -1,0 +1,72 @@
+{
+  "$schema": "http://json-schema.org/draft-07/schema#",
+  "$id": "budget-idea-reply-input-1.0",
+  "title": "Budget Idea Reply input 1.0",
+  "description": "One budget idea the app proposed (a category to add for what keeps landing in Stuff I Forgot to Budget For), the charges behind it, what the shopper wrote back about it, the reasons he gave for earlier ideas, and the budget's categories.",
+  "type": "object",
+  "additionalProperties": false,
+  "required": ["idea", "words", "reasons", "categories"],
+  "properties": {
+    "idea": {
+      "type": "object",
+      "additionalProperties": false,
+      "required": ["name", "cadence", "amount", "total", "payees", "charges"],
+      "properties": {
+        "name": { "type": "string", "minLength": 1, "maxLength": 80 },
+        "cadence": { "type": "string", "enum": ["monthly", "yearly"] },
+        "amount": { "type": "number", "exclusiveMinimum": 0 },
+        "dueDate": { "type": "string", "pattern": "^\\d{4}-\\d{2}-\\d{2}$" },
+        "total": { "type": "number" },
+        "payees": {
+          "type": "array",
+          "maxItems": 20,
+          "items": { "type": "string", "minLength": 1, "maxLength": 120 }
+        },
+        "charges": {
+          "type": "array",
+          "maxItems": 40,
+          "items": {
+            "type": "object",
+            "additionalProperties": false,
+            "required": ["date", "payee", "amount"],
+            "properties": {
+              "date": { "type": "string", "pattern": "^\\d{4}-\\d{2}-\\d{2}$" },
+              "payee": { "type": "string", "minLength": 1, "maxLength": 120 },
+              "amount": { "type": "number" }
+            }
+          }
+        }
+      }
+    },
+    "words": { "type": "string", "minLength": 1, "maxLength": 1000 },
+    "reasons": {
+      "type": "array",
+      "maxItems": 20,
+      "items": {
+        "type": "object",
+        "additionalProperties": false,
+        "required": ["words"],
+        "properties": {
+          "words": { "type": "string", "minLength": 1, "maxLength": 400 },
+          "payees": {
+            "type": "array",
+            "maxItems": 10,
+            "items": { "type": "string", "minLength": 1, "maxLength": 120 }
+          }
+        }
+      }
+    },
+    "categories": {
+      "type": "array",
+      "maxItems": 150,
+      "items": {
+        "type": "object",
+        "additionalProperties": false,
+        "required": ["name"],
+        "properties": {
+          "name": { "type": "string", "minLength": 1, "maxLength": 60 }
+        }
+      }
+    }
+  }
+}

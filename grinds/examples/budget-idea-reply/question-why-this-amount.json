@@ -1,0 +1,27 @@
+{
+  "description": "The shopper asks where the amount came from: the idea is explained from its charges and nothing changes.",
+  "schemaVersion": "1.0",
+  "request": {
+    "idea": {
+      "name": "Hardware Hank",
+      "cadence": "monthly",
+      "amount": 45,
+      "total": 180,
+      "payees": ["Hardware Hank"],
+      "charges": [
+        {"date": "2026-09-10", "payee": "Hardware Hank", "amount": 60},
+        {"date": "2026-10-10", "payee": "Hardware Hank", "amount": 60},
+        {"date": "2026-11-10", "payee": "Hardware Hank", "amount": 60}
+      ]
+    },
+    "words": "Why $45 a month?",
+    "reasons": [],
+    "categories": [{"name":"Groceries"},{"name":"Household"},{"name":"Stuff I Forgot to Budget For"}]
+  },
+  "expect": {
+    "outcome": "explain",
+    "say": { "present": true },
+    "name": { "present": false },
+    "amount": { "present": false }
+  }
+}

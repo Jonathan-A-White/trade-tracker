@@ -1,0 +1,27 @@
+{
+  "description": "The shopper says the church the idea is for is no longer given to (the tithe moved elsewhere): the idea is retired, the church is ruled out, and the reason is remembered.",
+  "schemaVersion": "1.0",
+  "request": {
+    "idea": {
+      "name": "New Apostolic Church",
+      "cadence": "monthly",
+      "amount": 670,
+      "total": 3337.5,
+      "payees": ["New Apostolic Church"],
+      "charges": [
+        {"date": "2026-09-14", "payee": "New Apostolic Church", "amount": 1112.5},
+        {"date": "2026-10-14", "payee": "New Apostolic Church", "amount": 1112.5},
+        {"date": "2026-11-02", "payee": "New Apostolic Church", "amount": 1112.5}
+      ]
+    },
+    "words": "Nac is giving. We won't be donating there anymore as we have shifted churches and our tithe fully to Brookfield First.",
+    "reasons": [],
+    "categories": [{"name":"Groceries"},{"name":"Giving"},{"name":"Household"},{"name":"Stuff I Forgot to Budget For"}]
+  },
+  "expect": {
+    "outcome": "retire",
+    "say": { "present": true },
+    "rulesOut": { "present": true },
+    "remember": { "present": true }
+  }
+}
