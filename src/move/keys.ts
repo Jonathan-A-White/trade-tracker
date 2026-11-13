@@ -12,6 +12,7 @@ import { SETTING_PREFIX } from "@/settings/connections";
 import { HISTORY_KEY, LEARNED_KEY } from "@/sort/suggest";
 import { HANDED_KEY, ME_KEY, SORTED_KEY } from "@/sort/waiting";
 import { KEPT_FEED_KEY, PENDING_CLAIMS_KEY } from "@/sort/useAlerts";
+import { REASONS_KEY, REVISIONS_KEY } from "@/ynab/budget-idea-reply";
 import { CHARGES_KEY, DISMISSED_KEY, IDEA_SETTINGS_KEY, INTRODUCED_KEY, KINDS_KEY } from "@/ynab/budget-ideas";
 import { SHORT_RULE_KEY } from "@/ynab/payee-rules";
 import { TALLY_FAILED_KEY, TALLY_KEY } from "@/ynab/tally";
@@ -58,6 +59,8 @@ export const OWNED_KEYS: readonly OwnedKey[] = [
   { key: CHARGES_KEY, data: true, note: "The charges to Stuff I Forgot to Budget For last read from YNAB, for Budget ideas." },
   { key: DISMISSED_KEY, data: true, note: "The Budget ideas the Governor answered Not now or Never." },
   { key: INTRODUCED_KEY, data: true, note: "The Budget ideas first shown this month." },
+  { key: REASONS_KEY, data: true, note: "The reasons the Governor gave when he replied to a Budget idea, kept until he removes them." },
+  { key: REVISIONS_KEY, data: true, note: "How his replies changed the Budget ideas (name, amount, cadence), by idea." },
   { key: IDEA_SETTINGS_KEY, note: "Setting: what a Budget idea must pass (dollars over a year, or charges)." },
   { key: SHORT_RULE_KEY, note: "Setting: whether a payee rule approves a charge its category lacks the money for (and notes it), or leaves it for the Governor." },
   { key: HANDED_KEY, data: true, note: "The alerts this phone handed to the other person." },

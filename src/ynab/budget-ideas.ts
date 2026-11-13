@@ -109,6 +109,8 @@ export interface ProposeOptions {
   settings: IdeaSettings;
   /** the categories the budget already has: an idea named like one is not made */
   existingNames?: readonly string[];
+  /** payees (trimmed, lower case) his reasons rule out (src/ynab/budget-idea-reply.ts): their charges are history, not a missing category */
+  ruledOut?: ReadonlySet<string>;
 }
 
 interface Group {
@@ -146,7 +148,7 @@ function monthsRunning(charges: readonly IdeaCharge[]): boolean {
 }
 
 /** The next due date of a yearly target for a spend that happened on `date`: the first of the month before it recurs, not already past. */
-function dueDateFor(date: string, today: string): string {
+export function dueDateFor(date: string, today: string): string {
   let due = monthIndex(date) + 12 - 1;
   while (due < monthIndex(today)) due += 12;
   return firstOf(due);
@@ -164,7 +166,7 @@ export function proposeIdeas(charges: readonly IdeaCharge[], options: ProposeOpt
   const { today, settings } = options;
   const yearStart = monthsBefore(today, YEAR_MONTHS);
   const recentStart = monthsBefore(today, RECENT_MONTHS);
-  const year = charges.filter((c) => c.date >= yearStart && c.date <= today);
+  const year = charges.filter((c) => c.date >= yearStart && c.date <= today && !options.ruledOut?.has(nameKey(c.payee)));
   const taken = new Set((options.existingNames ?? []).map(nameKey));
   const passes = (total: number, count: number) => cents(total) >= cents(settings.minSpend) || count >= settings.minCharges;
   const ideas: BudgetIdea[] = [];
@@ -233,21 +235,21 @@ export const INTRODUCED_KEY = "tradetracker-budget-ideas-introduced";
 /** The two thresholds. A setting. */
 export const IDEA_SETTINGS_KEY = "tradetracker-budget-ideas-settings";
 
-function readJson(key: string): unknown {
+export function readJson(key: string): unknown {
   try {
     return JSON.parse(localStorage.getItem(key) ?? "null");
   } catch {
     return null;
   }
 }
-function writeJson(key: string, value: unknown): void {
+export function writeJson(key: string, value: unknown): void {
   try {
     localStorage.setItem(key, JSON.stringify(value));
   } catch {
     // a full or blocked store only costs the next read
   }
 }
-const isRecord = (v: unknown): v is Record<string, unknown> => typeof v === "object" && v !== null && !Array.isArray(v);
+export const isRecord = (v: unknown): v is Record<string, unknown> => typeof v === "object" && v !== null && !Array.isArray(v);
 
 export function readIdeaSettings(): IdeaSettings {
   const kept = readJson(IDEA_SETTINGS_KEY);
