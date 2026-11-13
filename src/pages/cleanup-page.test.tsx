@@ -290,6 +290,24 @@ describe("Clean up", () => {
     expect(within(mystery).getByText("Your pick.")).toBeInTheDocument();
   });
 
+  it("shows no Unsure or Likely badge on a card once he has picked its category, nor on a transaction he picked in a group", async () => {
+    const user = userEvent.setup();
+    renderPage();
+    const mystery = await screen.findByRole("group", { name: "Mystery Shop" });
+    expect(within(mystery).getByText("Unsure")).toBeInTheDocument();
+    await user.selectOptions(within(mystery).getByLabelText("Category for Mystery Shop"), "c3");
+    expect(within(mystery).queryByText("Unsure")).not.toBeInTheDocument();
+    expect(within(mystery).queryByText("Likely")).not.toBeInTheDocument();
+    // a card he has not touched keeps its badge
+    expect(within(await screen.findByRole("group", { name: "Costco" })).getByText("Likely")).toBeInTheDocument();
+    // a group: the badge goes only when every transaction in it is his pick
+    const tj = screen.getByRole("group", { name: "Trader Joe's" });
+    const before = within(tj).queryAllByText(/^(Sure|Likely|Unsure)$/).length;
+    expect(before).toBeGreaterThan(0);
+    await user.selectOptions(within(tj).getByLabelText("Category for Trader Joe's"), "c3");
+    expect(within(tj).queryAllByText(/^(Sure|Likely|Unsure)$/)).toHaveLength(0);
+  });
+
   it("leaves the guess's words alone when the pick is the guess itself", async () => {
     const user = userEvent.setup();
     renderPage();
@@ -586,6 +604,17 @@ describe("Clean up: the Checks pile (his words, 2026-11-12)", () => {
     expect(within(groupOfPayee("CHECK 1089 *8368")).queryByRole("button", { name: /^Always/ })).not.toBeInTheDocument();
     expect(within(groupOfPayee("CHECK 1089 *8368")).getByText("Unsure")).toBeInTheDocument();
     expect(within(groupOfPayee("CHECK 1089 *8368")).getByRole("checkbox", { name: /^Approve / })).not.toBeChecked();
+  });
+
+  it("shows no Unsure badge on a check once he has picked its category", async () => {
+    checks();
+    const user = userEvent.setup();
+    renderPage();
+    const card = await screen.findByRole("group", { name: "CHECK 1089 *8368" });
+    expect(within(card).getByText("Unsure")).toBeInTheDocument();
+    await user.selectOptions(within(card).getByLabelText("Category for CHECK 1089 *8368"), "c3");
+    expect(within(card).queryByText("Unsure")).not.toBeInTheDocument();
+    expect(within(card).queryByText("Likely")).not.toBeInTheDocument();
   });
 
   it("has no Checks heading when no check is waiting", async () => {

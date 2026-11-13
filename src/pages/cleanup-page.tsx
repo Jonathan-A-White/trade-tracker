@@ -56,7 +56,10 @@ interface Undoable {
 const plural = (n: number) => (n === 1 ? "1 transaction" : `${n} transactions`);
 /** Dollars as said on a row: money out plain, money in marked. */
 const said = (amount: number) => `${money(Math.abs(amount))}${amount > 0 ? " in" : ""}`;
-const bestOf = (items: readonly CleanupItem[]): Confidence => items.reduce<Confidence>((best, i) => (RANK[i.confidence] > RANK[best] ? i.confidence : best), "unsure");
+/** His pick (pick() gives it YOUR_PICK as its why) is no guess, so it carries no confidence. */
+const isPick = (item: CleanupItem) => item.why === YOUR_PICK;
+/** The best confidence among the guesses still standing; null when every item is his pick. */
+const bestOf = (items: readonly CleanupItem[]): Confidence | null => items.filter((i) => !isPick(i)).reduce<Confidence | null>((best, i) => (best === null || RANK[i.confidence] > RANK[best] ? i.confidence : best), null);
 
 function Badge({ confidence }: { confidence: Confidence }) {
   return <span className={`rounded-full px-2 py-0.5 text-xs font-medium ${BADGE[confidence]}`}>{WORD[confidence]}</span>;
@@ -118,7 +121,7 @@ function GroupCard({
     <section role="group" aria-label={group.payee} className="space-y-2 rounded-lg border border-gray-200 dark:border-gray-700 bg-white dark:bg-gray-800 p-3">
       <div className="flex flex-wrap items-baseline justify-between gap-x-3">
         <h2 className="min-w-0 break-words text-base font-semibold text-gray-900 dark:text-gray-100">{group.payee}</h2>
-        <Badge confidence={best} />
+        {best && <Badge confidence={best} />}
       </div>
       <p className="text-sm text-gray-600 dark:text-gray-400">
         {plural(group.items.length)} · {said(group.total)}
@@ -152,7 +155,7 @@ function GroupCard({
                 <span className="min-w-0 flex-1 text-base text-gray-900 dark:text-gray-100">
                   {said(item.amount)} <span className="text-sm text-gray-600 dark:text-gray-400">· {item.date}</span>
                 </span>
-                {item.confidence !== best && <Badge confidence={item.confidence} />}
+                {!isPick(item) && item.confidence !== best && <Badge confidence={item.confidence} />}
               </label>
               {item.memo && <p className="break-words pl-8 text-sm text-gray-600 dark:text-gray-400">{item.memo}</p>}
               {item.note && <p className="break-words pl-8 text-sm text-gray-800 dark:text-gray-200">{item.note}</p>}
@@ -254,7 +257,7 @@ function CheckCard({
     <section role="group" aria-label={group.payee} onPaste={pasted} className="space-y-2 rounded-lg border border-gray-200 dark:border-gray-700 bg-white dark:bg-gray-800 p-3">
       <div className="flex flex-wrap items-baseline justify-between gap-x-3">
         <h3 className="min-w-0 break-words text-base font-semibold text-gray-900 dark:text-gray-100">{group.payee}</h3>
-        <Badge confidence={item.confidence} />
+        {!isPick(item) && <Badge confidence={item.confidence} />}
       </div>
       <label className="flex min-h-12 items-center gap-3">
         <input
