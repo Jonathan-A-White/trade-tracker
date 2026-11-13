@@ -2,13 +2,13 @@
 // payee usually goes to and how sure that is (src/ynab/cleanup.ts); the sure ones are ticked and first, the rest wait unticked.
 // Nothing reaches YNAB until he taps Approve, and then only the ticked ones, in one request. "Always <category>" on a card approves all
 // of that payee's unapproved transactions at once and keeps a payee rule (src/ynab/payee-rules.ts): the payee's new ones are approved as
-// they are read, before this lists them; Undo takes the last "Always" back for 10 seconds, and Payee rules lists the rules to remove.
+// they are read, before this lists them; Undo takes the last "Always" back for 10 seconds, and Payee rules lists the rules to remove, with an Undo for the last one removed.
 // A check (payee text 'CHECK <number>') is its own card in a Checks pile at the end: "Add check image" keeps an image on the device
 // (never sent to YNAB), and the mill reads its payee and memo to suggest the category; Approve writes the payee read into the memo.
 import { useLiveQuery } from "dexie-react-hooks";
 import { useCallback, useEffect, useMemo, useRef, useState, type ClipboardEvent } from "react";
 import { Link } from "react-router";
-import type { CheckImage, YnabCategory } from "@/contracts/types";
+import type { CheckImage, YnabCategory, YnabPayeeRule } from "@/contracts/types";
 import { ConfirmDialog } from "@/components/feedback/confirm-dialog";
 import { PageHeader } from "@/components/layout/page-header";
 import { UndoNotice } from "@/components/undo-notice";
@@ -307,27 +307,47 @@ function CheckCard({
   );
 }
 
-/** The payee rules: each with its payee, category and how many it has approved; Remove stops it and changes nothing already written. */
+/** The payee rules: each with its payee, category and how many it has approved; Remove stops it and changes nothing already written, and Undo puts the rule back as it was. */
 function PayeeRules() {
   const rules = useLiveQuery(() => new PayeeRuleRepository().list(), []);
   const names = useLiveQuery(async () => new Map((await db.ynabCategories.toArray()).map((c) => [c.id, c.name])), []);
+  // the rule he removed last, kept until he leaves the panel (the shared Undo, as for the check images)
+  const removed = useUndo<YnabPayeeRule>("payee-rules");
+  const removedRule = Object.values(removed.kept)[0];
+
+  const remove = async (rule: YnabPayeeRule) => {
+    await new PayeeRuleRepository().remove(rule.key);
+    removed.drop();
+    removed.keep(rule.key, rule);
+  };
+  const undo = async (rule: YnabPayeeRule) => {
+    await new PayeeRuleRepository().put(rule);
+    removed.drop(rule.key);
+  };
+
   if (!rules) return null;
-  if (rules.length === 0) return <p className="text-base text-gray-700 dark:text-gray-300">No payee rules yet.</p>;
   return (
-    <ul aria-label="Payee rules" className="space-y-2">
-      {rules.map((rule) => (
-        <li key={rule.key} className="flex items-center justify-between gap-3 rounded-lg border border-gray-200 dark:border-gray-700 bg-white dark:bg-gray-800 p-3">
-          <div className="min-w-0">
-            <p className="break-words text-base font-semibold text-gray-900 dark:text-gray-100">{rule.payee}</p>
-            <p className="text-sm text-gray-700 dark:text-gray-300">{names?.get(rule.categoryId) ?? "A category no longer in YNAB"}</p>
-            <p className="text-sm text-gray-600 dark:text-gray-400">Approved {rule.approved}</p>
-          </div>
-          <button type="button" className={SECONDARY} onClick={() => void new PayeeRuleRepository().remove(rule.key)}>
-            Remove
-          </button>
-        </li>
-      ))}
-    </ul>
+    <div className="space-y-2">
+      {removedRule && <UndoNotice onUndo={() => void undo(removedRule)}>The rule for {removedRule.payee} was removed.</UndoNotice>}
+      {rules.length === 0 ? (
+        <p className="text-base text-gray-700 dark:text-gray-300">No payee rules yet.</p>
+      ) : (
+        <ul aria-label="Payee rules" className="space-y-2">
+          {rules.map((rule) => (
+            <li key={rule.key} className="flex items-center justify-between gap-3 rounded-lg border border-gray-200 dark:border-gray-700 bg-white dark:bg-gray-800 p-3">
+              <div className="min-w-0">
+                <p className="break-words text-base font-semibold text-gray-900 dark:text-gray-100">{rule.payee}</p>
+                <p className="text-sm text-gray-700 dark:text-gray-300">{names?.get(rule.categoryId) ?? "A category no longer in YNAB"}</p>
+                <p className="text-sm text-gray-600 dark:text-gray-400">Approved {rule.approved}</p>
+              </div>
+              <button type="button" className={SECONDARY} onClick={() => void remove(rule)}>
+                Remove
+              </button>
+            </li>
+          ))}
+        </ul>
+      )}
+    </div>
   );
 }
 

@@ -535,6 +535,25 @@ describe("Clean up: Always", () => {
     expect(await screen.findByRole("group", { name: "Trader Joe's" })).toBeInTheDocument();
     expect(patches()).toHaveLength(1);
   });
+
+  it("Remove on a payee rule can be taken back with Undo, and the rule comes back as it was", async () => {
+    const user = userEvent.setup();
+    renderPage();
+    await screen.findByRole("group", { name: "Trader Joe's" });
+    await db.ynabPayeeRules.put({ key: "shell", budgetId: "b1", payee: "Shell", categoryId: "c2", createdAt: 5, approved: 4 });
+
+    await user.click(screen.getByRole("button", { name: "Payee rules" }));
+    const list = await screen.findByRole("list", { name: "Payee rules" });
+    await user.click(within(within(list).getByRole("listitem")).getByRole("button", { name: "Remove" }));
+    await waitFor(() => expect(db.ynabPayeeRules.count()).resolves.toBe(0));
+    expect(await screen.findByText("No payee rules yet.")).toBeInTheDocument();
+    expect(screen.getByText("The rule for Shell was removed.")).toBeInTheDocument();
+
+    await user.click(screen.getByRole("button", { name: "Undo" }));
+    expect(await ruleOf("shell")).toEqual({ key: "shell", budgetId: "b1", payee: "Shell", categoryId: "c2", createdAt: 5, approved: 4 });
+    expect(await screen.findByRole("list", { name: "Payee rules" })).toHaveTextContent("Shell");
+    expect(screen.queryByRole("button", { name: "Undo" })).not.toBeInTheDocument();
+  });
 });
 
 describe("Clean up: the Checks pile (his words, 2026-11-12)", () => {
