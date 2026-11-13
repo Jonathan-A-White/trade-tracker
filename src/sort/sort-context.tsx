@@ -18,6 +18,7 @@ import { YnabRepository } from "@/db/repositories/ynab-repository";
 import { refreshTally as readYnabTally } from "@/ynab/tally";
 import { openToken } from "@/ynab/token";
 import { CHECK_READ_DEADLINE_MS, makeCheckReadAsk, type CheckReader } from "@/ynab/check-read";
+import { IDEA_REPLY_DEADLINE_MS, makeIdeaReplyAsk, type IdeaReplyAsk } from "@/ynab/budget-idea-reply";
 import { createYnabWriter, type YnabWriter } from "@/ynab/writer";
 import { makeReceiptClient } from "@/services/lookup-client";
 import { reconcileReceipt } from "@/services/receipt-reconcile";
@@ -70,6 +71,10 @@ export interface SortSeams {
   readCheck?: CheckReader | null;
   /** how long Clean up waits for a check image to be read */
   checkTimeoutMs?: number;
+  /** asks the mill about his reply to a Budget idea; null asks nothing (the app's own is the factory's, only on a licensed key) */
+  replyIdea?: IdeaReplyAsk | null;
+  /** how long a Budget idea waits for the answer to his reply */
+  replyTimeoutMs?: number;
   /** how long the sheet waits for the receipt to be read, and again for its lines to be grouped */
   receiptTimeoutMs?: number;
   pollMs?: number;
@@ -139,10 +144,10 @@ function useApproveByRules(writer: SortWriter | null, enabled: boolean, seamClie
 export function SortProvider({ children, ...seams }: SortSeams & { children: ReactNode }) {
   const appWriter = useAppWriter(seams.writer === undefined);
   useApproveByRules(seams.writer === undefined ? appWriter : seams.writer, seams.approveOnOpen !== false, seams.ynabClient);
-  const { client, writer, me, approveOnOpen, refreshBalances, refreshTally, ynabClient, suggest, suggestTimeoutMs, readReceipt, readCheck, checkTimeoutMs, receiptTimeoutMs, pollMs, feedTiming, balanceTiming } = seams;
+  const { client, writer, me, approveOnOpen, refreshBalances, refreshTally, ynabClient, suggest, suggestTimeoutMs, readReceipt, readCheck, checkTimeoutMs, replyIdea, replyTimeoutMs, receiptTimeoutMs, pollMs, feedTiming, balanceTiming } = seams;
   const value = useMemo<SortSeams>(
-    () => ({ client, writer: writer === undefined ? appWriter : writer, me, approveOnOpen, refreshBalances, refreshTally, ynabClient, suggest, suggestTimeoutMs, readReceipt, readCheck, checkTimeoutMs, receiptTimeoutMs, pollMs, feedTiming, balanceTiming }),
-    [client, writer, appWriter, me, approveOnOpen, refreshBalances, refreshTally, ynabClient, suggest, suggestTimeoutMs, readReceipt, readCheck, checkTimeoutMs, receiptTimeoutMs, pollMs, feedTiming, balanceTiming],
+    () => ({ client, writer: writer === undefined ? appWriter : writer, me, approveOnOpen, refreshBalances, refreshTally, ynabClient, suggest, suggestTimeoutMs, readReceipt, readCheck, checkTimeoutMs, replyIdea, replyTimeoutMs, receiptTimeoutMs, pollMs, feedTiming, balanceTiming }),
+    [client, writer, appWriter, me, approveOnOpen, refreshBalances, refreshTally, ynabClient, suggest, suggestTimeoutMs, readReceipt, readCheck, checkTimeoutMs, replyIdea, replyTimeoutMs, receiptTimeoutMs, pollMs, feedTiming, balanceTiming],
   );
   return <SortContext.Provider value={value}>{children}</SortContext.Provider>;
 }
@@ -244,6 +249,24 @@ function useAppReadCheck(): CheckReader | null {
   );
 }
 
+/** The reply to a Budget idea is the AI too: asked only on a licensed key, the key read when it asks. */
+function useAppReplyIdea(): IdeaReplyAsk | null {
+  const { door, getKey, backendUrl } = useFactory();
+  const licenceNow = useLicenceNow();
+  const licensed = door === "licensed";
+  return useMemo<IdeaReplyAsk | null>(
+    () =>
+      licensed
+        ? async (request, signal) => {
+            const key = getKey();
+            if (!key) throw new Error("The factory is locked.");
+            return makeIdeaReplyAsk(backendUrl, key, licenceNow)(request, signal);
+          }
+        : null,
+    [licensed, getKey, backendUrl, licenceNow],
+  );
+}
+
 /** What the Clean up screen reads and writes with. */
 export interface CleanupDeps {
   /** opens a YNAB client for a read */
@@ -258,6 +281,9 @@ export interface CleanupDeps {
   /** reads a check image for its payee and memo; null when the AI is not allowed, and then the image is only kept */
   readCheck: CheckReader | null;
   checkTimeoutMs: number;
+  /** asks the mill about his reply to a Budget idea; null when the AI is not allowed */
+  replyIdea: IdeaReplyAsk | null;
+  replyTimeoutMs: number;
 }
 
 export function useCleanupDeps(): CleanupDeps {
@@ -265,6 +291,7 @@ export function useCleanupDeps(): CleanupDeps {
   const clientFor = useYnabClientFor();
   const appSuggest = useAppSuggest();
   const appReadCheck = useAppReadCheck();
+  const appReplyIdea = useAppReplyIdea();
   const { approve, restore } = seams.writer ?? {};
   const seamClient = seams.ynabClient;
   const getClient = useCallback(() => (seamClient ? seamClient() : clientFor("the transactions")), [seamClient, clientFor]);
@@ -276,6 +303,8 @@ export function useCleanupDeps(): CleanupDeps {
     suggestTimeoutMs: seams.suggestTimeoutMs ?? SUGGEST_DEADLINE_MS,
     readCheck: seams.readCheck !== undefined ? seams.readCheck : appReadCheck,
     checkTimeoutMs: seams.checkTimeoutMs ?? CHECK_READ_DEADLINE_MS,
+    replyIdea: seams.replyIdea !== undefined ? seams.replyIdea : appReplyIdea,
+    replyTimeoutMs: seams.replyTimeoutMs ?? IDEA_REPLY_DEADLINE_MS,
   };
 }
 

@@ -17,6 +17,7 @@ import { ME_KEY } from "@/sort/waiting";
 import { createYnabClient } from "@/ynab/api";
 import { fakeYnab, groupOf, type FakeYnab, type FakeYnabTransaction } from "@/ynab/fake-ynab";
 import { monthsBefore } from "@/ynab/budget-ideas";
+import type { IdeaReplyAnswer, IdeaReplyRequest } from "@/ynab/budget-idea-reply";
 import { PayeeRuleRepository, SHORT_RULE_KEY } from "@/ynab/payee-rules";
 import { day } from "@/ynab/tally";
 import { createYnabWriter } from "@/ynab/writer";
@@ -414,6 +415,149 @@ describe("Home: Budget ideas", () => {
     const alert = await screen.findByRole("alert");
     expect(alert).toHaveTextContent("Could not add it in YNAB (YNAB answered 400. Try again later.). To add in YNAB: a category named Hardware Hank in the group Everyday, with a target of $45 a month.");
     expect(screen.getByRole("listitem", { name: "Hardware Hank" })).toBeInTheDocument();
+  });
+
+  describe("Reply", () => {
+    const replying = (answer: IdeaReplyAnswer | Error | "never", asked: IdeaReplyRequest[] = []): SortSeams => ({
+      ...seams(),
+      replyTimeoutMs: 80,
+      replyIdea: (request, signal) => {
+        asked.push(request);
+        if (answer === "never") return new Promise((_, reject) => signal?.addEventListener("abort", () => reject(new Error("aborted"))));
+        return answer instanceof Error ? Promise.reject(answer) : Promise.resolve(answer);
+      },
+    });
+    async function replyTo(name: string, words: string) {
+      const user = userEvent.setup();
+      const idea = await screen.findByRole("listitem", { name });
+      await user.click(within(idea).getByRole("button", { name: "Reply" }));
+      await user.type(within(idea).getByLabelText(`Your reply to ${name}`), words);
+      await user.click(within(idea).getByRole("button", { name: "Send" }));
+      return { user, idea };
+    }
+
+    it("shows Reply beside Add, Not now and Never, opening a text box", async () => {
+      await connect();
+      await setYnabOn(true);
+      const user = userEvent.setup();
+      renderHome(replying({ outcome: "explain", say: "x" }));
+      const idea = await screen.findByRole("listitem", { name: "Hardware Hank" });
+      expect(within(idea).queryByLabelText("Your reply to Hardware Hank")).not.toBeInTheDocument();
+      await user.click(within(idea).getByRole("button", { name: "Reply" }));
+      expect(within(idea).getByLabelText("Your reply to Hardware Hank")).toBeInTheDocument();
+    });
+
+    it("sends the idea, its charges and his words, and says Thinking… while it waits", async () => {
+      await connect();
+      await setYnabOn(true);
+      const asked: IdeaReplyRequest[] = [];
+      let release: (a: IdeaReplyAnswer) => void = () => undefined;
+      renderHome({ ...seams(), replyIdea: (request) => { asked.push(request); return new Promise((resolve) => { release = resolve; }); } });
+      const user = userEvent.setup();
+      const idea = await screen.findByRole("listitem", { name: "Hardware Hank" });
+      await user.click(within(idea).getByRole("button", { name: "Reply" }));
+      await user.type(within(idea).getByLabelText("Your reply to Hardware Hank"), "Why $45?");
+      await user.click(within(idea).getByRole("button", { name: "Send" }));
+      expect(await within(idea).findByText("Thinking…")).toBeInTheDocument();
+      expect(asked).toHaveLength(1);
+      expect(asked[0]!.words).toBe("Why $45?");
+      expect(asked[0]!.idea).toMatchObject({ name: "Hardware Hank", cadence: "monthly", amount: 45, total: 180, payees: ["Hardware Hank"] });
+      expect(asked[0]!.idea.charges).toHaveLength(3);
+      expect(asked[0]!.categories.map((c) => c.name)).toContain("Groceries");
+      release({ outcome: "explain", say: "It is the average of three months." });
+      expect(await within(idea).findByText("It is the average of three months.")).toBeInTheDocument();
+      expect(within(idea).queryByText("Thinking…")).not.toBeInTheDocument();
+    });
+
+    it("explain: a short answer under the card, the card as it was", async () => {
+      await connect();
+      await setYnabOn(true);
+      renderHome(replying({ outcome: "explain", say: "Three charges of $60 in three months." }));
+      const { idea } = await replyTo("Hardware Hank", "Why $45 a month?");
+      expect(await within(idea).findByText("Three charges of $60 in three months.")).toBeInTheDocument();
+      expect(idea).toHaveTextContent("$45 a month");
+      expect(localStorage.getItem("tradetracker-budget-ideas-reasons")).toBeNull();
+    });
+
+    it("revise: the card changes in place and stays changed after Home is drawn again", async () => {
+      await connect();
+      await setYnabOn(true);
+      const first = renderHome(replying({ outcome: "revise", say: "Now $100 a month, as you said.", amount: 100 }));
+      const { idea } = await replyTo("Hardware Hank", "Make it $100");
+      await waitFor(() => expect(screen.getByRole("listitem", { name: "Hardware Hank" })).toHaveTextContent("$100 a month"));
+      expect(screen.getByRole("listitem", { name: "Hardware Hank" })).toHaveTextContent("To add in YNAB: a category named Hardware Hank in the group Everyday, with a target of $100 a month.");
+      expect(within(screen.getByRole("listitem", { name: "Hardware Hank" })).getByText("Now $100 a month, as you said.")).toBeInTheDocument();
+      expect(idea).toBeInTheDocument();
+      first.unmount();
+      renderHome(seams());
+      expect(await screen.findByRole("listitem", { name: "Hardware Hank" })).toHaveTextContent("$100 a month");
+    });
+
+    it("revise into a category the budget has: the card goes, and his reason is shown once", async () => {
+      await connect();
+      await setYnabOn(true);
+      renderHome(replying({ outcome: "revise", say: "Folded into Groceries.", name: "Groceries", remember: "Hank's is groceries to us." }));
+      await replyTo("Hardware Hank", "fold these into Groceries");
+      expect(await screen.findByRole("status")).toHaveTextContent('Folded into Groceries. Your reason, kept for later ideas: "Hank\'s is groceries to us."');
+      expect(screen.queryByRole("listitem", { name: "Hardware Hank" })).not.toBeInTheDocument();
+    });
+
+    it("retire: the card goes, his reason is shown once, and the payee he ruled out is not offered again (the NAC case)", async () => {
+      await connect();
+      ynab.transactions.push(
+        ...[3, 2, 1].map((m, i): FakeYnabTransaction => ({ id: `n${i}`, account_id: "a1", date: monthsAgo(m), amount: -1_112_500, payee_name: "New Apostolic Church", category_id: "f1" })),
+      );
+      await setYnabOn(true);
+      const asked: IdeaReplyRequest[] = [];
+      const first = renderHome(
+        replying({ outcome: "retire", say: "Understood: no more ideas for New Apostolic Church.", rulesOut: ["New Apostolic Church"], remember: "We moved our tithe to Brookfield First." }, asked),
+      );
+      await replyTo("New Apostolic Church", "We won't be donating there anymore as we have shifted churches and our tithe fully to Brookfield First.");
+      expect(await screen.findByRole("status")).toHaveTextContent('Understood: no more ideas for New Apostolic Church. Your reason, kept for later ideas: "We moved our tithe to Brookfield First."');
+      expect(screen.queryByRole("listitem", { name: "New Apostolic Church" })).not.toBeInTheDocument();
+      expect(JSON.parse(localStorage.getItem("tradetracker-budget-ideas-reasons")!)).toMatchObject([{ words: "We moved our tithe to Brookfield First.", payees: ["New Apostolic Church"] }]);
+      first.unmount();
+
+      // another idea's reply is given the reason; and even with his dismissal forgotten the church is not proposed again
+      localStorage.removeItem("tradetracker-budget-ideas-dismissed");
+      localStorage.removeItem("tradetracker-budget-ideas-introduced");
+      renderHome(replying({ outcome: "explain", say: "ok" }, asked));
+      expect(await screen.findByRole("listitem", { name: "Hardware Hank" })).toBeInTheDocument();
+      expect(screen.queryByRole("listitem", { name: "New Apostolic Church" })).not.toBeInTheDocument();
+      const user = userEvent.setup();
+      await user.click(within(screen.getByRole("listitem", { name: "Hardware Hank" })).getByRole("button", { name: "Reply" }));
+      await user.type(screen.getByLabelText("Your reply to Hardware Hank"), "hi");
+      await user.click(screen.getByRole("button", { name: "Send" }));
+      await waitFor(() => expect(asked).toHaveLength(2));
+      expect(asked[1]!.reasons).toEqual([{ words: "We moved our tithe to Brookfield First.", payees: ["New Apostolic Church"] }]);
+    });
+
+    it("no answer within the limit leaves the card as it was, with 'No answer yet; try again' and his words kept", async () => {
+      await connect();
+      await setYnabOn(true);
+      renderHome(replying("never"));
+      const { idea } = await replyTo("Hardware Hank", "Make it $100");
+      expect(await within(idea).findByText("No answer yet; try again")).toBeInTheDocument();
+      expect(idea).toHaveTextContent("$45 a month");
+      expect(within(idea).getByLabelText("Your reply to Hardware Hank")).toHaveValue("Make it $100");
+      expect(localStorage.getItem("tradetracker-budget-ideas-reasons")).toBeNull();
+    });
+
+    it("a failed or unusable answer says the same and changes nothing", async () => {
+      await connect();
+      await setYnabOn(true);
+      renderHome(replying({ outcome: "explain", say: "" }));
+      const { idea } = await replyTo("Hardware Hank", "hello");
+      expect(await within(idea).findByText("No answer yet; try again")).toBeInTheDocument();
+    });
+
+    it("with no licence there is nothing to ask: it says so, and keeps his words", async () => {
+      await connect();
+      await setYnabOn(true);
+      renderHome({ ...seams(), replyIdea: null });
+      const { idea } = await replyTo("Hardware Hank", "hello");
+      expect(await within(idea).findByText("Hold the licence to send a reply.")).toBeInTheDocument();
+    });
   });
 
   it("Not now hides an idea, Never hides another, and they stay hidden after Home is drawn again", async () => {

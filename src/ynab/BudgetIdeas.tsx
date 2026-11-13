@@ -1,6 +1,7 @@
 // Home's "Budget ideas": what keeps landing in Stuff I Forgot to Budget For, proposed as a category with an amount. Each idea has
 // Add (the app creates the category and its target in YNAB and says so; when it cannot, it says exactly what to add by hand),
-// Not now (hidden 90 days) and Never. Drawn only while YNAB is On and the budget has the fallback category.
+// Not now (hidden 90 days), Never, and Reply (his words go to the budget-idea-reply grind: the idea is revised, retired or explained, and
+// his reason is kept for later ideas, src/ynab/budget-idea-reply.ts). Drawn only while YNAB is On and the budget has the fallback category.
 import { useCallback, useEffect, useMemo, useRef, useState } from "react";
 import { useLiveQuery } from "dexie-react-hooks";
 import { db } from "@/db/database";
@@ -10,7 +11,18 @@ import { useYnabOn } from "@/settings/connections";
 import { FALLBACK_NAME, OTHER_KIND, askKind, fallbackCategory } from "@/sort/suggest";
 import { useCleanupDeps } from "@/sort/sort-context";
 import { money, wholeMoney } from "@/sort/waiting";
+import { ReplyBox, NO_ANSWER } from "@/components/forms/reply-box";
 import { refreshCache } from "./cache";
+import {
+  addReason,
+  applyRevisions,
+  buildReplyRequest,
+  readReasons,
+  readRevisions,
+  resolveReply,
+  ruledOutPayees,
+  writeRevision,
+} from "./budget-idea-reply";
 import { day } from "./tally";
 import {
   dismiss,
@@ -44,7 +56,7 @@ const amountLine = (idea: BudgetIdea): string =>
 
 export function BudgetIdeas() {
   const on = useYnabOn();
-  const { getClient, suggest, suggestTimeoutMs } = useCleanupDeps();
+  const { getClient, suggest, suggestTimeoutMs, replyIdea, replyTimeoutMs } = useCleanupDeps();
   const categories = useLiveQuery(() => db.ynabCategories.toArray(), []);
   const [charges, setCharges] = useState<KeptCharges | null>(readCharges);
   const [kinds, setKinds] = useState(readKinds);
@@ -52,6 +64,11 @@ export function BudgetIdeas() {
   const [busy, setBusy] = useState<string | null>(null);
   const [added, setAdded] = useState<string | null>(null);
   const [error, setError] = useState<string | null>(null);
+  const [reasons, setReasons] = useState(readReasons);
+  const [revisions, setRevisions] = useState(readRevisions);
+  // what a reply said: a revised or explained idea's sentence under its card, and a retired idea's goodbye (shown once)
+  const [notes, setNotes] = useState<Record<string, string>>({});
+  const [farewell, setFarewell] = useState<string | null>(null);
   const asked = useRef(new Set<string>());
 
   const forgot = useMemo(() => (categories ? fallbackCategory(categories) : undefined), [categories]);
@@ -125,12 +142,13 @@ export function BudgetIdeas() {
       },
       settings,
       existingNames: (categories ?? []).map((c) => c.name),
+      ruledOut: ruledOutPayees(reasons),
     });
     const hidden = new Set(ideas.filter((i) => isDismissed(dismissed, i.key)).map((i) => i.key));
-    return chooseShown(ideas, readIntroduced(today), hidden);
+    return chooseShown(applyRevisions(ideas, revisions), readIntroduced(today), hidden);
     // the thresholds are read from storage at each draw
     // eslint-disable-next-line react-hooks/exhaustive-deps
-  }, [on, forgot, charges, kinds, dismissed, categories, today, settings.minSpend, settings.minCharges]);
+  }, [on, forgot, charges, kinds, dismissed, categories, today, reasons, revisions, settings.minSpend, settings.minCharges]);
   const introducedKey = introduced.join("\u0000");
   useEffect(() => {
     if (introducedKey !== "") writeIntroduced(today, introducedKey.split("\u0000"));
@@ -140,6 +158,45 @@ export function BudgetIdeas() {
     dismiss(idea.key, how);
     setDismissed(readDismissed());
   }, []);
+
+  /** His words about one idea go to the grind; null when the answer was used, else what to tell him (the card stays as it was). */
+  async function reply(idea: BudgetIdea, words: string): Promise<string | null> {
+    if (!replyIdea) return "Hold the licence to send a reply.";
+    const names = (categories ?? []).filter((c) => !c.hidden).map((c) => c.name);
+    const run = new AbortController();
+    const deadline = setTimeout(() => run.abort(), replyTimeoutMs);
+    try {
+      const result = resolveReply(await replyIdea(buildReplyRequest(idea, words, names), run.signal), idea, names);
+      if (!result) return NO_ANSWER;
+      if (result.kind === "explain") {
+        setNotes((was) => ({ ...was, [idea.key]: result.say }));
+        return null;
+      }
+      // only a payee this idea was made from can be ruled out
+      const mine = new Set(idea.payees.map((p) => p.trim().toLowerCase()));
+      const rulesOut = result.rulesOut.filter((p) => mine.has(p.trim().toLowerCase()));
+      // a retire always keeps his reason (the grind's line of it, else his words); a revise keeps one only when the grind found one
+      const reason = result.note ?? (result.kind === "retire" ? words : undefined);
+      if (reason) {
+        addReason({ words: reason, payees: rulesOut });
+        setReasons(readReasons());
+      }
+      if (result.kind === "revise") {
+        writeRevision(idea.key, result.revision);
+        setRevisions(readRevisions());
+        setNotes((was) => ({ ...was, [idea.key]: result.say }));
+      } else {
+        dismiss(idea.key, "never");
+        setDismissed(readDismissed());
+        setFarewell(`${result.say}${reason ? ` Your reason, kept for later ideas: "${reason}"` : ""}`);
+      }
+      return null;
+    } catch {
+      return NO_ANSWER;
+    } finally {
+      clearTimeout(deadline);
+    }
+  }
 
   async function add(idea: BudgetIdea) {
     if (!forgot || busy) return;
@@ -167,13 +224,18 @@ export function BudgetIdeas() {
     }
   }
 
-  if (!on || !forgot || (shown.length === 0 && !added && !error)) return null;
+  if (!on || !forgot || (shown.length === 0 && !added && !error && !farewell)) return null;
   return (
     <section aria-label="Budget ideas" className="space-y-2">
       <h2 className="text-base font-semibold text-gray-900 dark:text-gray-100">Budget ideas</h2>
       {added && (
         <p role="status" className="text-sm text-green-800 dark:text-green-300">
           {added}
+        </p>
+      )}
+      {farewell && (
+        <p role="status" className="text-sm text-gray-700 dark:text-gray-300">
+          {farewell}
         </p>
       )}
       {error && (
@@ -207,6 +269,7 @@ export function BudgetIdeas() {
                   ))}
               </ul>
             </details>
+            {notes[idea.key] && <p className="text-sm text-gray-800 dark:text-gray-200">{notes[idea.key]}</p>}
             <span className="flex flex-wrap gap-2">
               <button type="button" disabled={busy !== null} onClick={() => void add(idea)} className={BUTTON}>
                 Add
@@ -217,6 +280,7 @@ export function BudgetIdeas() {
               <button type="button" disabled={busy !== null} onClick={() => answer(idea, "never")} className={BUTTON}>
                 Never
               </button>
+              <ReplyBox subject={idea.name} disabled={busy !== null} onSend={(words) => reply(idea, words)} />
             </span>
           </li>
         ))}
