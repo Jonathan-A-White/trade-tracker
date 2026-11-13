@@ -1,11 +1,12 @@
 // Every tab's scroll content ends above the bottom nav (mw-6ww.148.45). His report: Home's Budget ideas card's action row (Add, Not now,
-// Never, Reply) ran under the nav bar. At 390x844 (the nav sits on the 48 px system-bar floor, --tt-bar-inset) each tab is scrolled to the
-// foot, and the last thing it draws must end above the nav's top edge; Home's Budget ideas buttons must also stay clear of the nav when
+// Never, Reply) ran under the nav bar. At 390x844 each tab is scrolled to the foot, and the last thing it draws must end above the nav's
+// top edge with a small gap (GAP px, mw-6ww.148.46), so a card's bottom border is not cut at the nav's edge; Home's Budget ideas buttons must also stay clear of the nav when
 // they are scrolled into view (what a tap on them does) and be the topmost element at their centre. Against a stubbed api.ynab.com.
 import { expect, test, type Locator, type Page, type Route } from "@playwright/test";
 import { shot } from "./shot";
 
 const TOKEN = "good-token-123";
+const GAP = 8; // the least space (px) between the last thing a tab draws and the nav's top edge
 const cors = {
   "access-control-allow-origin": "*",
   "access-control-allow-headers": "authorization, content-type, accept",
@@ -210,7 +211,7 @@ test("every tab's scroll content ends above the nav, and Home's Budget ideas but
   }
   // and the card's own foot, with the whole Home page scrolled to the end
   await scrollToFoot(page);
-  expect(await lowestEdge(page), "Home, scrolled to the foot: the lowest edge (px) against the nav's top edge").toBeLessThanOrEqual((await nav.boundingBox())!.y);
+  expect(await lowestEdge(page), "Home, scrolled to the foot: the lowest edge (px) against the nav's top edge").toBeLessThanOrEqual((await nav.boundingBox())!.y - GAP);
   await shot(page, "tab-ends-above-nav-home");
 
   const tabs: Array<[string, string]> = [
@@ -227,7 +228,7 @@ test("every tab's scroll content ends above the nav, and Home's Budget ideas but
     await page.waitForTimeout(500);
     await scrollToFoot(page);
     const navTop = (await nav.boundingBox())!.y;
-    expect(await lowestEdge(page), `${name}, scrolled to the foot: the lowest edge (px) against the nav's top edge`).toBeLessThanOrEqual(navTop);
+    expect(await lowestEdge(page), `${name}, scrolled to the foot: the lowest edge (px) against the nav's top edge less the gap`).toBeLessThanOrEqual(navTop - GAP);
     await shot(page, `tab-ends-above-nav-${name.toLowerCase().replace(" ", "-")}`);
   }
 });
