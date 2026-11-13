@@ -20,6 +20,17 @@ function swPush(): Plugin {
   };
 }
 
+/** CHANGELOG.md emitted as changelog.md beside index.html: the running page reads the waiting build's changelog from the server (src/services/app-update-options.ts). */
+function servedChangelog(): Plugin {
+  return {
+    name: "tradetracker-served-changelog",
+    apply: "build",
+    generateBundle() {
+      this.emitFile({ type: "asset", fileName: "changelog.md", source: readFileSync("./CHANGELOG.md", "utf-8") });
+    },
+  };
+}
+
 /**
  * VITE_MOVED_TO: an https URL, set only for the old address's build (the Pages workflow), which then shows the 'has moved' banner
  * (src/move/MovedBanner.tsx reads it as import.meta.env.VITE_MOVED_TO). Unset or empty, no banner. Anything else fails the build.
@@ -41,6 +52,7 @@ export default defineConfig({
     react(),
     tailwindcss(),
     swPush(),
+    servedChangelog(),
     VitePWA({
       // "prompt": a new build waits until he taps the Update banner (pwa-kit/app-update).
       registerType: "prompt",

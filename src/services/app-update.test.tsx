@@ -5,6 +5,7 @@ import { act, cleanup, fireEvent, render, screen } from '@testing-library/react'
 import { startAppUpdates, TAKE_OVER_PATIENCE_MS, UPDATE_CHECK_EVERY_MS } from 'pwa-kit/app-update';
 import { UpdateBanner } from '@/components/feedback/update-banner';
 import { fakeSetup, fakeWorker, type FakeSetup } from '@/test/fake-registration';
+import { appUpdateOptions, readServedChangelog, runningVersion } from '@/services/app-update-options';
 
 let stop: (() => void) | undefined;
 
@@ -170,5 +171,77 @@ describe('looking for an update', () => {
     vi.advanceTimersByTime(UPDATE_CHECK_EVERY_MS);
     document.dispatchEvent(new Event('visibilitychange'));
     expect(setup.registration.update).not.toHaveBeenCalled();
+  });
+});
+
+// A waiting build is judged by pwa-kit's hasNewsSince over the WAITING build's changelog.md, read fresh from the server
+// (src/services/app-update-options.ts): no line after the running version, no banner and a quiet take-over.
+describe('a waiting build judged by its changelog', () => {
+  const RUNNING = '0.1.116';
+  const WITH_NEWS = "# What's new\n\n## 0.1.117\n_2026-11-13_\n- Fixed: The scan button works again.\n\n## 0.1.116\n_2026-11-12_\n- New: Older line.\n";
+  const WITHOUT_NEWS = "# What's new\n\n## 0.1.117\n_2026-11-13_\n- No visible change\n\n## 0.1.116\n_2026-11-12_\n- New: Older line.\n";
+
+  function served(body: string, ok = true) {
+    return vi.fn<typeof fetch>(async () => ({ ok, text: async () => body }) as unknown as Response);
+  }
+
+  function startJudged(setup: FakeSetup, fetcher: typeof fetch) {
+    const options = appUpdateOptions(readServedChangelog(fetcher, '/changelog.md'), RUNNING);
+    render(<UpdateBanner />);
+    let updates!: ReturnType<typeof startAppUpdates>;
+    act(() => {
+      updates = startAppUpdates({ container: setup.container, registration: setup.registration, reload: setup.reload }, options);
+    });
+    stop = updates.stop;
+    return updates;
+  }
+
+  async function settle() {
+    await act(async () => void (await vi.advanceTimersByTimeAsync(0)));
+  }
+
+  afterEach(() => {
+    act(() => {
+      stop?.();
+      stop = undefined;
+    });
+    Object.defineProperty(document, 'visibilityState', { configurable: true, get: () => 'visible' });
+  });
+
+  it('reads the running version out of the build string', () => {
+    expect(runningVersion(`v${RUNNING} · 2026-11-12 10:00Z · abc1234`)).toBe(RUNNING);
+    expect(runningVersion('dev')).toBe('');
+  });
+
+  it('raises no banner for a waiting build whose changelog has no line after the running version, and takes it quietly', async () => {
+    const waiting = fakeWorker();
+    const setup = fakeSetup({ waiting });
+    const fetcher = served(WITHOUT_NEWS);
+    startJudged(setup, fetcher);
+    await settle();
+    expect(fetcher).toHaveBeenCalledWith('/changelog.md', { cache: 'no-store' });
+    expect(screen.queryByText('Update ready, tap to reload')).toBeNull();
+    expect(waiting.postMessage).toHaveBeenCalledWith({ type: 'SKIP_WAITING' });
+  });
+
+  it('raises the banner for a waiting build whose changelog has a line after the running version, and does not take it', async () => {
+    const waiting = fakeWorker();
+    const setup = fakeSetup({ waiting });
+    startJudged(setup, served(WITH_NEWS));
+    await settle();
+    expect(screen.getByRole('button', { name: 'Update ready, tap to reload' })).toBeEnabled();
+    expect(waiting.postMessage).not.toHaveBeenCalled();
+  });
+
+  it.each([
+    ['the server answers an error', served('', false)],
+    ['the server answers a page that is not a changelog', served('<!doctype html><html></html>')],
+    ['the read fails', vi.fn(async () => { throw new Error('offline'); }) as unknown as typeof fetch],
+  ])('offers the build, never takes it quietly, when %s', async (_name, fetcher) => {
+    const waiting = fakeWorker();
+    startJudged(fakeSetup({ waiting }), fetcher as typeof fetch);
+    await settle();
+    expect(screen.getByRole('button', { name: 'Update ready, tap to reload' })).toBeEnabled();
+    expect(waiting.postMessage).not.toHaveBeenCalled();
   });
 });
