@@ -2,17 +2,20 @@ import { useState, useCallback } from "react";
 import { useParams, useNavigate, Outlet } from "react-router";
 import { TripRepository } from "@/db/repositories/trip-repository";
 import { TripItemRepository } from "@/db/repositories/trip-item-repository";
-import { PendingLookupRepository } from "@/db/repositories/pending-lookup-repository";
+import { PendingLookupRepository, type DiscardedLookup } from "@/db/repositories/pending-lookup-repository";
 import { useTripLines } from "@/trips/use-trip-lines";
 import { tripTotals } from "@/core/trip-totals";
 import { PageHeader } from "@/components/layout/page-header";
 import { PendingLineRow } from "@/components/data-display/pending-line-row";
 import { TripItemRow } from "@/components/data-display/trip-item-row";
 import { InlineEditor } from "@/components/forms/inline-editor";
+import { UndoNotice } from "@/components/undo-notice";
+import { useUndo } from "@/hooks/use-undo";
 
 const tripRepo = new TripRepository();
 const tripItemRepo = new TripItemRepository();
 const pendingLookupRepo = new PendingLookupRepository();
+const DISCARDED = "photo";
 
 export default function TripEditPage() {
   const { id } = useParams<{ id: string }>();
@@ -29,14 +32,27 @@ export default function TripEditPage() {
     itemsById: map,
     pendingByItemId: lookups,
   } = useTripLines(id);
+  // the pending line he last discarded, with its photos, kept for Undo until he leaves the page
+  const { kept: keptDiscarded, keep: keepDiscarded, drop: dropDiscarded } = useUndo<DiscardedLookup>(id);
+  const lastDiscarded = keptDiscarded[DISCARDED];
 
   const handleRetryPending = useCallback(async (lookupId: string) => {
     await pendingLookupRepo.retry(lookupId);
   }, []);
 
-  const handleDiscardPending = useCallback(async (lookupId: string) => {
-    await pendingLookupRepo.discard(lookupId);
-  }, []);
+  const handleDiscardPending = useCallback(
+    async (lookupId: string) => {
+      const discarded = await pendingLookupRepo.discard(lookupId);
+      if (discarded) keepDiscarded(DISCARDED, discarded);
+    },
+    [keepDiscarded],
+  );
+
+  const handleUndoDiscard = useCallback(async () => {
+    if (!lastDiscarded) return;
+    dropDiscarded(DISCARDED);
+    await pendingLookupRepo.restoreDiscarded(lastDiscarded);
+  }, [lastDiscarded, dropDiscarded]);
 
   const handleEditPrice = useCallback((itemId: string) => {
     setEditingId(itemId);
@@ -113,6 +129,16 @@ export default function TripEditPage() {
       <PageHeader title="Edit Trip" backTo={`/trips/${id}`} />
 
       <main className="flex-1 pb-[calc(var(--tt-nav-h)+6rem)]">
+        {lastDiscarded && (
+          <div className="px-4 py-2">
+            <UndoNotice
+              className="rounded-lg bg-gray-800 px-3 text-base text-white"
+              onUndo={() => void handleUndoDiscard()}
+            >
+              Discarded the photo of {lastDiscarded.lookup.barcode}.
+            </UndoNotice>
+          </div>
+        )}
         {/* Items list */}
         {items.length === 0 ? (
           <div className="p-4 text-center text-gray-500 dark:text-gray-400 text-sm">
