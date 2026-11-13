@@ -42,9 +42,13 @@ body {
   color-scheme: dark;
 }
 
+/* The scroll area runs under the fixed nav, so its own edge is the screen's. scroll-padding-bottom makes the nav's height the bottom edge
+   for everything that brings an element into view (a tap, a keyboard focus, find in page): a button that is partly under the nav is
+   scrolled clear of it rather than counted as already visible (mw-6ww.148.45). The shell's own padding keeps the foot of each page above it. */
 #root {
   height: 100%;
   overflow-y: auto;
+  scroll-padding-bottom: var(--tt-nav-h);
   -webkit-overflow-scrolling: touch;
 }
 
