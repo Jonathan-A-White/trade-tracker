@@ -38,6 +38,9 @@ const WORD: Record<Confidence, string> = { sure: "Sure", likely: "Likely", unsur
 
 type Phase = { state: "loading" } | { state: "failed"; error: string } | { state: "ready" };
 
+/** What a card says of its category once he has chosen one other than the guess. */
+const YOUR_PICK = "Your pick.";
+
 /** How long Undo stays after "Always". */
 const UNDO_MS = 10_000;
 
@@ -436,9 +439,13 @@ export default function CleanupPage() {
   const change = useCallback((match: (i: CleanupItem) => boolean, patch: Partial<CleanupItem>) => {
     setItems((all) => all.map((i) => (match(i) ? { ...i, ...patch } : i)));
   }, []);
-  const onGroupCategory = (key: string, categoryId: string) =>
-    change((i) => i.key === key && page.some((p) => p.id === i.id) && !i.fixedLabel, { categoryId, ticked: true, open: false });
-  const onItemCategory = (id: string, categoryId: string) => change((i) => i.id === id, { categoryId, ticked: true, open: false });
+  // a pick that differs from the category the card holds is his: the words about the guess (why) and about YNAB's category (note) no
+  // longer say what the card will do, so they give way to "Your pick."
+  const pick = useCallback((match: (i: CleanupItem) => boolean, categoryId: string) => {
+    setItems((all) => all.map((i) => (match(i) ? { ...i, categoryId, ticked: true, open: false, ...(i.categoryId === categoryId ? {} : { why: YOUR_PICK, note: undefined }) } : i)));
+  }, []);
+  const onGroupCategory = (key: string, categoryId: string) => pick((i) => i.key === key && page.some((p) => p.id === i.id) && !i.fixedLabel, categoryId);
+  const onItemCategory = (id: string, categoryId: string) => pick((i) => i.id === id, categoryId);
   const onTick = (id: string, ticked: boolean) => change((i) => i.id === id, { ticked });
   const onTickAll = (key: string, ticked: boolean) =>
     change((i) => i.key === key && page.some((p) => p.id === i.id) && (i.categoryId !== null || !!i.fixedLabel), { ticked });

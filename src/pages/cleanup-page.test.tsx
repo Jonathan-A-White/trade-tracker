@@ -278,6 +278,48 @@ describe("Clean up", () => {
     expect(within(mystery).queryByText(/everyday/i)).not.toBeInTheDocument();
   });
 
+  it("says the pick is his, not the guess, once he chooses another category (the Ring Multi Plan card kept 'Nothing here to go by')", async () => {
+    const user = userEvent.setup();
+    renderPage();
+    const mystery = await screen.findByRole("group", { name: "Mystery Shop" });
+    expect(within(mystery).getByText("Nothing here to go by, so Stuff I Forgot to Budget For.")).toBeInTheDocument();
+    await user.selectOptions(within(mystery).getByLabelText("Category for Mystery Shop"), "c3");
+    expect(within(mystery).getByLabelText("Category for Mystery Shop")).toHaveValue("c3");
+    expect(within(mystery).queryByText(/Nothing here to go by/)).not.toBeInTheDocument();
+    expect(within(mystery).queryByText(/Stuff I Forgot to Budget For\./)).not.toBeInTheDocument();
+    expect(within(mystery).getByText("Your pick.")).toBeInTheDocument();
+  });
+
+  it("leaves the guess's words alone when the pick is the guess itself", async () => {
+    const user = userEvent.setup();
+    renderPage();
+    const mystery = await screen.findByRole("group", { name: "Mystery Shop" });
+    await user.selectOptions(within(mystery).getByLabelText("Category for Mystery Shop"), "c4");
+    expect(within(mystery).getByText("Nothing here to go by, so Stuff I Forgot to Budget For.")).toBeInTheDocument();
+    expect(within(mystery).queryByText("Your pick.")).not.toBeInTheDocument();
+  });
+
+  it("says the pick is his on a transaction of a group whose own category he changes, and on the whole group", async () => {
+    const user = userEvent.setup();
+    renderPage();
+    const tj = await screen.findByRole("group", { name: "Trader Joe's" });
+    await user.selectOptions(within(tj).getAllByLabelText(/^Category for \$/)[0]!, "c2");
+    expect(within(tj).getAllByText("Your pick.")).toHaveLength(1);
+    await user.selectOptions(within(tj).getByLabelText("Category for Trader Joe's"), "c3");
+    expect(within(tj).getAllByText("Your pick.")).toHaveLength(2);
+    expect(within(tj).queryByText(/went to/)).not.toBeInTheDocument();
+  });
+
+  it("drops 'Already in <category> in YNAB' when he picks a different category for that transaction", async () => {
+    const user = userEvent.setup();
+    renderPage();
+    const shell = await screen.findByRole("group", { name: "Shell" });
+    expect(within(shell).getByText("Already in Eating Out in YNAB; only needs approving")).toBeInTheDocument();
+    await user.selectOptions(within(shell).getByLabelText("Category for Shell"), "c3");
+    expect(within(shell).queryByText(/Already in/)).not.toBeInTheDocument();
+    expect(within(shell).getByText("Your pick.")).toBeInTheDocument();
+  });
+
   it("lets the AI answer Household for a payee whose YNAB history has Household before", async () => {
     // Hardware Hank was Household once and Groceries once: no majority, so the AI is asked, and Household is seen there
     ynab.transactions.push(
