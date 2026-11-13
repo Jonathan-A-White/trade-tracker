@@ -440,3 +440,54 @@ describe("ActiveTripPage Photo price", () => {
     );
   });
 });
+
+describe("ActiveTripPage removing a line", () => {
+  beforeEach(async () => {
+    await Promise.all(db.tables.map((table) => table.clear()));
+  });
+
+  async function seedMilkAndEggs() {
+    const { trip } = await seedTripWithMilkAndPending();
+    const eggs = await itemRepo.create({ barcode: "2", name: "Eggs", currentPrice: 4, unitType: "each" });
+    await tripItemRepo.addToTrip({ tripId: trip.id, itemId: eggs.id, price: 4, quantity: 1, onSale: false });
+    return trip;
+  }
+
+  it("removes the line and offers Undo, which puts it back with the trip's subtotal", async () => {
+    const trip = await seedMilkAndEggs();
+    const user = userEvent.setup();
+    renderPage();
+
+    expect(screen.queryByRole("button", { name: "Undo" })).not.toBeInTheDocument();
+    const milkRow = (await screen.findByText("Milk")).closest("div.relative.overflow-hidden") as HTMLElement;
+    await user.click(within(milkRow).getByRole("button", { name: "Delete" }));
+
+    await waitFor(() => expect(screen.queryByText("Milk")).not.toBeInTheDocument());
+    expect(screen.getByText("Removed Milk.")).toBeInTheDocument();
+    expect((await tripRepo.getById(trip.id))?.scannedSubtotal).toBe(4);
+
+    await user.click(screen.getByRole("button", { name: "Undo" }));
+
+    expect(await screen.findByText("Milk")).toBeInTheDocument();
+    expect(screen.queryByRole("button", { name: "Undo" })).not.toBeInTheDocument();
+    expect((await tripRepo.getById(trip.id))?.scannedSubtotal).toBe(7);
+  });
+
+  it("offers Undo for the last line removed only", async () => {
+    await seedMilkAndEggs();
+    const user = userEvent.setup();
+    renderPage();
+
+    const rowOf = async (name: string) =>
+      (await screen.findByText(name)).closest("div.relative.overflow-hidden") as HTMLElement;
+    await user.click(within(await rowOf("Milk")).getByRole("button", { name: "Delete" }));
+    await waitFor(() => expect(screen.queryByText("Milk")).not.toBeInTheDocument());
+    await user.click(within(await rowOf("Eggs")).getByRole("button", { name: "Delete" }));
+    await waitFor(() => expect(screen.queryByText("Eggs")).not.toBeInTheDocument());
+
+    expect(screen.getAllByRole("button", { name: "Undo" })).toHaveLength(1);
+    await user.click(screen.getByRole("button", { name: "Undo" }));
+    expect(await screen.findByText("Eggs")).toBeInTheDocument();
+    expect(screen.queryByText("Milk")).not.toBeInTheDocument();
+  });
+});

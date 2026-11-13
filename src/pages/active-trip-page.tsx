@@ -1,7 +1,7 @@
 import { useState, useEffect, useCallback } from "react";
 import { useLiveQuery } from "dexie-react-hooks";
 import { useNavigate, Link, Outlet } from "react-router";
-import type { Item } from "@/contracts/types";
+import type { Item, TripItem } from "@/contracts/types";
 import { TripRepository } from "@/db/repositories/trip-repository";
 import { TripItemRepository } from "@/db/repositories/trip-item-repository";
 import { PendingLookupRepository } from "@/db/repositories/pending-lookup-repository";
@@ -17,12 +17,15 @@ import { SubtotalBar } from "@/components/data-display/subtotal-bar";
 import { PendingLineRow } from "@/components/data-display/pending-line-row";
 import { InlineEditor } from "@/components/forms/inline-editor";
 import { ItemForm } from "@/components/forms/item-form";
+import { UndoNotice } from "@/components/undo-notice";
+import { useUndo } from "@/hooks/use-undo";
 
 
 const tripRepo = new TripRepository();
 const tripItemRepo = new TripItemRepository();
 const pendingLookupRepo = new PendingLookupRepository();
 const itemRepo = new ItemRepository();
+const REMOVED = "line";
 
 function useElapsedTime(startedAt: number | undefined) {
   const [elapsed, setElapsed] = useState("");
@@ -70,6 +73,9 @@ export default function ActiveTripPage() {
     priceLookupsByItemId: priceLookups,
     loading,
   } = useTripLines(trip?.id);
+  // the line he last removed and its name, kept for Undo until he leaves the page
+  const { kept: keptRemoved, keep: keepRemoved, drop: dropRemoved } = useUndo<{ line: TripItem; name: string }>(trip?.id);
+  const lastRemoved = keptRemoved[REMOVED];
   const sendHold = useSendHold();
   const notSent = sendHold ? sendHoldText(sendHold) : null;
   const storeName = store?.name ?? (trip && !loading ? "Unknown Store" : undefined);
@@ -103,9 +109,19 @@ export default function ActiveTripPage() {
     [editingId, editField],
   );
 
-  const handleRemove = useCallback(async (id: string) => {
-    await tripItemRepo.remove(id);
-  }, []);
+  const handleRemove = useCallback(
+    async (id: string) => {
+      const line = await tripItemRepo.remove(id);
+      if (line) keepRemoved(REMOVED, { line, name: map[line.itemId]?.name ?? "Unknown Item" });
+    },
+    [keepRemoved, map],
+  );
+
+  const handleUndoRemove = useCallback(async () => {
+    if (!lastRemoved) return;
+    dropRemoved(REMOVED);
+    await tripItemRepo.restore(lastRemoved.line);
+  }, [lastRemoved, dropRemoved]);
 
   const handleRetryPending = useCallback(async (lookupId: string) => {
     await pendingLookupRepo.retry(lookupId);
@@ -249,6 +265,16 @@ export default function ActiveTripPage() {
             Add Manually
           </Link>
         </div>
+        {lastRemoved && (
+          <div className="px-4 pb-2">
+            <UndoNotice
+              className="rounded-lg bg-gray-800 px-3 text-base text-white"
+              onUndo={() => void handleUndoRemove()}
+            >
+              Removed {lastRemoved.name}.
+            </UndoNotice>
+          </div>
+        )}
         {items.length > 0 && (
           <div className="px-4 pb-3">
             <div className="relative">
