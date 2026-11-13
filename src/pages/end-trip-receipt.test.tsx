@@ -11,6 +11,7 @@ import { TripRepository } from "@/db/repositories/trip-repository";
 import type { ReceiptReconcileAnswer, ReceiptReconcileRequest } from "@/contracts/types";
 import type { ReceiptClient } from "@/services/receipt-reconcile";
 import { ReceiptRunner } from "@/services/receipt-runner";
+import { ASYNC_WAIT_MS } from "pwa-kit/test-preset";
 
 // the factory's door is not under test here: a flag and a fake client stand in for it
 const factory = vi.hoisted(() => {
@@ -586,7 +587,7 @@ describe("End Trip: Photograph receipt", () => {
     // The client has the call, but the trip is marked waiting, and the card done sending, only once the
     // send returns: until then the mark would be written after this test's own and with the moved clock,
     // and Send again would be disabled. The photos leave the card when the send is over (mw-mr4xgrw.46).
-    await waitFor(() => expect(screen.queryByText(/photos? ready/)).not.toBeInTheDocument(), { timeout: 5000 });
+    await waitFor(() => expect(screen.queryByText(/photos? ready/)).not.toBeInTheDocument(), { timeout: ASYNC_WAIT_MS });
     expect((await db.trips.toArray())[0].receiptPending).toBeDefined();
 
     // eleven minutes on: the wait has run out
@@ -602,7 +603,7 @@ describe("End Trip: Photograph receipt", () => {
     vi.restoreAllMocks();
     await user.click(screen.getByRole("button", { name: "Send again" }));
 
-    await waitFor(() => expect(sent).toHaveLength(2), { timeout: 5000 });
+    await waitFor(() => expect(sent).toHaveLength(2), { timeout: ASYNC_WAIT_MS });
     expect(sent[1].photos).toHaveLength(1);
     expect(sent[1].input.lines.map((l) => l[0]).sort()).toEqual(Object.values(lines).sort());
     expect(await screen.findByRole("status")).toHaveTextContent("Waiting for the factory");

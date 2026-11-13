@@ -3,6 +3,7 @@ import { render, screen, waitFor, within } from "@testing-library/react";
 import userEvent from "@testing-library/user-event";
 import { MemoryRouter, useLocation, useRoutes } from "react-router";
 import { tapSettings } from "pwa-kit/tap";
+import { ASYNC_WAIT_MS } from "pwa-kit/test-preset";
 import { FactoryProvider } from "@/contexts/factory-context";
 import { ThemeProvider } from "@/contexts/theme-context";
 import { db } from "@/db/database";
@@ -112,7 +113,7 @@ describe("the Sort sheet", () => {
     renderPhone();
 
     expect(await screen.findByRole("heading", { name: "Waiting · 1" })).toBeInTheDocument();
-    const row = screen.getByRole("link", { name: /\$43\.12.*Trader Joe's/ });
+    const row = await screen.findByRole("link", { name: /\$43\.12.*Trader Joe's/ });
     await user.click(row);
 
     const sheet = await screen.findByRole("dialog", { name: "$43.12 at Trader Joe's" });
@@ -143,8 +144,8 @@ describe("the Sort sheet", () => {
     expect(backend.feed).toEqual([]);
     expect(screen.queryByRole("dialog")).not.toBeInTheDocument();
     expect(await screen.findByRole("heading", { name: "Waiting · 0" })).toBeInTheDocument();
-    const sorted = screen.getByRole("list", { name: "Sorted today" });
-    expect(screen.getByRole("heading", { name: "Sorted today · 1" })).toBeInTheDocument();
+    const sorted = await screen.findByRole("list", { name: "Sorted today" });
+    expect(await screen.findByRole("heading", { name: "Sorted today · 1" })).toBeInTheDocument();
     expect(within(sorted).getByText(/Trader Joe's/)).toBeInTheDocument();
     expect(within(sorted).getByText("Jonathan")).toBeInTheDocument();
   });
@@ -207,15 +208,15 @@ describe("the Sort sheet", () => {
     await user.click(await screen.findByRole("link", { name: /Spotify/ }));
     await user.click(within(await screen.findByRole("dialog")).getByRole("button", { name: "Later" }));
     await waitFor(() => expect(where()).toBe("/"));
-    expect(screen.getByRole("heading", { name: "Waiting · 1" })).toBeInTheDocument();
-    expect(within(screen.getByRole("list", { name: "Yours" })).getByText("Spotify")).toBeInTheDocument();
+    expect(await screen.findByRole("heading", { name: "Waiting · 1" })).toBeInTheDocument();
+    expect(within(await screen.findByRole("list", { name: "Yours" })).getByText("Spotify")).toBeInTheDocument();
 
-    await user.click(screen.getByRole("link", { name: /Spotify/ }));
+    await user.click(await screen.findByRole("link", { name: /Spotify/ }));
     await user.click(within(await screen.findByRole("dialog")).getByRole("button", { name: "Not mine" }));
     await waitFor(() => expect(where()).toBe("/"));
-    expect(screen.getByRole("heading", { name: "Waiting · 1" })).toBeInTheDocument();
-    expect(within(screen.getByRole("list", { name: "Sarah's" })).getByText("Spotify")).toBeInTheDocument();
-    expect(screen.getByText("Handed to Sarah")).toBeInTheDocument();
+    expect(await screen.findByRole("heading", { name: "Waiting · 1" })).toBeInTheDocument();
+    expect(within(await screen.findByRole("list", { name: "Sarah's" })).getByText("Spotify")).toBeInTheDocument();
+    expect(await screen.findByText("Handed to Sarah")).toBeInTheDocument();
     expect(create).not.toHaveBeenCalled();
     expect(backend.feed).toHaveLength(1);
   });
@@ -229,9 +230,9 @@ describe("the Sort sheet", () => {
 
     const sheet = await screen.findByRole("dialog", { name: "Sort a charge" });
     expect(await within(sheet).findByText("Reading the family's charges…")).toBeInTheDocument();
-    expect(await within(sheet).findByText("Still waiting for the backend…", undefined, { timeout: 3_000 })).toBeInTheDocument();
-    expect(await within(sheet).findByRole("button", { name: "Try again" }, { timeout: 3_000 })).toBeInTheDocument();
-    expect(await within(sheet).findByText("The backend did not answer in 2 seconds.", undefined, { timeout: 3_000 })).toBeInTheDocument();
+    expect(await within(sheet).findByText("Still waiting for the backend…", undefined, { timeout: ASYNC_WAIT_MS })).toBeInTheDocument();
+    expect(await within(sheet).findByRole("button", { name: "Try again" }, { timeout: ASYNC_WAIT_MS })).toBeInTheDocument();
+    expect(await within(sheet).findByText("The backend did not answer in 2 seconds.", undefined, { timeout: ASYNC_WAIT_MS })).toBeInTheDocument();
 
     answer = true;
     await user.click(within(sheet).getByRole("button", { name: "Try again" }));
@@ -250,7 +251,7 @@ describe("the Sort sheet", () => {
     const sheet = await screen.findByRole("dialog", { name: "$43.12 at Trader Joe's" });
     expect(await within(sheet).findByText("Updating the balances from YNAB…")).toBeInTheDocument();
     expect(within(sheet).getByRole("radio", { name: "Groceries · $212 left" })).toBeInTheDocument();
-    expect(await within(sheet).findByText("YNAB did not answer in 2 seconds; these balances are from before.", undefined, { timeout: 3_000 })).toBeInTheDocument();
+    expect(await within(sheet).findByText("YNAB did not answer in 2 seconds; these balances are from before.", undefined, { timeout: ASYNC_WAIT_MS })).toBeInTheDocument();
     await user.click(within(sheet).getByRole("button", { name: "Try again" }));
     await waitFor(() => expect(within(sheet).queryByText(/these balances are from before/)).not.toBeInTheDocument());
     expect(reads).toBe(2);

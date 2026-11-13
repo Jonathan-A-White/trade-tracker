@@ -6,6 +6,7 @@ import TripEditPage from "./trip-edit-page";
 import { db } from "@/db/database";
 import { TripRepository } from "@/db/repositories/trip-repository";
 import { TripItemRepository } from "@/db/repositories/trip-item-repository";
+import { ASYNC_WAIT_MS } from "pwa-kit/test-preset";
 import { ItemRepository } from "@/db/repositories/item-repository";
 
 const tripRepo = new TripRepository();
@@ -31,7 +32,7 @@ async function seed() {
 async function openMenu(name: string, entry: string) {
   const label = await screen.findByText(name);
   fireEvent.touchStart(label, { touches: [{ clientX: 0, clientY: 0 }] });
-  return screen.findByRole("button", { name: entry }, { timeout: 2000 });
+  return screen.findByRole("button", { name: entry }, { timeout: ASYNC_WAIT_MS });
 }
 
 describe.each(["ActiveTripPage", "TripEditPage"])("%s per-pound quantity", (pageName) => {

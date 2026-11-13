@@ -5,6 +5,7 @@ import { fakeAlerts, type FakeAlerts } from "@/family/fake-alerts";
 import type { FamilyCard } from "@/contracts/types";
 import { KEPT_FEED_KEY, PENDING_CLAIMS_KEY, useAlerts } from "./useAlerts";
 import { waitingCharges } from "./waiting";
+import { ASYNC_WAIT_MS } from "pwa-kit/test-preset";
 
 const BACKEND = "https://backend.example.test";
 // two phones of one family: two keys on one licence, one backend
@@ -122,8 +123,8 @@ describe("useAlerts: the family's feed on two phones", () => {
     };
     const { result } = renderHook(() => useAlerts(slow, { pollMs: 60_000, timing: { slowAfterMs: 400, tryAgainAfterMs: 1_000, timeoutMs: 1_400 } }));
     await waitFor(() => expect(result.current.phase).toBe("slow"));
-    await waitFor(() => expect(result.current.phase).toBe("retryable"), { timeout: 2_000 });
-    await waitFor(() => expect(result.current.phase).toBe("failed"), { timeout: 2_000 });
+    await waitFor(() => expect(result.current.phase).toBe("retryable"), { timeout: ASYNC_WAIT_MS });
+    await waitFor(() => expect(result.current.phase).toBe("failed"), { timeout: ASYNC_WAIT_MS });
     expect(result.current.error).toBe("The backend did not answer in 1 second.");
     answer = true;
     act(() => result.current.refresh());

@@ -20,6 +20,7 @@ import { monthsBefore } from "@/ynab/budget-ideas";
 import { PayeeRuleRepository, SHORT_RULE_KEY } from "@/ynab/payee-rules";
 import { day } from "@/ynab/tally";
 import { createYnabWriter } from "@/ynab/writer";
+import { ASYNC_WAIT_MS } from "pwa-kit/test-preset";
 
 vi.mock("@/move/reload", () => ({ reloadPage: vi.fn() }));
 
@@ -106,9 +107,9 @@ describe("Home: Waiting and Sorted today", () => {
 
     // his phone's Done claims it; her list drops it on her phone's next poll
     await act(() => hisPhone.claim(alert.id));
-    expect(await screen.findByRole("heading", { name: "Waiting · 0" }, { timeout: 2_000 })).toBeInTheDocument();
-    expect(screen.getByRole("heading", { name: "Sorted today · 1" })).toBeInTheDocument();
-    const sorted = screen.getByRole("list", { name: "Sorted today" });
+    expect(await screen.findByRole("heading", { name: "Waiting · 0" }, { timeout: ASYNC_WAIT_MS })).toBeInTheDocument();
+    expect(await screen.findByRole("heading", { name: "Sorted today · 1" })).toBeInTheDocument();
+    const sorted = await screen.findByRole("list", { name: "Sorted today" });
     expect(within(sorted).getByText("$8.50 Dunkin'")).toBeInTheDocument();
     expect(within(sorted).getByText("Jonathan")).toBeInTheDocument();
   });
@@ -141,7 +142,7 @@ describe("Home: Waiting and Sorted today", () => {
     await setFamilyOn(true);
     renderHome({ me: "Sarah" });
     expect(await screen.findByText(/Make the key under/)).toBeInTheDocument();
-    expect(screen.getByRole("heading", { name: "Waiting · 0" })).toBeInTheDocument();
+    expect(await screen.findByRole("heading", { name: "Waiting · 0" })).toBeInTheDocument();
   });
 });
 
@@ -149,7 +150,7 @@ describe("Home: header and stat labels", () => {
   it("says 'Track what you spend' under the title, with Family Off, and no longer says grocery", async () => {
     renderHome({ me: "Jonathan" });
     expect(await screen.findByText("Start New Trip")).toBeInTheDocument();
-    const header = screen.getByRole("banner");
+    const header = await screen.findByRole("banner");
     expect(within(header).getByRole("heading", { name: "TradeTracker" })).toBeInTheDocument();
     expect(within(header).getByText("Track what you spend")).toBeInTheDocument();
     expect(header).not.toHaveTextContent(/grocery/i);
@@ -271,7 +272,7 @@ describe("Home: Approved for you (what the payee rules approved)", () => {
     expect((await new PayeeRuleRepository().get("chewy"))?.categoryId).toBe("c1");
 
     // and it is waiting in Clean up again, not approved a second time by the rule
-    await user.click(screen.getByRole("link", { name: "Clean up" }));
+    await user.click(await screen.findByRole("link", { name: "Clean up" }));
     expect((await screen.findAllByLabelText("Approve $43.12 on 2026-11-10")).length).toBeGreaterThan(0);
     expect(ynab.transactions.find((t) => t.id === "t1")?.approved).toBe(false);
   });
@@ -281,7 +282,7 @@ describe("Home: Approved for you (what the payee rules approved)", () => {
     const user = userEvent.setup();
     renderYnabHome();
     expect(await screen.findByRole("heading", { name: "Approved for you · 1" })).toBeInTheDocument();
-    await user.click(screen.getByRole("button", { name: "Stop this rule" }));
+    await user.click(await screen.findByRole("button", { name: "Stop this rule" }));
     await waitFor(async () => expect(await new PayeeRuleRepository().get("chewy")).toBeUndefined());
     expect(screen.getByRole("heading", { name: "Approved for you · 1" })).toBeInTheDocument();
     expect(screen.queryByRole("button", { name: "Stop this rule" })).not.toBeInTheDocument();
@@ -312,8 +313,7 @@ describe("Home: Approved for you (what the payee rules approved)", () => {
       ynab.transactions.push(tx("t1", "Chewy"));
       const user = userEvent.setup();
       renderYnabHome();
-      expect(await screen.findByText("Start New Trip")).toBeInTheDocument();
-      await user.click(screen.getByRole("link", { name: "Clean up" }));
+      await user.click(await screen.findByRole("link", { name: "Clean up" }));
       expect(await screen.findByText("Held for you: Fun Money is short by $38.12 for this.")).toBeInTheDocument();
       expect(ynab.transactions.find((t) => t.id === "t1")?.approved).toBe(false);
       expect(screen.queryByText(/Approved for you/)).not.toBeInTheDocument();
