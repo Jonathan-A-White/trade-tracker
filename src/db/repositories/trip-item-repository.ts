@@ -93,12 +93,22 @@ export class TripItemRepository {
     return tripItem;
   }
 
-  async remove(id: string): Promise<void> {
+  /** Removes a line and returns it as it was (for Undo), or undefined when there was none. */
+  async remove(id: string): Promise<TripItem | undefined> {
     const tripItem = await db.tripItems.get(id);
-    if (!tripItem) return;
+    if (!tripItem) return undefined;
 
     await db.transaction("rw", [db.tripItems, db.trips], async () => {
       await db.tripItems.delete(id);
+      await this.recalcTripSubtotal(tripItem.tripId);
+    });
+    return tripItem;
+  }
+
+  /** Puts a removed line back as it was (Undo of remove); its price history was never removed. */
+  async restore(tripItem: TripItem): Promise<void> {
+    await db.transaction("rw", [db.tripItems, db.trips], async () => {
+      await db.tripItems.put(tripItem);
       await this.recalcTripSubtotal(tripItem.tripId);
     });
   }
