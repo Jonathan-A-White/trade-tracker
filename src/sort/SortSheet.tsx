@@ -432,6 +432,10 @@ function ChargeSheet({ family, charge, onClose }: { family: FamilyFeed; charge: 
       }
     },
   });
+  // like the suggestion's box: the receipt's words stay only while the sheet still shows what the receipt made of the charge
+  const receiptShown =
+    receipt.status.phase === "done" &&
+    (receipt.status.parts.length === 1 ? !splitting && categoryId === receipt.status.parts[0]!.categoryId : splitting);
   const selectCategory = (id: string) => {
     touched.current = true;
     setCategoryId(id);
@@ -643,7 +647,7 @@ function ChargeSheet({ family, charge, onClose }: { family: FamilyFeed; charge: 
               </button>
             </div>
           )}
-          {receipt.status.phase === "done" && (
+          {receiptShown && receipt.status.phase === "done" && (
             <div role="status" className="rounded-lg bg-blue-50 dark:bg-blue-950 px-3 py-2 text-sm text-gray-800 dark:text-gray-100">
               <p>
                 <span className="font-semibold">From the receipt · </span>
