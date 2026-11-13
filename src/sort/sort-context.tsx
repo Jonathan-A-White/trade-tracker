@@ -38,6 +38,8 @@ import {
   readSorted,
   recordSorted,
   sortedToday,
+  isTemporaryHold,
+  temporaryHolds,
   waitingCharges,
   type SortedRecord,
   type WaitingCharge,
@@ -175,6 +177,8 @@ export interface FamilyFeed {
   feed: AlertsFeed;
   /** the charges waiting, this phone's person's first */
   waiting: WaitingCharge[];
+  /** the temporary authorizations of the last two days (a card check, a pre-auth): nothing to sort, drawn as a quiet line */
+  holds: FamilyAlert[];
   /** today's sorted charges, newest first */
   sorted: SortedRecord[];
   me: string | null;
@@ -357,7 +361,7 @@ export function useFamilyFeed(): FamilyFeed {
       gone.flatMap((alert) => {
         const amount = parseAmount(alert.amount);
         const at = alert.when ? Date.parse(alert.when) : now;
-        if (alert.kind !== "charge" || amount === null || mine.has(alert.id) || now - at > SWEEP_MS) return [];
+        if (alert.kind !== "charge" || isTemporaryHold(alert) || amount === null || mine.has(alert.id) || now - at > SWEEP_MS) return [];
         return [{ id: alert.id, amount, merchant: alert.merchant ?? "A charge", by, at: now }];
       }),
     );
@@ -369,6 +373,7 @@ export function useFamilyFeed(): FamilyFeed {
     () => (on ? waitingCharges(feed.alerts ?? [], book, me, handed, sortedIds) : []),
     [on, feed.alerts, book, me, handed, sortedIds],
   );
+  const holds = useMemo(() => (on ? temporaryHolds(feed.alerts ?? []) : []), [on, feed.alerts]);
   const sorted = useMemo(() => (on ? sortedToday(records) : []), [on, records]);
 
   const ynabClient = useYnabClientFor();
@@ -409,6 +414,7 @@ export function useFamilyFeed(): FamilyFeed {
     blocked,
     feed,
     waiting,
+    holds,
     sorted,
     me,
     other,

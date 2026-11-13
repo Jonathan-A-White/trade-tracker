@@ -98,6 +98,23 @@ describe("Home: Waiting and Sorted today", () => {
     expect(within(his).getAllByRole("link").map((l) => l.getAttribute("href"))).toEqual([`/sort/${backend.feed[0]!.id}`]);
   });
 
+  it("does not count or offer a GOOGLE*GPAY TEMP card check, says it is a hold that drops off by itself, and still waits on a real charge", async () => {
+    await setFamilyOn(true);
+    backend.receive({ kind: "charge", amount: "1.00", merchant: "GOOGLE*GPAY TEMP MOUNTAIN VIEW USA", last4: "9876", when: new Date().toISOString() });
+    backend.receive({ kind: "charge", amount: "8.50", merchant: "Dunkin'", last4: "9876" });
+    renderHome({ client: makeAlertsClient(BACKEND, new Uint8Array(32).fill(9), backend.fetch), me: "Sarah" });
+
+    expect(await screen.findByRole("heading", { name: "Waiting · 1" })).toBeInTheDocument();
+    const yours = screen.getByRole("list", { name: "Yours" });
+    expect(within(yours).getAllByRole("link")).toHaveLength(1);
+    expect(within(yours).getByText("Dunkin'")).toBeInTheDocument();
+    expect(screen.queryByText(/GPAY TEMP/, { selector: "a *" })).not.toBeInTheDocument();
+    const hold = screen.getByText(/Hold, drops off by itself/);
+    expect(hold).toHaveTextContent("$1.00");
+    expect(hold).toHaveTextContent("GOOGLE*GPAY TEMP");
+    expect(hold.closest("a")).toBeNull();
+  });
+
   it("two phones over one backend: his Done claims the shared charge, and her Home drops it on its next poll as sorted by him", async () => {
     await setFamilyOn(true);
     const alert = backend.receive({ kind: "charge", amount: "8.50", merchant: "Dunkin'", last4: "9876" });

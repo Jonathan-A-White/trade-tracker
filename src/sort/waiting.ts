@@ -52,6 +52,41 @@ export function parseAmount(amount: string | undefined): number | null {
 }
 
 /**
+ * What the bank feed calls a temporary authorization: a card check or a pre-authorization that is reversed, never a charge to
+ * sort ('GOOGLE*GPAY TEMP MOUNTAIN VIEW USA' for $1.00 is the one seen). Matched on the descriptor, whole words only, so a shop
+ * called Tempe Market or Authentic Pizza is still a charge. A hold that settles posts as a new alert under the shop's own name.
+ */
+const HOLD_WORDS: readonly RegExp[] = [
+  /\bGPAY\s+TEMP\b/i, // Google Pay's card check
+  /\*\s*TEMP\b/i, // 'ACME*TEMP 123'
+  /\bTEMP(ORARY)?\s+(AUTH(ORI[SZ]ATION)?|HOLD)\b/i, // 'APPLE PAY TEMP AUTH', 'HERTZ TEMP HOLD'
+  /\bPRE-?\s?AUTH(ORI[SZ]ATION|ORI[SZ]ED)?\b/i, // a petrol pump's 'PRE-AUTH'
+  /\bAUTH(ORI[SZ]ATION)?\s+HOLD\b/i, // a hotel's or car rental's 'AUTHORIZATION HOLD'
+  /\bCARD\s+VERIFICATION\b/i,
+];
+
+/** True when the alert is a temporary authorization: nothing to sort, it drops off by itself. */
+export function isTemporaryHold(alert: FamilyAlert): boolean {
+  if (alert.kind !== "charge") return false;
+  const merchant = alert.merchant ?? "";
+  return HOLD_WORDS.some((word) => word.test(merchant));
+}
+
+/** A hold is still shown for this long after it happened, then it drops off by itself. */
+export const HOLD_SHOW_MS = KEEP_MS;
+
+/** The temporary holds worth a quiet line: those of the last two days (an alert with no time counts as new), newest first. */
+export function temporaryHolds(alerts: readonly FamilyAlert[], now: Date = new Date()): FamilyAlert[] {
+  return alerts
+    .filter((alert) => {
+      if (!isTemporaryHold(alert) || parseAmount(alert.amount) === null) return false;
+      const at = alert.when ? Date.parse(alert.when) : NaN;
+      return Number.isNaN(at) || now.getTime() - at < HOLD_SHOW_MS;
+    })
+    .sort((a, b) => b.seq - a.seq);
+}
+
+/**
  * The charges waiting, this phone's person's first: their own card's, a shared card's, and an unknown card's (both are
  * pinged for those); then the other person's. Newest first within each. `me` null: every charge is this phone's.
  */
@@ -64,7 +99,7 @@ export function waitingCharges(
 ): WaitingCharge[] {
   const charges: WaitingCharge[] = [];
   for (const alert of alerts) {
-    if (alert.kind !== "charge" || sorted.has(alert.id)) continue;
+    if (alert.kind !== "charge" || sorted.has(alert.id) || isTemporaryHold(alert)) continue;
     const amount = parseAmount(alert.amount);
     if (amount === null) continue;
     const owner = book.owner(alert.last4);

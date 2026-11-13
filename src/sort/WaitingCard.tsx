@@ -4,7 +4,7 @@ import { Link } from "react-router";
 import { useNotify } from "@/push/notify";
 import { ANYONE } from "@/family/cards";
 import type { FamilyFeed } from "./sort-context";
-import { money, whenLine, writeMe, type WaitingCharge } from "./waiting";
+import { money, parseAmount, whenLine, writeMe, type WaitingCharge } from "./waiting";
 
 const ROW = "flex min-h-12 w-full flex-col justify-center rounded-lg bg-white dark:bg-gray-800 border border-gray-200 dark:border-gray-700 px-3 py-2";
 const SMALL_BUTTON = "min-h-12 rounded-lg border border-gray-300 dark:border-gray-600 bg-white dark:bg-gray-800 px-4 text-sm font-medium text-gray-800 dark:text-gray-100";
@@ -125,6 +125,16 @@ export function WaitingCard({ family }: { family: FamilyFeed }) {
               ))}
             </ul>
           </>
+        )}
+        {family.holds.length > 0 && (
+          <ul aria-label="Holds" className="space-y-1">
+            {family.holds.map((hold) => (
+              <li key={hold.id} className="px-1 text-sm text-gray-500 dark:text-gray-400">
+                Hold, drops off by itself · {money(parseAmount(hold.amount) ?? 0)} {hold.merchant?.trim()}
+                {whenLine(hold.when) ? ` · ${whenLine(hold.when)}` : ""}
+              </li>
+            ))}
+          </ul>
         )}
         {family.waiting.length === 0 && family.feed.alerts !== null && <p className="text-sm text-gray-600 dark:text-gray-400">Nothing waiting.</p>}
         <NotifyLine />
