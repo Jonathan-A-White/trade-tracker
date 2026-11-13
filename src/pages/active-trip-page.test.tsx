@@ -143,6 +143,32 @@ describe("ActiveTripPage pending lines", () => {
     });
     expect(await lookups.getById(lookup.id)).toBeUndefined();
   });
+
+  it("Discard offers Undo, which puts the pending line back with its photos", async () => {
+    const { trip, lookup } = await seedTripWithMilkAndPending();
+    const user = userEvent.setup();
+    renderPage();
+
+    expect(screen.queryByRole("button", { name: "Undo" })).not.toBeInTheDocument();
+    await user.click(await screen.findByRole("button", { name: /discard/i }));
+
+    await waitFor(() => {
+      expect(screen.queryByText("Sending to the factory")).not.toBeInTheDocument();
+    });
+    expect(screen.getByText("Discarded the photo of 0099887766.")).toBeInTheDocument();
+    expect(await lookups.getById(lookup.id)).toBeUndefined();
+
+    await user.click(screen.getByRole("button", { name: "Undo" }));
+
+    expect(await screen.findByText("Sending to the factory")).toBeInTheDocument();
+    expect(screen.queryByRole("button", { name: "Undo" })).not.toBeInTheDocument();
+    const back = await lookups.getById(lookup.id);
+    expect(back?.photos).toHaveLength(1);
+    expect(back?.status).toBe("waiting-to-send");
+    const pendingLines = (await tripItemRepo.getByTrip(trip.id)).filter((l) => l.pending);
+    expect(pendingLines).toHaveLength(1);
+    expect(pendingLines[0].itemId).toBe(lookup.itemId);
+  });
 });
 
 describe("ActiveTripPage factory answers", () => {

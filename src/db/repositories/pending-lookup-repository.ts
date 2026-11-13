@@ -68,6 +68,12 @@ function tagPrice(answer: ItemFromPhotosAnswer): number | null {
   return answer.price === null || answer.price === 0 ? null : answer.price;
 }
 
+/** A lookup thrown away and the pending line it had (none for a price-only lookup), kept so Discard can be undone. */
+export interface DiscardedLookup {
+  lookup: PendingLookup;
+  line?: TripItem;
+}
+
 export class PendingLookupRepository {
   /**
    * Records a pending lookup and puts its pending line in the trip. The line
@@ -194,23 +200,35 @@ export class PendingLookupRepository {
     await tripItemRepo.update(line.id, { quantity: Math.max(1, Math.floor(quantity)) });
   }
 
-  /** Throws a pending lookup away together with its pending line. */
-  async discard(id: string): Promise<void> {
+  /**
+   * Throws a pending lookup away together with its pending line, and returns both as they were (for
+   * Undo), or undefined when there was no such lookup.
+   */
+  async discard(id: string): Promise<DiscardedLookup | undefined> {
     const lookup = await db.pendingLookups.get(id);
-    if (!lookup) return;
+    if (!lookup) return undefined;
     // a price-only lookup has no line of its own: the item's line stays
     if (lookup.mode === "price-only") {
       await db.pendingLookups.delete(id);
-      return;
+      return { lookup };
     }
 
-    await db.transaction("rw", [db.pendingLookups, db.tripItems, db.trips], async () => {
+    return db.transaction("rw", [db.pendingLookups, db.tripItems, db.trips], async () => {
       const pendingLine = await db.tripItems
         .where("[tripId+itemId]")
         .equals([lookup.tripId, lookup.itemId])
         .first();
       if (pendingLine) await tripItemRepo.remove(pendingLine.id);
       await db.pendingLookups.delete(id);
+      return { lookup, line: pendingLine };
+    });
+  }
+
+  /** Puts a discarded lookup back as it was, with its photos and its pending line (Undo of discard). */
+  async restoreDiscarded(discarded: DiscardedLookup): Promise<void> {
+    await db.transaction("rw", [db.pendingLookups, db.tripItems, db.trips], async () => {
+      await db.pendingLookups.put(discarded.lookup);
+      if (discarded.line) await tripItemRepo.restore(discarded.line);
     });
   }
 

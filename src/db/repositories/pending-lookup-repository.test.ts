@@ -108,6 +108,29 @@ describe("PendingLookupRepository", () => {
     expect(await tripItemRepo.getByTrip(trip.id)).toHaveLength(0);
   });
 
+  it("restoreDiscarded puts back what discard returned: the lookup with its photos and its line", async () => {
+    const trip = await startTrip();
+    const lookup = await lookups.create({
+      barcode: "0044",
+      tripId: trip.id,
+      photos: [new Blob(["photo"], { type: "image/jpeg" }) as unknown as globalThis.Blob],
+    });
+    const line = (await tripItemRepo.getByTrip(trip.id))[0];
+    await tripItemRepo.update(line.id, { quantity: 3 });
+
+    const discarded = await lookups.discard(lookup.id);
+    expect(discarded?.lookup.id).toBe(lookup.id);
+    expect(await lookups.discard(lookup.id)).toBeUndefined();
+
+    await lookups.restoreDiscarded(discarded!);
+
+    expect((await lookups.getById(lookup.id))?.photos).toHaveLength(1);
+    const lines = await tripItemRepo.getByTrip(trip.id);
+    expect(lines).toHaveLength(1);
+    expect(lines[0].id).toBe(line.id);
+    expect(lines[0].quantity).toBe(3);
+  });
+
   it("a pending line that has been given a price counts toward the total", async () => {
     const trip = await startTrip();
     const lookup = await lookups.create({

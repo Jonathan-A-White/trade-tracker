@@ -109,4 +109,32 @@ describe("ItemDetailPage Photo price", () => {
     expect(screen.getByText("$3.00")).toBeInTheDocument();
     expect(screen.getByRole("button", { name: "Retake price photo" })).toBeInTheDocument();
   });
+
+  it("Dismiss offers Undo, which puts the failed price photo back", async () => {
+    const milk = await seedItem();
+    const trip = await startTrip();
+    const photo = new Blob(["tag"], { type: "image/jpeg" }) as unknown as globalThis.Blob;
+    const lookup = await lookups.create({
+      barcode: "111",
+      tripId: trip.id,
+      mode: "price-only",
+      itemId: milk.id,
+      photos: [photo],
+    });
+    await lookups.markFailed(lookup.id, "no luck");
+    const user = userEvent.setup();
+    renderPage(milk.id);
+
+    await user.click(await screen.findByRole("button", { name: "Dismiss" }));
+    expect(await screen.findByText("Dismissed the price photo.")).toBeInTheDocument();
+    expect(await lookups.getById(lookup.id)).toBeUndefined();
+
+    await user.click(screen.getByRole("button", { name: "Undo" }));
+
+    expect(await screen.findByRole("button", { name: "Dismiss" })).toBeInTheDocument();
+    expect(screen.queryByRole("button", { name: "Undo" })).not.toBeInTheDocument();
+    const back = await lookups.getById(lookup.id);
+    expect(back?.photos).toHaveLength(1);
+    expect(back?.status).toBe("failed");
+  });
 });

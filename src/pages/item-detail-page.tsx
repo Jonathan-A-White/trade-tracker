@@ -7,12 +7,15 @@ import { PageHeader } from "@/components/layout/page-header";
 import { PriceChart } from "@/components/data-display/price-chart";
 import { ItemForm } from "@/components/forms/item-form";
 import { ItemRepository } from "@/db/repositories/item-repository";
-import { PendingLookupRepository } from "@/db/repositories/pending-lookup-repository";
+import { PendingLookupRepository, type DiscardedLookup } from "@/db/repositories/pending-lookup-repository";
 import { photoPricePath, priceLookupNote } from "@/core/photo-price";
 import type { UnitType } from "@/contracts/types";
 import { sendHoldText, useSendHold } from "@/factory/send-hold";
+import { UndoNotice } from "@/components/undo-notice";
+import { useUndo } from "@/hooks/use-undo";
 
 const pendingLookupRepo = new PendingLookupRepository();
+const DISMISSED = "photo";
 
 export function ItemDetailPage() {
   const { id } = useParams<{ id: string }>();
@@ -48,6 +51,20 @@ export function ItemDetailPage() {
   }, [id, activeTripId]);
   const hold = useSendHold();
   const note = priceLookupNote(priceLookup, hold ? sendHoldText(hold) : null);
+  // the price photo he last dismissed, kept for Undo until he leaves the page
+  const { kept: keptDismissed, keep: keepDismissed, drop: dropDismissed } = useUndo<DiscardedLookup>(id);
+  const lastDismissed = keptDismissed[DISMISSED];
+
+  async function handleDismiss(lookupId: string) {
+    const discarded = await pendingLookupRepo.discard(lookupId);
+    if (discarded) keepDismissed(DISMISSED, discarded);
+  }
+
+  async function handleUndoDismiss() {
+    if (!lastDismissed) return;
+    dropDismissed(DISMISSED);
+    await pendingLookupRepo.restoreDiscarded(lastDismissed);
+  }
 
   const storeMap = new Map(stores?.map((s) => [s.id, s.name]) ?? []);
 
@@ -181,7 +198,7 @@ export function ItemDetailPage() {
                     priceLookup && (
                     <button
                       type="button"
-                      onClick={() => pendingLookupRepo.discard(priceLookup.id)}
+                      onClick={() => void handleDismiss(priceLookup.id)}
                       className="font-medium text-blue-600 dark:text-blue-400 cursor-pointer"
                     >
                       Dismiss
@@ -197,6 +214,11 @@ export function ItemDetailPage() {
                     </button>
                   )}
                 </div>
+              )}
+              {activeTripId && lastDismissed && (
+                <UndoNotice onUndo={() => void handleUndoDismiss()}>
+                  Dismissed the price photo.
+                </UndoNotice>
               )}
 
               <div className="grid grid-cols-2 gap-3 text-sm">

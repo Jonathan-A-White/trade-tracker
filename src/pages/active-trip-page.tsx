@@ -4,7 +4,7 @@ import { useNavigate, Link, Outlet } from "react-router";
 import type { Item, TripItem } from "@/contracts/types";
 import { TripRepository } from "@/db/repositories/trip-repository";
 import { TripItemRepository } from "@/db/repositories/trip-item-repository";
-import { PendingLookupRepository } from "@/db/repositories/pending-lookup-repository";
+import { PendingLookupRepository, type DiscardedLookup } from "@/db/repositories/pending-lookup-repository";
 import { ItemRepository } from "@/db/repositories/item-repository";
 import { countGuessedPrices } from "@/core/pricing";
 import { countsTowardTotal } from "@/core/trip-totals";
@@ -26,6 +26,7 @@ const tripItemRepo = new TripItemRepository();
 const pendingLookupRepo = new PendingLookupRepository();
 const itemRepo = new ItemRepository();
 const REMOVED = "line";
+const DISCARDED = "photo";
 
 function useElapsedTime(startedAt: number | undefined) {
   const [elapsed, setElapsed] = useState("");
@@ -76,6 +77,9 @@ export default function ActiveTripPage() {
   // the line he last removed and its name, kept for Undo until he leaves the page
   const { kept: keptRemoved, keep: keepRemoved, drop: dropRemoved } = useUndo<{ line: TripItem; name: string }>(trip?.id);
   const lastRemoved = keptRemoved[REMOVED];
+  // the pending line he last discarded, with its photos, kept for Undo until he leaves the page
+  const { kept: keptDiscarded, keep: keepDiscarded, drop: dropDiscarded } = useUndo<DiscardedLookup>(trip?.id);
+  const lastDiscarded = keptDiscarded[DISCARDED];
   const sendHold = useSendHold();
   const notSent = sendHold ? sendHoldText(sendHold) : null;
   const storeName = store?.name ?? (trip && !loading ? "Unknown Store" : undefined);
@@ -127,10 +131,6 @@ export default function ActiveTripPage() {
     await pendingLookupRepo.retry(lookupId);
   }, []);
 
-  const handleDismissPriceLookup = useCallback(async (lookupId: string) => {
-    await pendingLookupRepo.discard(lookupId);
-  }, []);
-
   const handleClearPriceFlag = useCallback(async (id: string) => {
     await tripItemRepo.clearPriceFlag(id);
   }, []);
@@ -142,9 +142,19 @@ export default function ActiveTripPage() {
     [],
   );
 
-  const handleDiscardPending = useCallback(async (lookupId: string) => {
-    await pendingLookupRepo.discard(lookupId);
-  }, []);
+  const handleDiscardPending = useCallback(
+    async (lookupId: string) => {
+      const discarded = await pendingLookupRepo.discard(lookupId);
+      if (discarded) keepDiscarded(DISCARDED, discarded);
+    },
+    [keepDiscarded],
+  );
+
+  const handleUndoDiscard = useCallback(async () => {
+    if (!lastDiscarded) return;
+    dropDiscarded(DISCARDED);
+    await pendingLookupRepo.restoreDiscarded(lastDiscarded);
+  }, [lastDiscarded, dropDiscarded]);
 
   const handleFillByHand = useCallback((lookupId: string) => {
     setFillError(null);
@@ -275,6 +285,16 @@ export default function ActiveTripPage() {
             </UndoNotice>
           </div>
         )}
+        {lastDiscarded && (
+          <div className="px-4 pb-2">
+            <UndoNotice
+              className="rounded-lg bg-gray-800 px-3 text-base text-white"
+              onUndo={() => void handleUndoDiscard()}
+            >
+              Discarded the photo of {lastDiscarded.lookup.barcode}.
+            </UndoNotice>
+          </div>
+        )}
         {items.length > 0 && (
           <div className="px-4 pb-3">
             <div className="relative">
@@ -384,7 +404,7 @@ export default function ActiveTripPage() {
                   }
                   onRetryPriceLookup={() => handleRetryPending(priceLookups[ti.itemId].id)}
                   onDismissPriceLookup={() =>
-                    handleDismissPriceLookup(priceLookups[ti.itemId].id)
+                    handleDiscardPending(priceLookups[ti.itemId].id)
                   }
                 />
               );
