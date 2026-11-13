@@ -5,6 +5,7 @@ import type { Item, UnitType } from "@/contracts/types";
 import { TripRepository } from "@/db/repositories/trip-repository";
 import { TripItemRepository } from "@/db/repositories/trip-item-repository";
 import { ItemRepository } from "@/db/repositories/item-repository";
+import { ConfirmDialog } from "@/components/feedback/confirm-dialog";
 import { PageHeader } from "@/components/layout/page-header";
 import { formatCurrency } from "@/core/pricing";
 import { tripTotals } from "@/core/trip-totals";
@@ -38,6 +39,7 @@ export default function TripDetailPage() {
   const [reimporting, setReimporting] = useState(false);
   const [reimportError, setReimportError] = useState<string | null>(null);
   const [reimportSuccess, setReimportSuccess] = useState<string | null>(null);
+  const [pendingReimport, setPendingReimport] = useState<string | null>(null);
   const reimportFileRef = useRef<HTMLInputElement>(null);
 
   const {
@@ -107,27 +109,38 @@ export default function TripDetailPage() {
           setReimportError(`Invalid file: ${validation.errors.join(", ")}`);
           return;
         }
-        setReimporting(true);
-        try {
-          const result = await reimportTripFromAI(id, text);
-          const parts: string[] = [];
-          if (result.itemsMatched > 0) parts.push(`${result.itemsMatched} matched`);
-          if (result.itemsCreated > 0) parts.push(`${result.itemsCreated} created`);
-          if (result.itemsMissingBarcode > 0) parts.push(`${result.itemsMissingBarcode} need barcodes`);
-          setReimportSuccess(`Trip reimported! ${parts.join(", ")}`);
-        } catch (err) {
-          setReimportError(err instanceof Error ? err.message : "Reimport failed");
-        } finally {
-          setReimporting(false);
-          if (reimportFileRef.current) {
-            reimportFileRef.current.value = "";
-          }
-        }
+        // the file is good; the trip's items are replaced only after he says so
+        setPendingReimport(text);
       } catch {
         setReimportError("Could not parse file. Make sure it is valid JSON.");
       }
     };
     reader.readAsText(file);
+  }
+
+  function cancelReimport() {
+    setPendingReimport(null);
+    if (reimportFileRef.current) reimportFileRef.current.value = "";
+  }
+
+  async function confirmReimport() {
+    const text = pendingReimport;
+    setPendingReimport(null);
+    if (text === null || !id) return;
+    setReimporting(true);
+    try {
+      const result = await reimportTripFromAI(id, text);
+      const parts: string[] = [];
+      if (result.itemsMatched > 0) parts.push(`${result.itemsMatched} matched`);
+      if (result.itemsCreated > 0) parts.push(`${result.itemsCreated} created`);
+      if (result.itemsMissingBarcode > 0) parts.push(`${result.itemsMissingBarcode} need barcodes`);
+      setReimportSuccess(`Trip reimported! ${parts.join(", ")}`);
+    } catch (err) {
+      setReimportError(err instanceof Error ? err.message : "Reimport failed");
+    } finally {
+      setReimporting(false);
+      if (reimportFileRef.current) reimportFileRef.current.value = "";
+    }
   }
 
   if (!trip) {
@@ -466,6 +479,17 @@ export default function TripDetailPage() {
             className="hidden"
           />
         </label>
+
+        <ConfirmDialog
+          open={pendingReimport !== null}
+          title="Replace this trip's items?"
+          message="The items on this trip are replaced by the ones in the file. This cannot be undone."
+          confirmLabel="Replace"
+          cancelLabel="Cancel"
+          variant="danger"
+          onConfirm={() => void confirmReimport()}
+          onCancel={cancelReimport}
+        />
 
         {reimportError && (
           <p className="text-sm text-red-600 dark:text-red-400 bg-red-50 dark:bg-red-900/30 rounded-lg p-3">
