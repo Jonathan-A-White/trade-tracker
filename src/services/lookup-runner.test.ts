@@ -59,6 +59,9 @@ function fakeClient() {
     }),
     awaitAnswer: vi.fn((txid: string, signal: AbortSignal) => {
       waitCalls++;
+      // LR_STALL=1 stands in for a loaded host: every wait for an answer starts 200 ms late, and no test
+      // may depend on how soon a step follows the last one
+      if (process.env.LR_STALL) for (const t = Date.now(); Date.now() - t < 200; );
       return new Promise<Answer>((resolve, reject) => {
         waiting.set(txid, { resolve, reject, signal });
         signal.addEventListener("abort", () => {
@@ -84,10 +87,16 @@ async function queueLookup(tripId: string, barcode = "0044") {
 }
 
 const runners: LookupRunner[] = [];
-function makeRunner(client: LookupClient | null, options: LookupRunnerOptions = {}) {
+/** `before` sets the runner's state (offline, page hidden) ahead of its first look at the queue. */
+function makeRunner(
+  client: LookupClient | null,
+  options: LookupRunnerOptions = {},
+  before?: (runner: LookupRunner) => void,
+) {
   const runner = new LookupRunner({ backoffBaseMs: 1, ...options });
   runners.push(runner);
   runner.setClient(client);
+  before?.(runner);
   runner.start();
   return runner;
 }
@@ -600,7 +609,14 @@ describe("LookupRunner a lookup the factory never answers", () => {
     return fake;
   }
 
-  const LIMITS = { resendAfterMs: 80, giveUpAfterMs: 80 };
+  /**
+   * With a lookup seeded `LATE` after its send, the first limit is already past and the runner sends it
+   * at once; the second is 80 ms after that send, a real timer that only ever fires sooner on a slow host.
+   */
+  const LIMITS = { resendAfterMs: 500, giveUpAfterMs: 80 };
+  const LATE = { sentAt: Date.now() - 5_000 };
+  /** Second limit out of reach of the test, first already past for a lookup seeded LATE. */
+  const RESEND_ONLY = { resendAfterMs: 500, giveUpAfterMs: 60_000 };
   /** Limits too long for a timer to reach inside a test: only the stored times can show a lookup past them. */
   const LONG = { resendAfterMs: 60_000, giveUpAfterMs: 60_000 };
 
@@ -624,25 +640,25 @@ describe("LookupRunner a lookup the factory never answers", () => {
   it("sends a lookup that was sent and never answered once more, with the same request id", async () => {
     const trip = await startTrip();
     const lookup = await queueLookup(trip.id);
-    await seedSent(lookup.id);
+    await seedSent(lookup.id, LATE);
     const fake = fakeBackendClient();
 
-    makeRunner(fake.client, LIMITS);
+    makeRunner(fake.client, RESEND_ONLY);
 
     await waitFor(() => expect(fake.sent).toHaveLength(1));
     expect(fake.sent[0].clientId).toBe(lookup.id);
     expect(fake.sent[0].photos).toHaveLength(1);
     expect(fake.sent[0].barcode).toBe("0044");
+    await waitFor(async () => expect((await lookups.getById(lookup.id))?.resentAt).toBeGreaterThan(0));
     const row = await lookups.getById(lookup.id);
     expect(row?.status).toBe("at-the-factory");
-    expect(row?.resentAt).toBeGreaterThan(0);
     expect(row?.notBack).toBeUndefined();
   });
 
   it("after the second limit marks the lookup as not come back, and does not send it a third time", async () => {
     const trip = await startTrip();
     const lookup = await queueLookup(trip.id);
-    await seedSent(lookup.id);
+    await seedSent(lookup.id, LATE);
     const fake = fakeBackendClient();
 
     makeRunner(fake.client, LIMITS);
@@ -656,7 +672,7 @@ describe("LookupRunner a lookup the factory never answers", () => {
   it("still applies an answer that comes after the line said it did not come back", async () => {
     const trip = await startTrip();
     const lookup = await queueLookup(trip.id);
-    await seedSent(lookup.id);
+    await seedSent(lookup.id, LATE);
     const fake = fakeBackendClient();
 
     makeRunner(fake.client, LIMITS);
@@ -675,7 +691,7 @@ describe("LookupRunner a lookup the factory never answers", () => {
   it("Try again sends a not-come-back lookup again, under the same request id", async () => {
     const trip = await startTrip();
     const lookup = await queueLookup(trip.id);
-    await seedSent(lookup.id);
+    await seedSent(lookup.id, LATE);
     const fake = fakeBackendClient();
 
     const first = makeRunner(fake.client, LIMITS);
@@ -688,12 +704,12 @@ describe("LookupRunner a lookup the factory never answers", () => {
     expect((await lookups.getById(lookup.id))?.status).toBe("waiting-to-send");
     const photo = new Blob(["package"], { type: "image/jpeg" }) as unknown as globalThis.Blob;
     await db.pendingLookups.put({ ...(await lookups.getById(lookup.id))!, photos: [photo] });
-    makeRunner(fake.client, LIMITS);
+    makeRunner(fake.client, LONG);
 
     await waitFor(() => expect(fake.sent).toHaveLength(2));
     expect(fake.sent[1].clientId).toBe(lookup.id);
+    await waitFor(async () => expect((await lookups.getById(lookup.id))?.status).toBe("at-the-factory"));
     const row = await lookups.getById(lookup.id);
-    expect(row?.status).toBe("at-the-factory");
     expect(row?.notBack).toBeUndefined();
     expect(row?.resentAt).toBeUndefined();
   });
@@ -701,14 +717,14 @@ describe("LookupRunner a lookup the factory never answers", () => {
   it("a hidden page sends nothing, and the first look after it comes back sends the overdue lookup", async () => {
     const trip = await startTrip();
     const lookup = await queueLookup(trip.id);
-    await seedSent(lookup.id);
+    await seedSent(lookup.id, LATE);
     const fake = fakeBackendClient();
 
-    const runner = makeRunner(fake.client, LIMITS);
-    await waitFor(() => expect(fake.waiting.has(`direct:${lookup.id}`)).toBe(true));
-    runner.setVisible(false);
-    await new Promise((r) => setTimeout(r, 250));
+    // the page is hidden before the runner first looks: the lookup is long overdue and still goes nowhere
+    const runner = makeRunner(fake.client, RESEND_ONLY, (r) => r.setVisible(false));
+    await new Promise((r) => setTimeout(r, 100));
     expect(fake.sent).toHaveLength(0);
+    expect(fake.waitCalls()).toBe(0);
 
     runner.setVisible(true);
     await waitFor(() => expect(fake.sent).toHaveLength(1));
@@ -717,28 +733,37 @@ describe("LookupRunner a lookup the factory never answers", () => {
   it("does not run the clock for a lookup the phone is still holding back (offline)", async () => {
     const trip = await startTrip();
     const lookup = await queueLookup(trip.id);
-    await seedSent(lookup.id, { createdAt: Date.now() - 60 * 60_000 });
+    await seedSent(lookup.id, { sentAt: Date.now() - 60 * 60_000 });
     const fake = fakeBackendClient();
 
-    const runner = makeRunner(fake.client, LIMITS);
-    runner.setOnline(false);
-    await new Promise((r) => setTimeout(r, 250));
+    const runner = makeRunner(fake.client, LONG, (r) => r.setOnline(false));
+    await new Promise((r) => setTimeout(r, 100));
     expect(fake.sent).toHaveLength(0);
     expect((await lookups.getById(lookup.id))?.resentAt).toBeUndefined();
+
+    // the same lookup goes out once the phone is back online
+    runner.setOnline(true);
+    await waitFor(() => expect(fake.sent).toHaveLength(1));
   });
 
   it("reads the wait from the stored send time: reopening the app does not start it again", async () => {
     const trip = await startTrip();
     const lookup = await queueLookup(trip.id);
-    // sent 300 ms ago under a 400 ms limit; the first runner was closed before the limit
-    await seedSent(lookup.id, { sentAt: Date.now() - 300 });
+    // sent 40 s ago under a 60 s limit; the first runner was closed before the limit
+    await seedSent(lookup.id, { sentAt: Date.now() - 40_000 });
     const fake = fakeBackendClient();
+    const timers = vi.spyOn(globalThis, "setTimeout");
 
-    const started = Date.now();
-    makeRunner(fake.client, { resendAfterMs: 400, giveUpAfterMs: 400 });
-
-    await waitFor(() => expect(fake.sent).toHaveLength(1), { timeout: 300 });
-    expect(Date.now() - started).toBeLessThan(350);
+    try {
+      makeRunner(fake.client, LONG);
+      await waitFor(() => expect(fake.waiting.has(`direct:${lookup.id}`)).toBe(true));
+      // the limit timer is set for what is left of the 60 s (about 20 s), not for a fresh 60 s
+      const limits = timers.mock.calls.map((c) => c[1]).filter((ms): ms is number => typeof ms === "number" && ms > 10_000 && ms <= 60_000);
+      expect(limits.length).toBeGreaterThan(0);
+      expect(Math.max(...limits)).toBeLessThanOrEqual(20_000);
+    } finally {
+      timers.mockRestore();
+    }
   });
 
   it("a lookup whose stored send time is long past both limits is sent once more and says it did not come back at once", async () => {
