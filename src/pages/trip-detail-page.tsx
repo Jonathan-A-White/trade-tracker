@@ -25,10 +25,15 @@ import { downloadAsFile } from "@/services/export-service";
 import { PendingLineRow } from "@/components/data-display/pending-line-row";
 import { ReceiptReconcileCard } from "@/components/data-display/receipt-reconcile-card";
 import { FixUnknownItemModal } from "@/components/forms/fix-unknown-item-modal";
+import { UndoNotice } from "@/components/undo-notice";
+import { useUndo } from "@/hooks/use-undo";
 
 const tripRepo = new TripRepository();
 const tripItemRepo = new TripItemRepository();
 const itemRepo = new ItemRepository();
+
+// the key the trip as it was before the last Replace is kept under
+const REPLACED = "trip";
 
 export default function TripDetailPage() {
   const { id } = useParams<{ id: string }>();
@@ -44,7 +49,8 @@ export default function TripDetailPage() {
   const [reimportSuccess, setReimportSuccess] = useState<string | null>(null);
   const [pendingReimport, setPendingReimport] = useState<string | null>(null);
   // the trip as it was before the last "Replace", kept here for Undo and gone when he leaves the page
-  const [replacedTrip, setReplacedTrip] = useState<TripSnapshot | null>(null);
+  const replaced = useUndo<TripSnapshot>(id);
+  const replacedTrip = replaced.kept[REPLACED] ?? null;
   const reimportFileRef = useRef<HTMLInputElement>(null);
 
   const {
@@ -101,7 +107,7 @@ export default function TripDetailPage() {
   function handleReimportFileSelect(e: React.ChangeEvent<HTMLInputElement>) {
     setReimportError(null);
     setReimportSuccess(null);
-    setReplacedTrip(null);
+    replaced.drop(REPLACED);
     const file = e.target.files?.[0];
     if (!file || !id) return;
 
@@ -135,7 +141,7 @@ export default function TripDetailPage() {
     setReimporting(true);
     try {
       await restoreTripSnapshot(snapshot);
-      setReplacedTrip(null);
+      replaced.drop(REPLACED);
       setReimportSuccess("Trip put back as it was.");
     } catch (err) {
       setReimportError(err instanceof Error ? err.message : "Undo failed");
@@ -152,7 +158,7 @@ export default function TripDetailPage() {
     try {
       const before = await snapshotTrip(id);
       const result = await reimportTripFromAI(id, text);
-      setReplacedTrip(before);
+      replaced.keep(REPLACED, before);
       const parts: string[] = [];
       if (result.itemsMatched > 0) parts.push(`${result.itemsMatched} matched`);
       if (result.itemsCreated > 0) parts.push(`${result.itemsCreated} created`);
@@ -520,19 +526,13 @@ export default function TripDetailPage() {
           </p>
         )}
         {reimportSuccess && (
-          <p className="flex items-center justify-between gap-3 text-sm text-green-600 dark:text-green-400 bg-green-50 dark:bg-green-900/30 rounded-lg p-3">
-            <span>{reimportSuccess}</span>
-            {replacedTrip && (
-              <button
-                type="button"
-                disabled={reimporting}
-                onClick={() => void undoReimport()}
-                className="min-h-12 px-2 font-semibold underline disabled:opacity-50"
-              >
-                Undo
-              </button>
-            )}
-          </p>
+          <UndoNotice
+            className="text-sm text-green-600 dark:text-green-400 bg-green-50 dark:bg-green-900/30 rounded-lg p-3"
+            disabled={reimporting}
+            onUndo={replacedTrip ? () => void undoReimport() : undefined}
+          >
+            {reimportSuccess}
+          </UndoNotice>
         )}
 
         {/* Delete Trip */}

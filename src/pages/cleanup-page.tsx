@@ -11,6 +11,8 @@ import { Link } from "react-router";
 import type { CheckImage, YnabCategory } from "@/contracts/types";
 import { ConfirmDialog } from "@/components/feedback/confirm-dialog";
 import { PageHeader } from "@/components/layout/page-header";
+import { UndoNotice } from "@/components/undo-notice";
+import { useUndo } from "@/hooks/use-undo";
 import { db } from "@/db/database";
 import { CheckImageRepository } from "@/db/repositories/check-image-repository";
 import { YnabRepository } from "@/db/repositories/ynab-repository";
@@ -294,12 +296,7 @@ function CheckCard({
       />
       <p className="text-xs text-gray-600 dark:text-gray-400">Take a photo, choose a file, or paste an image here. It stays on this phone and never goes to YNAB.</p>
       {canUndo && (
-        <p className="flex flex-wrap items-center gap-x-3 text-sm text-gray-800 dark:text-gray-200">
-          The earlier image was replaced.
-          <button type="button" className="min-h-12 px-2 font-semibold underline" onClick={() => onUndo(item)}>
-            Undo
-          </button>
-        </p>
+        <UndoNotice onUndo={() => onUndo(item)}>The earlier image was replaced.</UndoNotice>
       )}
       {note && (
         <p role="status" className="text-sm text-gray-800 dark:text-gray-200">
@@ -349,10 +346,8 @@ export default function CleanupPage() {
   const [undoable, setUndoable] = useState<Undoable | null>(null);
   const [showRules, setShowRules] = useState(false);
   const [checkNotes, setCheckNotes] = useState<Record<string, string>>({});
-  // a second image waiting for his answer to "Replace the check image?", and the images he has replaced on this page (kept for Undo
-  // until he leaves the card: the rows are tied to the page they were replaced on)
+  // a second image waiting for his answer to "Replace the check image?"
   const [pendingImage, setPendingImage] = useState<{ item: CleanupItem; file: Blob } | null>(null);
-  const [replacedOn, setReplacedOn] = useState<{ page: string; rows: Record<string, CheckImage> }>({ page: "", rows: {} });
   const asked = useRef(new Set<string>());
 
   // read YNAB afresh on opening and when he goes through them again
@@ -392,7 +387,9 @@ export default function CleanupPage() {
   const checkIds = useMemo(() => page.filter((i) => i.check !== undefined).map((i) => i.id), [page]);
   const checkIdsKey = checkIds.join("\u0000");
   const pageKey = `${round}:${start}:${checkIdsKey}`;
-  const replaced = replacedOn.page === pageKey ? replacedOn.rows : {};
+  // the images he has replaced on this page, kept for Undo until he leaves the card (the rows are tied to the page they were replaced on)
+  const replacedImages = useUndo<CheckImage>(pageKey);
+  const replaced = replacedImages.kept;
   // the images kept for the checks on this page
   const images = useLiveQuery(async () => new Map([...(await new CheckImageRepository().many(checkIds))].map(([id, row]) => [id, row.image])), [checkIdsKey]);
 
@@ -467,7 +464,7 @@ export default function CleanupPage() {
       return;
     }
     const repo = new CheckImageRepository();
-    if (previous) setReplacedOn((now) => ({ page: pageKey, rows: { ...(now.page === pageKey ? now.rows : {}), [item.id]: previous } }));
+    if (previous) replacedImages.keep(item.id, previous);
     const kept = await repo.put(item.id, image);
     if (!readCheck) return note(item.id, null);
     note(item.id, "Reading the image…");
@@ -509,7 +506,7 @@ export default function CleanupPage() {
     const previous = replaced[item.id];
     if (!previous) return;
     await new CheckImageRepository().restore(previous);
-    setReplacedOn((now) => ({ page: now.page, rows: Object.fromEntries(Object.entries(now.rows).filter(([id]) => id !== item.id)) }));
+    replacedImages.drop(item.id);
     note(item.id, null);
     const read = previous.read ? resolveCheckRead(previous.read, categories) : null;
     if (read) setItems((all) => all.map((i) => (i.id === item.id ? applyCheckRead(i, read) : i)));
@@ -614,12 +611,9 @@ export default function CleanupPage() {
           </p>
         )}
         {undoable && (
-          <p className="flex flex-wrap items-center gap-x-3 rounded-lg bg-gray-800 px-3 py-2 text-base text-white">
+          <UndoNotice className="rounded-lg bg-gray-800 px-3 py-2 text-base text-white" disabled={saving || !restore} onUndo={() => void undo()}>
             Approved {undoable.items.length} from {undoable.done.payee} as {undoable.categoryName} ·
-            <button type="button" disabled={saving || !restore} className="min-h-12 px-2 font-semibold underline disabled:opacity-50" onClick={() => void undo()}>
-              Undo
-            </button>
-          </p>
+          </UndoNotice>
         )}
         <ConfirmDialog
           open={pendingImage !== null}
