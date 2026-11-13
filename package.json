@@ -18,14 +18,14 @@
     "bsv-kit": "github:Jonathan-A-White/bsv-kit#4dbd874edc1f5d6c151b0980ccaa9fcc60799d6a",
     "dexie": "^4.3.0",
     "dexie-react-hooks": "^4.2.0",
-    "pwa-kit": "github:Jonathan-A-White/pwa-kit#8c57c518f504817818382789e431f52bc3c1f0d1",
+    "pwa-kit": "github:Jonathan-A-White/pwa-kit#182d2890c5d57c93d5b978da2981276d8f3f3e80",
     "qrcode": "^1.5.4",
     "react": "^19.2.4",
     "react-dom": "^19.2.4",
     "react-router": "^7.13.1",
     "recharts": "^2.15.4",
     "tailwindcss": "^4.2.1",
-    "voice-kit": "github:Jonathan-A-White/voice-kit#d87188227886ec15e7c34f674992f4a63ea69215"
+    "voice-kit": "github:Jonathan-A-White/voice-kit#c5f76b2b7044d00eaecc827a7cbdce5b802768b0"
   },
   "devDependencies": {
     "@eslint/js": "^9.39.4",
