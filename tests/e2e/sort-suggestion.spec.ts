@@ -125,8 +125,7 @@ test("the suggested category is already chosen and says how much is available in
     localStorage.setItem("tradetracker-family-me", "Jonathan");
   });
   await page.reload();
-  // dispatched, not clicked: the button re-renders under a pointer click on a base without mw-bfrti4c's fix, and a dispatched click lands on both
-  await page.getByRole("button", { name: "Unlock with fingerprint" }).dispatchEvent("click");
+  // making the key unlocked it and the day's unlock is kept on the device (mw-bfrti4c), so the reload resumes it: no fingerprint is asked for
   await expect(page.getByText("Key unlocked for today.")).toBeVisible();
 
   // YNAB connected
