@@ -21,6 +21,7 @@ describe("status-bar safe area", () => {
   it("is not padding on the scroll container the sticky header sticks inside", () => {
     const root = declarations("#root");
     expect(root).toContain("overflow-y: auto");
-    expect(root).not.toMatch(/padding|safe-area/);
+    // scroll-padding-bottom is the nav's height for what is scrolled into view (mw-6ww.148.45); it moves nothing that sticks
+    expect(root.replace(/scroll-padding-bottom:[^;]*;/, "")).not.toMatch(/padding|safe-area/);
   });
 });
