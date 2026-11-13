@@ -104,6 +104,13 @@ export const ROWS: readonly SettingsRow<SectionId>[] = rowsInOrder<SectionId, Se
     help: "A group is proposed when it passes the dollars above over twelve months, or this many charges. Default 3.",
   },
   {
+    key: "ideas-reasons",
+    section: "ynab",
+    label: "Budget ideas: your reasons",
+    hint: "The reasons you gave when you replied to a Budget idea.",
+    help: "A reply that gives a reason is kept here and read with your next reply. A payee a reason rules out is not proposed again. Remove a reason to let its ideas come back.",
+  },
+  {
     key: "rule-short",
     section: "ynab",
     label: "Auto-approve when the category is short",

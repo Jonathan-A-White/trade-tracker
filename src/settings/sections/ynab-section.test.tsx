@@ -80,6 +80,29 @@ describe("Settings > YNAB", () => {
     expect(JSON.parse(localStorage.getItem("tradetracker-budget-ideas-settings")!)).toEqual({ minSpend: 200, minCharges: 5 });
   });
 
+  it("lists the reasons he gave to Budget ideas, and Remove forgets one", async () => {
+    const user = userEvent.setup();
+    localStorage.setItem(
+      "tradetracker-budget-ideas-reasons",
+      JSON.stringify([
+        { id: "r1", words: "We moved our tithe to Brookfield First.", payees: ["New Apostolic Church"], at: 1 },
+        { id: "r2", words: "No more Hulu.", payees: [], at: 2 },
+      ]),
+    );
+    renderSettings();
+    const list = await screen.findByRole("list", { name: "Your reasons" });
+    expect(list).toHaveTextContent("We moved our tithe to Brookfield First.");
+    expect(list).toHaveTextContent("Not proposed again: New Apostolic Church");
+    await user.click(screen.getByRole("button", { name: "Remove reason: We moved our tithe to Brookfield First." }));
+    expect(screen.queryByText("We moved our tithe to Brookfield First.")).not.toBeInTheDocument();
+    expect(JSON.parse(localStorage.getItem("tradetracker-budget-ideas-reasons")!)).toHaveLength(1);
+  });
+
+  it("says none are kept when he has given no reason", async () => {
+    renderSettings();
+    expect(await screen.findByText("None kept. Reply to a Budget idea on Home to give one.")).toBeInTheDocument();
+  });
+
   it("keeps the choice for a payee rule whose category is short, starting on Approve and note", async () => {
     const user = userEvent.setup();
     renderSettings();

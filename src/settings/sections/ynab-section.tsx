@@ -9,6 +9,7 @@ import { browserStorage } from "@/services/factory-service";
 import { YnabRefusedError, createYnabClient } from "@/ynab/api";
 import { connectBudget, refreshCache } from "@/ynab/cache";
 import { readIdeaSettings, writeIdeaSettings } from "@/ynab/budget-ideas";
+import { readReasons, removeReason } from "@/ynab/budget-idea-reply";
 import { readShortRule, writeShortRule, type ShortRule } from "@/ynab/payee-rules";
 import { disconnectYnab } from "@/ynab/disconnect";
 import { openToken, sealToken } from "@/ynab/token";
@@ -42,6 +43,7 @@ export function YnabSection() {
   // what is typed in the two fields, kept as typed so a field can be cleared and retyped; only a valid number is saved
   const [typed, setTyped] = useState(() => ({ spend: String(ideas.minSpend), charges: String(ideas.minCharges) }));
 
+  const [reasons, setReasons] = useState(readReasons);
   const [shortRule, setShortRule] = useState<ShortRule>(readShortRule);
 
   const connected = on && !!connection;
@@ -258,6 +260,36 @@ export function YnabSection() {
             className={INPUT_CLASS}
           />
         </label>
+      </SettingRow>
+      <SettingRow settingKey="ideas-reasons">
+        <div className="space-y-1">
+          <span className="text-xs text-gray-600 dark:text-gray-400">Budget ideas: your reasons</span>
+          {reasons.length === 0 ? (
+            <SectionNote>None kept. Reply to a Budget idea on Home to give one.</SectionNote>
+          ) : (
+            <ul aria-label="Your reasons" className="space-y-2">
+              {reasons.map((reason) => (
+                <li key={reason.id} className="flex items-start justify-between gap-3 text-sm text-gray-800 dark:text-gray-200">
+                  <span className="min-w-0 break-words">
+                    {reason.words}
+                    {reason.payees.length > 0 && <span className="block text-xs text-gray-600 dark:text-gray-400">Not proposed again: {reason.payees.join(", ")}</span>}
+                  </span>
+                  <button
+                    type="button"
+                    aria-label={`Remove reason: ${reason.words}`}
+                    onClick={() => {
+                      removeReason(reason.id);
+                      setReasons(readReasons());
+                    }}
+                    className={OUTLINE_BUTTON_CLASS}
+                  >
+                    Remove
+                  </button>
+                </li>
+              ))}
+            </ul>
+          )}
+        </div>
       </SettingRow>
       <SettingRow settingKey="rule-short">
         <label className="block space-y-1">
