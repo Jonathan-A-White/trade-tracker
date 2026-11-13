@@ -9,13 +9,22 @@
   --color-danger: #dc2626;
 }
 
-/* Under viewport-fit=cover, Android Chrome with three-button navigation reports env(safe-area-inset-bottom) as 0 while the
-   phone's own 48 px Back/Home/Recents bar is drawn over the foot of the page. Anything fixed to the foot of the screen
-   (the nav, and the full-screen camera's controls) pads by this floor, not by the bare inset (mw-umpkr9). --tt-nav-h is the
-   nav's whole height; the bars that stack above it sit at that offset. */
+/* Under viewport-fit=cover, an installed app (display-mode fullscreen or standalone) on Android with three-button navigation reports
+   env(safe-area-inset-bottom) as 0 while the phone's own 48 px Back/Home/Recents bar can be drawn over the foot of the page, so there
+   anything fixed to the foot of the screen (the nav, and the full-screen camera's controls) pads by this floor, not by the bare inset
+   (mw-umpkr9). In a browser tab Chrome's own bars sit outside the page and the floor was only an empty band under the nav's labels,
+   about 104 px of nav in all, so there the floor is 0 and the nav is its 3.5rem plus the inset the phone reports (mw-6ww.148.46).
+   --tt-nav-h is the nav's whole height; the bars that stack above it sit at that offset. */
 :root {
-  --tt-bar-inset: max(env(safe-area-inset-bottom), 48px);
+  --tt-bar-floor: 48px;
+  --tt-bar-inset: max(env(safe-area-inset-bottom), var(--tt-bar-floor));
   --tt-nav-h: calc(3.5rem + var(--tt-bar-inset));
+}
+
+@media (display-mode: browser) {
+  :root {
+    --tt-bar-floor: 0px;
+  }
 }
 
 html,

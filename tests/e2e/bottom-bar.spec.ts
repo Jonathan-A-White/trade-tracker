@@ -4,6 +4,9 @@
 // (env(safe-area-inset-bottom) is 0 on his phone); without it the window is the screen less that bar. The viewport meta is read from the
 // served page, so changing it changes what the test models. The nav's box must end at or above the system bar's top edge, and the bars
 // that sit on top of the nav (the trip's subtotal bar, the edit page's Save bar) must clear the nav itself.
+// This is the INSTALLED app's case (display-mode fullscreen/standalone), where the 48 px floor (--tt-bar-floor) stands. In a browser tab Chrome's own
+// bars sit outside the page and the floor is 0 (mw-6ww.148.46; tests/e2e/bottom-nav-height.spec.ts). Headless Chromium cannot emulate display-mode,
+// so this spec sets the floor the installed app has, with a style that wins over the browser-tab rule; the assertions are unchanged.
 import { expect, test, type Locator, type Page } from "@playwright/test";
 import { shot } from "./shot";
 
@@ -16,6 +19,17 @@ async function windowFor(page: Page): Promise<void> {
   const html = await (await page.request.get("/")).text();
   const cover = /<meta[^>]+name="viewport"[^>]+viewport-fit=cover/.test(html);
   await page.setViewportSize({ width: SCREEN.width, height: cover ? SCREEN.height : VISIBLE_BOTTOM });
+}
+
+/** The installed app's floor, which the display-mode: browser rule would take away in this headless browser tab. */
+async function installedAppFloor(page: Page): Promise<void> {
+  await page.addInitScript(() => {
+    document.addEventListener("DOMContentLoaded", () => {
+      const style = document.createElement("style");
+      style.textContent = ":root { --tt-bar-floor: 48px !important; }";
+      document.head.appendChild(style);
+    });
+  });
 }
 
 /** The page is told about the system bar through the safe-area inset (what Chrome does when it does report it). */
@@ -81,6 +95,7 @@ async function bottomOf(locator: Locator): Promise<number> {
 for (const reported of [0, 34]) {
   test(`the nav is wholly above the phone navigation bar on every screen that shows it, with ${reported} px of bottom inset reported`, async ({ page }) => {
     await windowFor(page);
+    await installedAppFloor(page);
     if (reported > 0) await reportInset(page, reported);
     await seed(page);
     const nav = page.getByRole("navigation");

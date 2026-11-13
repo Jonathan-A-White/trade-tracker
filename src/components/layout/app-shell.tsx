@@ -6,7 +6,7 @@ export function AppShell() {
   return (
     <div className="min-h-screen bg-gray-50 dark:bg-gray-900">
       <UpdateBanner />
-      <div className="pb-(--tt-nav-h)">
+      <div className="pb-[calc(var(--tt-nav-h)+0.75rem)]">
         <Outlet />
       </div>
       <BottomNav />
