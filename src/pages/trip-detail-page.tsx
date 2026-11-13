@@ -16,6 +16,9 @@ import {
   exportTripForAI,
   isManualBarcode,
   reimportTripFromAI,
+  snapshotTrip,
+  restoreTripSnapshot,
+  type TripSnapshot,
   validateTripImportData,
 } from "@/services/trip-exchange-service";
 import { downloadAsFile } from "@/services/export-service";
@@ -40,6 +43,8 @@ export default function TripDetailPage() {
   const [reimportError, setReimportError] = useState<string | null>(null);
   const [reimportSuccess, setReimportSuccess] = useState<string | null>(null);
   const [pendingReimport, setPendingReimport] = useState<string | null>(null);
+  // the trip as it was before the last "Replace", kept here for Undo and gone when he leaves the page
+  const [replacedTrip, setReplacedTrip] = useState<TripSnapshot | null>(null);
   const reimportFileRef = useRef<HTMLInputElement>(null);
 
   const {
@@ -96,6 +101,7 @@ export default function TripDetailPage() {
   function handleReimportFileSelect(e: React.ChangeEvent<HTMLInputElement>) {
     setReimportError(null);
     setReimportSuccess(null);
+    setReplacedTrip(null);
     const file = e.target.files?.[0];
     if (!file || !id) return;
 
@@ -123,13 +129,30 @@ export default function TripDetailPage() {
     if (reimportFileRef.current) reimportFileRef.current.value = "";
   }
 
+  async function undoReimport() {
+    const snapshot = replacedTrip;
+    if (!snapshot) return;
+    setReimporting(true);
+    try {
+      await restoreTripSnapshot(snapshot);
+      setReplacedTrip(null);
+      setReimportSuccess("Trip put back as it was.");
+    } catch (err) {
+      setReimportError(err instanceof Error ? err.message : "Undo failed");
+    } finally {
+      setReimporting(false);
+    }
+  }
+
   async function confirmReimport() {
     const text = pendingReimport;
     setPendingReimport(null);
     if (text === null || !id) return;
     setReimporting(true);
     try {
+      const before = await snapshotTrip(id);
       const result = await reimportTripFromAI(id, text);
+      setReplacedTrip(before);
       const parts: string[] = [];
       if (result.itemsMatched > 0) parts.push(`${result.itemsMatched} matched`);
       if (result.itemsCreated > 0) parts.push(`${result.itemsCreated} created`);
@@ -483,7 +506,7 @@ export default function TripDetailPage() {
         <ConfirmDialog
           open={pendingReimport !== null}
           title="Replace this trip's items?"
-          message="The items on this trip are replaced by the ones in the file. This cannot be undone."
+          message="The items on this trip are replaced by the ones in the file."
           confirmLabel="Replace"
           cancelLabel="Cancel"
           variant="danger"
@@ -497,8 +520,18 @@ export default function TripDetailPage() {
           </p>
         )}
         {reimportSuccess && (
-          <p className="text-sm text-green-600 dark:text-green-400 bg-green-50 dark:bg-green-900/30 rounded-lg p-3">
-            {reimportSuccess}
+          <p className="flex items-center justify-between gap-3 text-sm text-green-600 dark:text-green-400 bg-green-50 dark:bg-green-900/30 rounded-lg p-3">
+            <span>{reimportSuccess}</span>
+            {replacedTrip && (
+              <button
+                type="button"
+                disabled={reimporting}
+                onClick={() => void undoReimport()}
+                className="min-h-12 px-2 font-semibold underline disabled:opacity-50"
+              >
+                Undo
+              </button>
+            )}
           </p>
         )}
 

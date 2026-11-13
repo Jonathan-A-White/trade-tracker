@@ -5,6 +5,7 @@ import type {
   Trip,
   TripItem,
   PriceHistoryEntry,
+  PendingLookup,
   UnitType,
 } from "@/contracts/types";
 import { calculateLineTotal } from "@/core/pricing";
@@ -488,6 +489,46 @@ async function resolveImportItem(
     created: true,
     missingBarcode: isManualBarcode(barcode),
   };
+}
+
+/** What a trip holds that "Import from AI" replaces, kept so the page can put it back (page state only). */
+export interface TripSnapshot {
+  trip: Trip;
+  tripItems: TripItem[];
+  pendingLookups: PendingLookup[];
+  priceHistory: PriceHistoryEntry[];
+}
+
+/** Reads the trip, its lines, their waiting lookups and their price history as they are now. */
+export async function snapshotTrip(tripId: string): Promise<TripSnapshot> {
+  return db.transaction("r", [db.trips, db.tripItems, db.priceHistory, db.pendingLookups], async () => {
+    const trip = await db.trips.get(tripId);
+    if (!trip) throw new Error("Trip not found");
+    const tripItems = await db.tripItems.where("tripId").equals(tripId).toArray();
+    const pendingLookups = await db.pendingLookups.where("tripId").equals(tripId).toArray();
+    const priceHistory =
+      tripItems.length > 0
+        ? await db.priceHistory.where("tripItemId").anyOf(tripItems.map((ti) => ti.id)).toArray()
+        : [];
+    return { trip, tripItems, pendingLookups, priceHistory };
+  });
+}
+
+/** Puts a trip back as the snapshot has it: what the import wrote is removed, what it removed is written again. */
+export async function restoreTripSnapshot(snapshot: TripSnapshot): Promise<void> {
+  const tripId = snapshot.trip.id;
+  await db.transaction("rw", [db.trips, db.tripItems, db.priceHistory, db.pendingLookups], async () => {
+    const current = await db.tripItems.where("tripId").equals(tripId).toArray();
+    if (current.length > 0) {
+      await db.priceHistory.where("tripItemId").anyOf(current.map((ti) => ti.id)).delete();
+    }
+    await db.tripItems.where("tripId").equals(tripId).delete();
+    await db.pendingLookups.where("tripId").equals(tripId).delete();
+    await db.trips.put(snapshot.trip);
+    await db.tripItems.bulkPut(snapshot.tripItems);
+    await db.pendingLookups.bulkPut(snapshot.pendingLookups);
+    await db.priceHistory.bulkPut(snapshot.priceHistory);
+  });
 }
 
 export async function reimportTripFromAI(
