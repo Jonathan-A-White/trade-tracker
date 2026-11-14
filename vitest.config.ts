@@ -1,15 +1,13 @@
 import { defineConfig } from "vitest/config";
 import react from "@vitejs/plugin-react";
-import { readFileSync } from "node:fs";
 import { timingFilter, vitestTimeouts } from "pwa-kit/test-preset";
-import { buildVersion, shortCommit } from "./build-version";
+import { buildVersion, packageVersion, shortCommit } from "./build-version";
 
-const pkg = JSON.parse(readFileSync("./package.json", "utf-8")) as { version: string };
 
 export default defineConfig({
   plugins: [react()],
   define: {
-    __APP_VERSION__: JSON.stringify(buildVersion(pkg.version, new Date(), shortCommit())),
+    __APP_VERSION__: JSON.stringify(buildVersion(packageVersion(), new Date(), shortCommit())),
   },
   resolve: {
     alias: {

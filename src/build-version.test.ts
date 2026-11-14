@@ -1,8 +1,8 @@
 import { execFileSync } from "node:child_process";
-import { mkdtempSync, rmSync } from "node:fs";
+import { mkdtempSync, rmSync, writeFileSync } from "node:fs";
 import { tmpdir } from "node:os";
 import path from "node:path";
-import { buildVersion, shortCommit } from "../build-version";
+import { buildVersion, packageVersion, shortCommit } from "../build-version";
 
 describe("buildVersion", () => {
   it("joins v<version>, the UTC build time and the short commit", () => {
@@ -38,6 +38,52 @@ describe("shortCommit", () => {
 
   it("is 'dev' when git itself is absent", () => {
     expect(shortCommit(process.cwd(), "/nonexistent/git")).toBe("dev");
+  });
+});
+
+// mw-6ww.175.55: the version was read from the working package.json beside HEAD's commit, so a working file
+// older than HEAD (a checkout that moved HEAD without rewriting the file) stamped the old version.
+describe("packageVersion", () => {
+  const dirs: string[] = [];
+  afterEach(() => {
+    for (const d of dirs.splice(0)) rmSync(d, { recursive: true, force: true });
+  });
+
+  function checkout(): string {
+    const dir = mkdtempSync(path.join(tmpdir(), "tt-version-"));
+    dirs.push(dir);
+    const git = (...args: string[]) =>
+      execFileSync(
+        "git",
+        ["-c", "user.name=t", "-c", "user.email=t@example.com", "-c", "commit.gpgsign=false", ...args],
+        { cwd: dir, stdio: "ignore" },
+      );
+    git("init", "-q");
+    writeFileSync(path.join(dir, "package.json"), JSON.stringify({ version: "0.1.111" }));
+    git("add", "package.json");
+    git("commit", "-q", "-m", "one");
+    writeFileSync(path.join(dir, "package.json"), JSON.stringify({ version: "0.1.112" }));
+    git("commit", "-q", "-am", "two");
+    return dir;
+  }
+
+  it("is the version HEAD holds when the working package.json is older and uncommitted", () => {
+    const dir = checkout();
+    writeFileSync(path.join(dir, "package.json"), JSON.stringify({ version: "0.1.111" }));
+    expect(packageVersion(dir)).toBe("0.1.112");
+  });
+
+  it("is the working file's version outside a git checkout", () => {
+    const dir = mkdtempSync(path.join(tmpdir(), "tt-version-"));
+    dirs.push(dir);
+    writeFileSync(path.join(dir, "package.json"), JSON.stringify({ version: "1.2.3" }));
+    expect(packageVersion(dir)).toBe("1.2.3");
+  });
+
+  it("is the working file's version when git itself is absent", () => {
+    const dir = checkout();
+    writeFileSync(path.join(dir, "package.json"), JSON.stringify({ version: "0.1.111" }));
+    expect(packageVersion(dir, "/nonexistent/git")).toBe("0.1.111");
   });
 });
 

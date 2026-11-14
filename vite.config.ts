@@ -3,9 +3,7 @@ import react from "@vitejs/plugin-react";
 import tailwindcss from "@tailwindcss/vite";
 import { VitePWA } from "vite-plugin-pwa";
 import { readFileSync } from "node:fs";
-import { buildVersion, shortCommit } from "./build-version";
-
-const pkg = JSON.parse(readFileSync("./package.json", "utf-8")) as { version: string };
+import { buildVersion, packageVersion, shortCommit } from "./build-version";
 
 /** src/sw-push.ts (the push and notification-tap handlers, importing nothing) built to sw-push.js beside the worker that loads it. */
 function swPush(): Plugin {
@@ -102,7 +100,7 @@ export default defineConfig({
     }),
   ],
   define: {
-    __APP_VERSION__: JSON.stringify(buildVersion(pkg.version, new Date(), shortCommit())),
+    __APP_VERSION__: JSON.stringify(buildVersion(packageVersion(), new Date(), shortCommit())),
   },
   resolve: {
     alias: {
