@@ -8,6 +8,10 @@ import App from "./App.tsx";
 import { startAppUpdates } from "pwa-kit/app-update";
 import { installPreloadErrorReload } from "./services/preload-reload";
 import { appUpdateOptions } from "./services/app-update-options";
+import { watchBarFloor } from "./layout/bar-floor";
+
+// Whether the phone's own navigation bar can cover the foot of the page, before the first paint of the nav (src/layout/bar-floor.ts).
+watchBarFloor();
 
 // A deploy that swaps the files under a running page: reload to pick up the new build.
 installPreloadErrorReload(window, () => window.location.reload());
