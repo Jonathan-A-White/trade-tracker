@@ -90,7 +90,7 @@ function Sheet({ title, onClose, children, footer }: { title: string; onClose: (
           {children}
         </div>
         {footer && (
-          <div className="border-t border-gray-200 dark:border-gray-700 px-4 pt-3 pb-[max(1rem,env(safe-area-inset-bottom))]">{footer}</div>
+          <div data-sheet-footer className="border-t border-gray-200 dark:border-gray-700 px-4 pt-3 pb-[max(1rem,var(--tt-bar-inset))]">{footer}</div>
         )}
       </div>
     </div>
