@@ -415,9 +415,7 @@ function ChargeSheet({ family, charge, onClose }: { family: FamilyFeed; charge: 
     },
   });
   const suggestedShown = suggestion !== null && ("categoryId" in suggestion ? !splitting && categoryId === suggestion.categoryId : splitting);
-  // a suggestion of one category opens the list narrowed to it, with an X (clearChoice) that brings the full list back for good
   const [fullList, setFullList] = useState(false);
-  const narrowed = !fullList && suggestedShown && suggestion !== null && "categoryId" in suggestion;
   const changedTo = suggestion !== null && !splitting && categoryId !== null && !suggestedShown ? categories?.find((c) => c.id === categoryId) : undefined;
   const receipt = useReceipt({
     shots: ynabOn ? shots : undefined,
@@ -440,6 +438,8 @@ function ChargeSheet({ family, charge, onClose }: { family: FamilyFeed; charge: 
   const receiptShown =
     receipt.status.phase === "done" &&
     (receipt.status.parts.length === 1 ? !splitting && categoryId === receipt.status.parts[0]!.categoryId : splitting);
+  // a suggestion, or a receipt, of one category opens the list narrowed to it, with an X (clearChoice) that brings the full list back for good
+  const narrowed = !fullList && ((suggestedShown && suggestion !== null && "categoryId" in suggestion) || (receiptShown && receipt.status.phase === "done" && receipt.status.parts.length === 1));
   const selectCategory = (id: string) => {
     touched.current = true;
     setCategoryId(id);

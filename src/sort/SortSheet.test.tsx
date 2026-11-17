@@ -832,10 +832,27 @@ describe("the Sort sheet with a photographed receipt", () => {
     expect(await within(sheet).findByText(/From the receipt/)).toBeInTheDocument();
     expect(within(sheet).getByRole("radio", { name: /Groceries/ })).toBeChecked();
 
+    await user.click(within(sheet).getByRole("button", { name: "Show all categories" }));
     await user.click(within(sheet).getByRole("radio", { name: /Household/ }));
     expect(within(sheet).getByRole("radio", { name: /Household/ })).toBeChecked();
     expect(within(sheet).queryByText(/From the receipt/)).not.toBeInTheDocument();
     expect(within(sheet).queryByText(/It is all food/)).not.toBeInTheDocument();
+  });
+
+  it("a receipt that makes one category opens narrowed to it, with Show all categories bringing the full list back (mw-mr4xgrw.63)", async () => {
+    const user = userEvent.setup();
+    const alert = backend.receive({ kind: "charge", amount: "43.12", merchant: "Target", last4: "1234", when: WHEN });
+    keepReceiptShots(alert.id, [new Blob(["jpeg"], { type: "image/jpeg" }) as unknown as globalThis.Blob]);
+    const oneCategory = vi.fn<SortChargeAsk>(async () => ({ split: [{ category: "Groceries", amount: 40 }], why: "It is all food." }));
+    renderPhone(`/sort/${alert.id}`, { readReceipt: receipt(), suggest: oneCategory });
+    const sheet = await screen.findByRole("dialog", { name: "$43.12 at Target" });
+    expect(await within(sheet).findByText(/From the receipt/)).toBeInTheDocument();
+    expect(within(sheet).getAllByRole("radio")).toHaveLength(1);
+    expect(within(sheet).getByRole("radio", { name: /Groceries/ })).toBeChecked();
+
+    await user.click(within(sheet).getByRole("button", { name: "Show all categories" }));
+    expect(within(sheet).getAllByRole("radio").length).toBeGreaterThan(1);
+    expect(within(sheet).queryByRole("button", { name: "Show all categories" })).not.toBeInTheDocument();
   });
 
   it("going from the receipt's split back to One category takes the From the receipt box away", async () => {
