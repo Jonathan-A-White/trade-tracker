@@ -394,7 +394,51 @@ describe("the Sort sheet with the AI's suggestion", () => {
     const sheet = await screen.findByRole("dialog", { name: "$17.90 at SQ *ZQX 4471" });
     expect(await within(sheet).findByText(/New to Groceries here, so Stuff I Forgot to Budget For\./)).toBeInTheDocument();
     expect(within(sheet).getByRole("radio", { name: /Stuff I Forgot to Budget For/ })).toHaveAttribute("aria-checked", "true");
-    expect(within(sheet).getByRole("radio", { name: /Groceries/ })).toHaveAttribute("aria-checked", "false");
+    expect(within(sheet).queryByRole("radio", { name: /Groceries/ })).not.toBeInTheDocument();
+  });
+
+  it("opens narrowed to the suggested category: selected, its why kept, the memo shown, and no other row (mw-mr4xgrw.62)", async () => {
+    const user = userEvent.setup();
+    const alert = backend.receive({ kind: "charge", amount: "43.12", merchant: "Trader Joe's", last4: "1234", when: WHEN });
+    renderPhone(`/sort/${alert.id}`, { suggest: ask({ category: "Groceries", why: "18 of 18 here went to Groceries." }) });
+    const sheet = await screen.findByRole("dialog", { name: "$43.12 at Trader Joe's" });
+    expect(await within(sheet).findByText("18 of 18 here went to Groceries.")).toBeInTheDocument();
+    expect(within(sheet).getAllByRole("radio")).toHaveLength(1);
+    expect(within(sheet).getByRole("radio", { name: "Groceries · $212 left" })).toHaveAttribute("aria-checked", "true");
+    expect(within(sheet).queryByRole("radio", { name: /Eating Out/ })).not.toBeInTheDocument();
+    await user.type(within(sheet).getByLabelText("Memo"), "weekly shop");
+    await user.click(within(sheet).getByRole("button", { name: "Done" }));
+    await waitFor(() => expect(create).toHaveBeenCalled());
+    expect(create.mock.calls[0]![0]).toMatchObject({ categoryId: "c1", memo: "weekly shop" });
+  });
+
+  it("the X on the chosen row clears it and brings the full list back, nothing chosen, the memo kept (mw-mr4xgrw.62)", async () => {
+    const user = userEvent.setup();
+    const alert = backend.receive({ kind: "charge", amount: "43.12", merchant: "Trader Joe's", last4: "1234", when: WHEN });
+    renderPhone(`/sort/${alert.id}`, { suggest: ask({ category: "Groceries", why: "18 of 18 here went to Groceries." }) });
+    const sheet = await screen.findByRole("dialog", { name: "$43.12 at Trader Joe's" });
+    await within(sheet).findByText("18 of 18 here went to Groceries.");
+    await user.type(within(sheet).getByLabelText("Memo"), "weekly shop");
+    await user.click(within(sheet).getByRole("button", { name: "Show all categories" }));
+    expect(within(sheet).getAllByRole("radio")).toHaveLength(3);
+    expect(within(sheet).getAllByRole("radio").every((r) => r.getAttribute("aria-checked") === "false")).toBe(true);
+    expect(within(sheet).getByRole("button", { name: "Done" })).toBeDisabled();
+    expect(within(sheet).queryByRole("button", { name: "Show all categories" })).not.toBeInTheDocument();
+    expect(within(sheet).getByLabelText("Memo")).toHaveValue("weekly shop");
+    // choosing another row works as before
+    await user.click(within(sheet).getByRole("radio", { name: /Eating Out/ }));
+    await user.click(within(sheet).getByRole("button", { name: "Done" }));
+    await waitFor(() => expect(create).toHaveBeenCalled());
+    expect(create.mock.calls[0]![0]).toMatchObject({ categoryId: "c2", memo: "weekly shop" });
+  });
+
+  it("with no suggestion the sheet opens with the full list and no X (mw-mr4xgrw.62)", async () => {
+    const alert = backend.receive({ kind: "charge", amount: "8.50", merchant: "Dunkin'", last4: "1234" });
+    renderPhone(`/sort/${alert.id}`);
+    const sheet = await screen.findByRole("dialog", { name: "$8.50 at Dunkin'" });
+    await within(sheet).findByRole("radio", { name: /Eating Out/ });
+    expect(within(sheet).getAllByRole("radio")).toHaveLength(3);
+    expect(within(sheet).queryByRole("button", { name: "Show all categories" })).not.toBeInTheDocument();
   });
 
   it("a tap on another category changes the suggestion", async () => {
@@ -403,6 +447,7 @@ describe("the Sort sheet with the AI's suggestion", () => {
     renderPhone(`/sort/${alert.id}`, { suggest: ask({ category: "Groceries", why: "A guess." }) });
     const sheet = await screen.findByRole("dialog", { name: "$8.50 at Dunkin'" });
     await within(sheet).findByText("A guess.");
+    await user.click(within(sheet).getByRole("button", { name: "Show all categories" }));
     await user.click(within(sheet).getByRole("radio", { name: /Eating Out/ }));
     expect(within(sheet).getByRole("radio", { name: /Eating Out/ })).toHaveAttribute("aria-checked", "true");
     expect(within(sheet).getByRole("radio", { name: /Groceries/ })).toHaveAttribute("aria-checked", "false");
@@ -615,6 +660,7 @@ describe("the Sort sheet suggests what a merchant NORMALLY goes to, and learns a
     const phone = renderPhone(`/sort/${first.id}`, seams(suggest));
     let sheet = await screen.findByRole("dialog", { name: "$43.12 at AMAZON MKTPL*2X3Y4" });
     await within(sheet).findByText("12 of 12 here went to Household.");
+    await user.click(within(sheet).getByRole("button", { name: "Show all categories" }));
     await user.click(within(sheet).getByRole("radio", { name: /Eating Out/ }));
     const once = within(sheet).getByRole("checkbox", { name: /Just this once/ });
     expect(once).not.toBeChecked();
@@ -630,6 +676,7 @@ describe("the Sort sheet suggests what a merchant NORMALLY goes to, and learns a
     expect(await within(sheet).findByText("You chose Eating Out for this merchant.")).toBeInTheDocument();
     expect(within(sheet).getByRole("radio", { name: /Eating Out/ })).toHaveAttribute("aria-checked", "true");
     // he changes it again
+    await user.click(within(sheet).getByRole("button", { name: "Show all categories" }));
     await user.click(within(sheet).getByRole("radio", { name: /Household/ }));
     await user.click(within(sheet).getByRole("button", { name: "Done" }));
     await waitFor(() => expect(create).toHaveBeenCalledTimes(2));
@@ -648,6 +695,7 @@ describe("the Sort sheet suggests what a merchant NORMALLY goes to, and learns a
     renderPhone(`/sort/${alert.id}`, seams(vi.fn<SortChargeAsk>(async () => ({ category: "Groceries", why: "A guess." }))));
     const sheet = await screen.findByRole("dialog", { name: "$8.50 at Dunkin' #3321" });
     await within(sheet).findByText("A guess.");
+    await user.click(within(sheet).getByRole("button", { name: "Show all categories" }));
     await user.click(within(sheet).getByRole("radio", { name: /Eating Out/ }));
     await user.click(within(sheet).getByRole("button", { name: "Done" }));
     await waitFor(() => expect(create).toHaveBeenCalled());
@@ -661,6 +709,7 @@ describe("the Sort sheet suggests what a merchant NORMALLY goes to, and learns a
     const phone = renderPhone(`/sort/${first.id}`, seams(never()));
     let sheet = await screen.findByRole("dialog", { name: "$43.12 at AMAZON MKTPL*2X3Y4" });
     await within(sheet).findByText("12 of 12 here went to Household.");
+    await user.click(within(sheet).getByRole("button", { name: "Show all categories" }));
     await user.click(within(sheet).getByRole("radio", { name: /Eating Out/ }));
     await user.click(within(sheet).getByRole("checkbox", { name: /Just this once/ }));
     await user.click(within(sheet).getByRole("button", { name: "Done" }));

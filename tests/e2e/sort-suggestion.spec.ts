@@ -88,9 +88,9 @@ async function stubYnab(page: Page, created: unknown[]): Promise<void> {
       created.push(request.postDataJSON());
       return json(route, 201, { data: { transaction: { id: `t${created.length}` } } });
     }
-    // three past charges at the merchant, all to Eating Out: YNAB's tally makes that the usual, so it is suggested with no grist
+    // eighteen past charges at the merchant, all to Eating Out: YNAB's tally makes that the usual, so it is suggested with no grist
     if (path.endsWith("/transactions")) {
-      const past = [1, 2, 3].map((n) => ({ id: `p${n}`, account_id: "a1", date: "2026-10-01", amount: -9_000, payee_name: "Dunkin' Donuts", category_id: "c2", category_name: "Eating Out", deleted: false }));
+      const past = Array.from({ length: 18 }, (_, i) => i + 1).map((n) => ({ id: `p${n}`, account_id: "a1", date: "2026-10-01", amount: -9_000, payee_name: "Dunkin' Donuts", category_id: "c2", category_name: "Eating Out", deleted: false }));
       return json(route, 200, { data: { transactions: past } });
     }
     return json(route, 404, { error: { id: "404.2" } });
@@ -105,10 +105,10 @@ async function virtualFingerprint(page: Page): Promise<void> {
   });
 }
 
-test("the suggested category is already chosen and says how much is available in it", async ({ page }) => {
+// Sets the phone up and opens the Dunkin' charge's sheet, which YNAB's tally sends to Eating Out.
+async function openDunkinSheet(page: Page, created: unknown[]) {
   await page.setViewportSize({ width: 390, height: 844 });
   const feed: Alert[] = [{ id: "00000000000000a2", seq: 1, kind: "charge", amount: "43.12", merchant: "DUNKIN' DONUTS 3321", last4: "1234", when: new Date(Date.now() - 6 * 60_000).toISOString() }];
-  const created: unknown[] = [];
   await stubBackend(page, feed);
   await stubYnab(page, created);
   await page.route("https://api.whatsonchain.com/**", (route) => route.abort());
@@ -153,11 +153,21 @@ test("the suggested category is already chosen and says how much is available in
   await page.getByRole("list", { name: "Yours" }).getByRole("link").click();
   const sheet = page.getByRole("dialog", { name: "$43.12 at DUNKIN' DONUTS 3321" });
   await expect(sheet).toBeVisible();
+  return sheet;
+}
+
+test("the suggested category is already chosen and says how much is available in it", async ({ page }) => {
+  const created: unknown[] = [];
+  const sheet = await openDunkinSheet(page, created);
   const banner = sheet.getByRole("status").filter({ hasText: "Suggested" });
   await expect(banner).toBeVisible();
   await expect(banner).toContainText("Eating Out · $8 left · short by $35.12");
   await expect(sheet.getByRole("radio", { name: "Eating Out · $8 left · short by $35.12" })).toHaveAttribute("aria-checked", "true");
   await expect(sheet.getByRole("button", { name: "Done" })).toBeEnabled();
+  // narrowed to that one category (mw-mr4xgrw.62): no other row, its why still said, and the memo is right there, editable
+  await expect(sheet.getByRole("radio")).toHaveCount(1);
+  await expect(banner).toContainText("18 of 18 here went to Eating Out");
+  await sheet.getByLabel("Memo").fill("coffee run");
   expect(await page.evaluate(() => document.documentElement.scrollWidth <= window.innerWidth)).toBe(true);
   await banner.scrollIntoViewIfNeeded();
   await shot(page, "sort-suggestion-available");
@@ -169,4 +179,26 @@ test("the suggested category is already chosen and says how much is available in
   const sent = created[0] as { transaction: { amount: number; category_id: string } };
   expect(sent.transaction.amount).toBe(-43120);
   expect(sent.transaction.category_id).toBe("c2");
+});
+
+test("the X on the chosen row clears it and brings the full list back, scrolled to the top (mw-mr4xgrw.62)", async ({ page }) => {
+  const created: unknown[] = [];
+  const sheet = await openDunkinSheet(page, created);
+  await expect(sheet.getByRole("radio")).toHaveCount(1);
+  await expect(sheet.getByRole("button", { name: "Done" })).toBeEnabled();
+
+  await sheet.getByRole("button", { name: "Show all categories" }).click();
+  await expect(sheet.getByRole("radio")).toHaveCount(4);
+  for (const row of await sheet.getByRole("radio").all()) await expect(row).toHaveAttribute("aria-checked", "false");
+  await expect(sheet.getByRole("button", { name: "Done" })).toBeDisabled();
+  // the sheet's own scroll is at its top, so the title and the list begin in view
+  expect(await sheet.locator("div.overflow-y-auto").evaluate((el) => el.scrollTop)).toBe(0);
+  await shot(page, "sort-suggestion-full-list");
+
+  // choosing another row works as it always did
+  await sheet.getByRole("radio", { name: /Household/ }).click();
+  await sheet.getByRole("button", { name: "Done" }).click();
+  await expect(page.getByRole("dialog")).toHaveCount(0);
+  await expect.poll(() => created.length).toBe(1);
+  expect((created[0] as { transaction: { category_id: string } }).transaction.category_id).toBe("c3");
 });

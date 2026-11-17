@@ -13,6 +13,11 @@ export interface CategoryPickerProps {
   amount: number;
   selected: string | null;
   onSelect: (categoryId: string) => void;
+  /**
+   * Given while a suggestion is the choice: the list narrows to the chosen row, with an X that calls this to clear the choice and
+   * bring the full list back.
+   */
+  onClear?: () => void;
 }
 
 /** What is available in a category for `amount`, in the row's own words: ' · $212 left', and ' · short by $x' in red. */
@@ -53,7 +58,35 @@ export function AvailableLines({ categories, parts }: { categories: readonly Yna
   );
 }
 
-export function CategoryPicker({ categories, amount, selected, onSelect }: CategoryPickerProps) {
+export function CategoryPicker({ categories, amount, selected, onSelect, onClear }: CategoryPickerProps) {
+  const chosenCategory = onClear && selected !== null ? categories.find((c) => c.id === selected) : undefined;
+  if (chosenCategory && onClear) {
+    return (
+      <div role="radiogroup" aria-label="Category" className="flex items-stretch gap-2">
+        <div
+          role="radio"
+          aria-checked={true}
+          tabIndex={0}
+          className="min-h-12 min-w-0 flex-1 rounded-lg border border-blue-600 bg-blue-50 dark:bg-blue-950 ring-2 ring-blue-600 px-3 py-2 text-left text-base flex flex-wrap items-baseline gap-x-1"
+        >
+          <span className="font-medium text-gray-900 dark:text-gray-100">{chosenCategory.name}</span>
+          <CategoryFigure category={chosenCategory} amount={amount} />
+        </div>
+        <button
+          type="button"
+          aria-label="Show all categories"
+          onClick={onClear}
+          className="min-h-12 min-w-12 shrink-0 rounded-lg border border-gray-300 dark:border-gray-600 bg-white dark:bg-gray-800 text-xl font-semibold text-gray-800 dark:text-gray-100"
+        >
+          <span aria-hidden="true">✕</span>
+        </button>
+      </div>
+    );
+  }
+  return <FullPicker categories={categories} amount={amount} selected={selected} onSelect={onSelect} />;
+}
+
+function FullPicker({ categories, amount, selected, onSelect }: Omit<CategoryPickerProps, "onClear">) {
   const findId = useId();
   const [find, setFind] = useState("");
   const words = find.trim().toLowerCase();

@@ -2,7 +2,7 @@
 // Done, Later and Not mine. Done queues the entered transaction in the YNAB outbox and claims the alert, so it leaves every
 // phone. Every load here has a deadline with Try again (rule 32); every control is at least 48 px (rule 42's dialog).
 import { useEffect, useId, useRef, useState } from "react";
-import type { ReactNode } from "react";
+import type { ReactNode, RefObject } from "react";
 import { useNavigate, useOutletContext, useParams } from "react-router";
 import { useLiveQuery } from "dexie-react-hooks";
 import { openWithin, LaunchTimeout } from "pwa-kit/launch-gate";
@@ -55,7 +55,7 @@ function seconds(ms: number): string {
 }
 
 /** The sheet's frame: a dialog that rises from the bottom, its title read out, Escape and the dimmed page close it. */
-function Sheet({ title, onClose, children, footer }: { title: string; onClose: () => void; children: ReactNode; footer?: ReactNode }) {
+function Sheet({ title, onClose, children, footer, scroller }: { title: string; onClose: () => void; children: ReactNode; footer?: ReactNode; scroller?: RefObject<HTMLDivElement | null> }) {
   const titleId = useId();
   const ref = useRef<HTMLDivElement>(null);
   // the second tap of the double tap that opened the sheet lands on the dimmed page: it does not close it
@@ -83,7 +83,7 @@ function Sheet({ title, onClose, children, footer }: { title: string; onClose: (
         }}
         className="relative flex max-h-[92dvh] w-full max-w-lg flex-col rounded-t-2xl bg-gray-50 dark:bg-gray-900 shadow-xl outline-none"
       >
-        <div className="overflow-y-auto overscroll-contain px-4 pt-4 pb-2">
+        <div ref={scroller} className="overflow-y-auto overscroll-contain px-4 pt-4 pb-2">
           <h2 id={titleId} className="text-2xl font-bold text-gray-900 dark:text-gray-100 break-words">
             {title}
           </h2>
@@ -350,6 +350,7 @@ function chargeTitle(charge: WaitingCharge): string {
 /** The sheet for one charge that is waiting. */
 function ChargeSheet({ family, charge, onClose }: { family: FamilyFeed; charge: WaitingCharge; onClose: () => void }) {
   const guard = useTapGuard();
+  const scroller = useRef<HTMLDivElement>(null);
   const memoId = useId();
   const accountId = useId();
   const reasonId = useId();
@@ -414,6 +415,9 @@ function ChargeSheet({ family, charge, onClose }: { family: FamilyFeed; charge: 
     },
   });
   const suggestedShown = suggestion !== null && ("categoryId" in suggestion ? !splitting && categoryId === suggestion.categoryId : splitting);
+  // a suggestion of one category opens the list narrowed to it, with an X (clearChoice) that brings the full list back for good
+  const [fullList, setFullList] = useState(false);
+  const narrowed = !fullList && suggestedShown && suggestion !== null && "categoryId" in suggestion;
   const changedTo = suggestion !== null && !splitting && categoryId !== null && !suggestedShown ? categories?.find((c) => c.id === categoryId) : undefined;
   const receipt = useReceipt({
     shots: ynabOn ? shots : undefined,
@@ -439,6 +443,13 @@ function ChargeSheet({ family, charge, onClose }: { family: FamilyFeed; charge: 
   const selectCategory = (id: string) => {
     touched.current = true;
     setCategoryId(id);
+  };
+  const clearChoice = () => {
+    touched.current = true;
+    setFullList(true);
+    setCategoryId(null);
+    // the full list begins at its top, with its search field
+    if (scroller.current) scroller.current.scrollTop = 0;
   };
   const changeParts = (next: SplitPart[]) => {
     touched.current = true;
@@ -549,7 +560,7 @@ function ChargeSheet({ family, charge, onClose }: { family: FamilyFeed; charge: 
   );
 
   return (
-    <Sheet title={chargeTitle(charge)} onClose={onClose} footer={footer}>
+    <Sheet title={chargeTitle(charge)} onClose={onClose} footer={footer} scroller={scroller}>
       <dl className="mt-1 space-y-0.5 text-base text-gray-700 dark:text-gray-300">
         {alert.last4 && (
           <div>
@@ -708,7 +719,7 @@ function ChargeSheet({ family, charge, onClose }: { family: FamilyFeed; charge: 
           ) : splitting ? (
             <SplitEditor categories={categories} amount={amount} parts={parts} onChange={changeParts} />
           ) : (
-            <CategoryPicker categories={categories} amount={amount} selected={categoryId} onSelect={selectCategory} />
+            <CategoryPicker categories={categories} amount={amount} selected={categoryId} onSelect={selectCategory} onClear={narrowed ? clearChoice : undefined} />
           )}
 
           <div className="space-y-1">
