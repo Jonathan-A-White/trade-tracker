@@ -33,6 +33,7 @@ import {
   type Suggestion,
 } from "./suggest";
 import { readTally } from "@/ynab/tally";
+import { transferOffer, transferPayee } from "./transfer";
 import type { FamilyFeed } from "./sort-context";
 import type { FeedPhase } from "./useAlerts";
 import { chargeDate, handOff, money, readSorted, takeBack, whenLine, type WaitingCharge } from "./waiting";
@@ -355,12 +356,14 @@ function ChargeSheet({ family, charge, onClose }: { family: FamilyFeed; charge: 
   const accountId = useId();
   const reasonId = useId();
   const onceId = useId();
+  const cardId = useId();
   const ynabOn = useYnabOn();
   const categories = useLiveQuery(
     async () => (await ynab.listCategories()).filter((c: YnabCategory) => !c.hidden && !NOT_FOR_CHARGES.has(c.groupName)),
     [],
   );
   const accounts = useLiveQuery(async () => (await ynab.listAccounts()).filter((a) => !a.closed), []);
+  const payees = useLiveQuery(() => ynab.listPayees(), []);
   const balances = useBalances(ynabOn, family.refreshBalances, family.balanceTiming);
 
   const { alert, amount } = charge;
@@ -383,9 +386,24 @@ function ChargeSheet({ family, charge, onClose }: { family: FamilyFeed; charge: 
   // the suggestion fills the sheet in only while nothing has been chosen by hand; a receipt he photographed takes its place
   const touched = useRef(shots !== undefined);
   const [suggestion, setSuggestion] = useState<Suggestion | null>(null);
-  const suggesting = ynabOn && !shots;
+  const [notTransfer, setNotTransfer] = useState(false);
+  const [chosenCard, setChosenCard] = useState("");
   // first what he taught, else what the merchant normally goes to, both at once with no grist; else the mill is asked
-  const tallyRead = useTallyRead(suggesting, family.refreshTally);
+  const tallyRead = useTallyRead(ynabOn && !shots, family.refreshTally);
+  // a card payment is money moved to one of his cards, not an expense: offered as a Transfer (to a card YNAB has a transfer payee for) until he says otherwise
+  const offer =
+    ynabOn && !shots && tallyRead && accounts && payees && categories
+      ? transferOffer(
+          alert.merchant ?? "",
+          accounts.find((a) => a.id === account),
+          accounts.filter((a) => a.type !== "creditCard" || transferPayee(a, payees)),
+          seenCategoryIds(alert.merchant ?? "", categories, readTally()).size > 0,
+        )
+      : null;
+  const transferMode = offer !== null && !notTransfer && categoryId === null && !splitting;
+  const transferTo = offer ? (offer.account ?? offer.cards?.find((c) => c.id === chosenCard)) : undefined;
+  const transferPayeeId = transferTo && payees ? transferPayee(transferTo, payees)?.id : undefined;
+  const suggesting = ynabOn && !shots && !transferMode;
   const [atOnce, setAtOnce] = useState<AtOnce | "ask" | null>(null);
   if (atOnce === null && suggesting && tallyRead && categories && categories.length > 0) {
     // the alert's own merchant: a charge with none ('A charge' on the sheet) has no tally and teaches nothing
@@ -456,13 +474,17 @@ function ChargeSheet({ family, charge, onClose }: { family: FamilyFeed; charge: 
     setParts(next);
   };
 
-  const ready = splitting ? splitReady(parts, amount) : categoryId !== null;
+  const ready = transferMode ? !!transferPayeeId : splitting ? splitReady(parts, amount) : categoryId !== null;
   const reason = !ynabOn
     ? null
     : !family.writer
       ? "This phone cannot write to YNAB yet."
       : !account
         ? "Choose the YNAB account this card goes with."
+        : transferMode
+          ? transferPayeeId
+            ? null
+            : "Choose which card this pays."
         : splitting
           ? remainderCents(parts, amount) !== 0
             ? "The parts must add up to the charge."
@@ -482,10 +504,14 @@ function ChargeSheet({ family, charge, onClose }: { family: FamilyFeed; charge: 
       accountId: account,
       date: chargeDate(alert.when),
       amount,
-      ...(alert.merchant?.trim() ? { payeeName: alert.merchant.trim() } : {}),
-      ...(splitting
-        ? { splits: parts.map((p) => ({ categoryId: p.categoryId, amount: (partCents(p.amount) ?? 0) / 100 })) }
-        : { categoryId: categoryId ?? undefined }),
+      ...(transferMode && transferTo && transferPayeeId
+        ? { transfer: { accountId: transferTo.id, payeeId: transferPayeeId } }
+        : {
+            ...(alert.merchant?.trim() ? { payeeName: alert.merchant.trim() } : {}),
+            ...(splitting
+              ? { splits: parts.map((p) => ({ categoryId: p.categoryId, amount: (partCents(p.amount) ?? 0) / 100 })) }
+              : { categoryId: categoryId ?? undefined }),
+          }),
       ...(memo.trim() ? { memo: memo.trim() } : {}),
     };
     // the first Done of the family takes it: one another phone already took is not written twice
@@ -500,6 +526,11 @@ function ChargeSheet({ family, charge, onClose }: { family: FamilyFeed; charge: 
       // the account he chose for a card the book did not map is kept for its next charge; failing to keep it loses nothing sent
       if (!cardAccount && chosenAccount && alert.last4) await rememberAccount(alert.last4, chosenAccount).catch(() => {});
       family.sortedHere(charge, taken === "claimed");
+      if (transferMode) {
+        // a transfer is not a charge sorted into a category: nothing is recorded to suggest from, nothing taught
+        onClose();
+        return;
+      }
       const nameOf = (id: string) => categories?.find((c) => c.id === id)?.name;
       const sortedInto = (splitting ? parts.map((p) => ({ id: p.categoryId, amount: (partCents(p.amount) ?? 0) / 100 })) : [{ id: categoryId ?? "", amount }])
         .map((p) => ({ category: nameOf(p.id), amount: p.amount }))
@@ -608,6 +639,44 @@ function ChargeSheet({ family, charge, onClose }: { family: FamilyFeed; charge: 
             </div>
           )}
 
+          {transferMode && offer && (
+            <div className="space-y-3">
+              <div role="status" className="rounded-lg bg-blue-50 dark:bg-blue-950 px-3 py-2 text-sm text-gray-800 dark:text-gray-100">
+                <p className="text-base font-semibold">{transferTo ? `Transfer to ${transferTo.name}` : "Transfer to a card"}</p>
+                <p className="mt-1">This looks like a credit card payment, so YNAB gets it as money moved to the card, with no budget category.</p>
+              </div>
+              {offer.cards && (
+                <div className="space-y-1">
+                  <label htmlFor={cardId} className="text-sm font-medium text-gray-700 dark:text-gray-300">
+                    Which card
+                  </label>
+                  <select
+                    id={cardId}
+                    value={chosenCard}
+                    onChange={(e) => setChosenCard(e.target.value)}
+                    className="min-h-12 w-full rounded-lg border border-gray-300 dark:border-gray-600 bg-white dark:bg-gray-900 px-3 text-base text-gray-900 dark:text-gray-100"
+                  >
+                    <option value="">Choose the card</option>
+                    {offer.cards.map((c) => (
+                      <option key={c.id} value={c.id}>
+                        {c.name}
+                      </option>
+                    ))}
+                  </select>
+                </div>
+              )}
+              <button type="button" onClick={() => setNotTransfer(true)} className={`${SECONDARY} w-full`}>
+                Not a transfer
+              </button>
+            </div>
+          )}
+          {!transferMode && offer && notTransfer && (
+            <button type="button" onClick={() => setNotTransfer(false)} className={LINK}>
+              Make it a transfer
+            </button>
+          )}
+
+          {!transferMode && (<>
           <div className="flex items-center justify-between gap-2">
             <h3 className="text-base font-semibold text-gray-900 dark:text-gray-100">{splitting ? "Split" : "Category"}</h3>
             <button
@@ -721,6 +790,7 @@ function ChargeSheet({ family, charge, onClose }: { family: FamilyFeed; charge: 
           ) : (
             <CategoryPicker categories={categories} amount={amount} selected={categoryId} onSelect={selectCategory} onClear={narrowed ? clearChoice : undefined} />
           )}
+          </>)}
 
           <div className="space-y-1">
             <div className="flex items-baseline justify-between gap-2">

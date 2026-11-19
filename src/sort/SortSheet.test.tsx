@@ -276,6 +276,71 @@ describe("the Sort sheet", () => {
   });
 });
 
+describe("the Sort sheet: a credit-card payment is a transfer, not an expense (mw-6ww.148.53)", () => {
+  beforeEach(async () => {
+    const repo = new YnabRepository();
+    await repo.applyAccounts([accountOf("a1", "Chase Checking"), accountOf("a3", "Chase Amazon", "creditCard"), accountOf("a4", "Chase Freedom", "creditCard")], 2);
+    await repo.applyPayees([{ id: "tp3", name: "Transfer : Chase Amazon", deleted: false }, { id: "tp4", name: "Transfer : Chase Freedom", deleted: false }], 1);
+  });
+
+  it("$684.73 to 'Amazon & Whole Foods' on checking reads Transfer to Chase Amazon, asks for no category, and Done writes the transfer", async () => {
+    const user = userEvent.setup();
+    const alert = backend.receive({ kind: "charge", amount: "684.73", merchant: "Amazon & Whole Foods", last4: "1234", when: WHEN });
+    renderPhone(`/sort/${alert.id}`);
+    const sheet = await screen.findByRole("dialog", { name: "$684.73 at Amazon & Whole Foods" });
+    expect(await within(sheet).findByText("Transfer to Chase Amazon")).toBeInTheDocument();
+    expect(within(sheet).queryByRole("radio")).not.toBeInTheDocument();
+    expect(within(sheet).queryByText(/Stuff I Forgot to Budget For/)).not.toBeInTheDocument();
+    expect(within(sheet).queryByRole("button", { name: "Split" })).not.toBeInTheDocument();
+    const done = within(sheet).getByRole("button", { name: "Done" });
+    expect(done).toBeEnabled();
+    await user.click(done);
+    await waitFor(() => expect(create).toHaveBeenCalled());
+    expect(create).toHaveBeenCalledWith(
+      { accountId: "a1", date: "2026-10-30", amount: 684.73, transfer: { accountId: "a3", payeeId: "tp3" } },
+      { localId: `alert-${alert.id}` },
+    );
+    expect(localStorage.getItem(LEARNED_KEY)).toBeNull();
+  });
+
+  it("a wrong guess turns back into an expense with the categories, and Done writes the category (not a transfer)", async () => {
+    const user = userEvent.setup();
+    const alert = backend.receive({ kind: "charge", amount: "684.73", merchant: "Amazon & Whole Foods", last4: "1234", when: WHEN });
+    renderPhone(`/sort/${alert.id}`);
+    const sheet = await screen.findByRole("dialog", { name: "$684.73 at Amazon & Whole Foods" });
+    await within(sheet).findByText("Transfer to Chase Amazon");
+    await user.click(within(sheet).getByRole("button", { name: "Not a transfer" }));
+    expect(within(sheet).queryByText("Transfer to Chase Amazon")).not.toBeInTheDocument();
+    await user.click(await within(sheet).findByRole("radio", { name: /Household/ }));
+    await user.click(within(sheet).getByRole("button", { name: "Done" }));
+    await waitFor(() => expect(create).toHaveBeenCalled());
+    const input = create.mock.calls[0]![0] as Record<string, unknown>;
+    expect(input).toMatchObject({ accountId: "a1", amount: 684.73, categoryId: "c3" });
+    expect(input).not.toHaveProperty("transfer");
+  });
+
+  it("a payment that names no card asks which one, and Done waits for the choice", async () => {
+    const user = userEvent.setup();
+    const alert = backend.receive({ kind: "charge", amount: "120.00", merchant: "Chase Bank bill", last4: "1234", when: WHEN });
+    renderPhone(`/sort/${alert.id}`);
+    const sheet = await screen.findByRole("dialog", { name: "$120.00 at Chase Bank bill" });
+    const which = await within(sheet).findByLabelText("Which card");
+    expect(within(sheet).getByRole("button", { name: "Done" })).toBeDisabled();
+    await user.selectOptions(which, "a4");
+    await user.click(within(sheet).getByRole("button", { name: "Done" }));
+    await waitFor(() => expect(create).toHaveBeenCalled());
+    expect(create.mock.calls[0]![0]).toMatchObject({ transfer: { accountId: "a4", payeeId: "tp4" } });
+  });
+
+  it("an ordinary merchant on the same checking account is still sorted by category", async () => {
+    const alert = backend.receive({ kind: "charge", amount: "43.12", merchant: "Trader Joe's", last4: "1234", when: WHEN });
+    renderPhone(`/sort/${alert.id}`);
+    const sheet = await screen.findByRole("dialog", { name: "$43.12 at Trader Joe's" });
+    expect(await within(sheet).findByRole("radio", { name: /Groceries/ })).toBeInTheDocument();
+    expect(within(sheet).queryByText(/Transfer to/)).not.toBeInTheDocument();
+  });
+});
+
 describe("the Sort sheet and a double tap", () => {
   it("the second tap of the one that opened the sheet, landing on the dimmed page, does not close it", async () => {
     tapSettings.ms = 300;
