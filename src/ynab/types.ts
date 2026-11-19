@@ -51,6 +51,8 @@ export interface YnabTransactionWire {
   date: string;
   amount: number;
   payee_name?: string | null;
+  /** the payee by id; a transfer is written by naming YNAB's 'Transfer : <account>' payee, which makes transfer_account_id on the read */
+  payee_id?: string | null;
   category_id?: string | null;
   memo?: string | null;
   cleared?: "cleared" | "uncleared" | "reconciled";

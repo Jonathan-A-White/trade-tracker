@@ -11,8 +11,8 @@ const budget = {
   id: "b1",
   name: "Our Budget",
   categoryGroups: [groupOf("g1", "Food", [["c1", "Groceries"], ["c2", "Household"]])],
-  accounts: [accountOf("a1", "Checking")],
-  payees: [payeeOf("p1", "Trader Joe's")],
+  accounts: [accountOf("a1", "Checking"), accountOf("a2", "Chase Amazon", "creditCard")],
+  payees: [payeeOf("p1", "Trader Joe's"), payeeOf("tp2", "Transfer : Chase Amazon")],
 };
 
 const entry: YnabTransactionInput = {
@@ -98,6 +98,19 @@ describe("the YNAB writer: create", () => {
     });
     expect(sent).not.toHaveProperty("import_id");
     expect(ynab.transactions).toHaveLength(1);
+  });
+
+  it("sends a transfer to a card as the transfer payee, with no category, and YNAB holds it as a transfer to that account (mw-6ww.148.53)", async () => {
+    await setup();
+    await writer.create({ accountId: "a1", date: "2026-10-30", amount: 684.73, transfer: { accountId: "a2", payeeId: "tp2" } });
+    await writer.settled();
+
+    const sent = (posts()[0]?.body as { transaction: Record<string, unknown> }).transaction;
+    expect(sent).toMatchObject({ account_id: "a1", amount: -684730, payee_id: "tp2", approved: true });
+    expect(sent).not.toHaveProperty("category_id");
+    expect(sent).not.toHaveProperty("payee_name");
+    expect(ynab.transactions).toHaveLength(1);
+    expect(ynab.transactions[0]).toMatchObject({ account_id: "a1", transfer_account_id: "a2" });
   });
 
   it("sends a split as subtransactions that sum to the amount, with no category on the parent", async () => {

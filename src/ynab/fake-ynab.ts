@@ -17,6 +17,7 @@ export interface FakeYnabTransaction {
   date: string;
   amount: number;
   payee_name?: string | null;
+  payee_id?: string | null;
   category_id?: string | null;
   memo?: string | null;
   cleared?: string;
@@ -125,6 +126,14 @@ export function fakeYnab(token: string, budgets: FakeYnabBudget[]): FakeYnab {
         };
         if (method === "POST" && !tx[2] && written) {
           const made: FakeYnabTransaction = { ...written, id: `ynab-tx-${fake.transactions.length + 1}-${fake.requests.length}` };
+          // as YNAB does: naming the 'Transfer : <account>' payee makes the transaction a transfer to that account
+          const budget = fake.budgets.find((b) => b.id === decodeURIComponent(tx[1]!));
+          const transferPayee = written.payee_id ? budget?.payees.find((p) => p.id === written.payee_id && p.name.startsWith("Transfer : ")) : undefined;
+          const target = transferPayee ? budget?.accounts.find((a) => `Transfer : ${a.name}` === transferPayee.name) : undefined;
+          if (target) {
+            made.transfer_account_id = target.id;
+            made.payee_name = transferPayee!.name;
+          }
           fake.transactions.push(made);
           return lose(reply(201, { data: { transaction_ids: [made.id], transaction: made, server_knowledge: fake.knowledge } }));
         }

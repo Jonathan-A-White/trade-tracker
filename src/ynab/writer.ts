@@ -83,6 +83,11 @@ function toWire(input: YnabTransactionInput, localId: string): YnabTransactionWi
     cleared: "uncleared",
     approved: true,
   };
+  if (input.transfer) {
+    // a transfer is the transfer payee and nothing else: YNAB sets the other side itself and takes no category on it
+    wire.payee_id = input.transfer.payeeId;
+    return wire;
+  }
   if (input.payeeName) wire.payee_name = input.payeeName;
   if (input.splits && input.splits.length > 0) {
     const parts = input.splits.map((s) => ({

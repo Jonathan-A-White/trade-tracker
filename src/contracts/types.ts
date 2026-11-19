@@ -299,6 +299,8 @@ export interface YnabTransactionInput {
   payeeName?: string;
   /** the one category, when the transaction is not split */
   categoryId?: string;
+  /** money moved to another of his own accounts (a card payment) instead of spent: the account, and YNAB's 'Transfer : <account>' payee that makes it one; no category */
+  transfer?: { accountId: string; payeeId: string };
   /** a split: each part's dollars, adding up to `amount` */
   splits?: { categoryId: string; amount: number; memo?: string }[];
   /** the user's memo; the writer adds the marker 'TT:<local id>' to its tail */
