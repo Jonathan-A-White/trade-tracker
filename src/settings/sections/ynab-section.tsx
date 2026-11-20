@@ -8,6 +8,7 @@ import { YnabRepository } from "@/db/repositories/ynab-repository";
 import { browserStorage } from "@/services/factory-service";
 import { YnabRefusedError, createYnabClient } from "@/ynab/api";
 import { connectBudget, refreshCache } from "@/ynab/cache";
+import { staleTally } from "@/ynab/tally";
 import { readIdeaSettings, writeIdeaSettings } from "@/ynab/budget-ideas";
 import { readReasons, removeReason } from "@/ynab/budget-idea-reply";
 import { readShortRule, writeShortRule, type ShortRule } from "@/ynab/payee-rules";
@@ -123,6 +124,8 @@ export function YnabSection() {
       const pat = await openToken(browserStorage(), key);
       if (pat === null) throw new Error("The token could not be opened. Turn YNAB off and on again to enter it.");
       await refreshCache(createYnabClient(pat));
+      // the transactions kept for the Sort sheet (its history and the transfers YNAB holds) are read again at the next sheet
+      staleTally();
     } catch (err) {
       if (alive()) setError(messageOf(err));
     } finally {

@@ -7,6 +7,7 @@ import { db } from "@/db/database";
 import { YnabRepository } from "@/db/repositories/ynab-repository";
 import SettingsPage from "@/pages/settings-page";
 import type { PasskeyPort } from "@/services/passkey";
+import { TALLY_KEY, readTally } from "@/ynab/tally";
 import { YNAB_TOKEN_KEY } from "@/ynab/token";
 import { accountOf, fakeYnab, groupOf, payeeOf } from "@/ynab/fake-ynab";
 
@@ -209,6 +210,22 @@ describe("Settings > YNAB", () => {
     await waitFor(() => expect(ynab.calls.length).toBe(3));
     expect(ynab.calls.every((c) => c.path.endsWith("last_knowledge_of_server=100"))).toBe(true);
     await waitFor(async () => expect((await new YnabRepository().getConnection())?.payeesKnowledge).toBe(130));
+  });
+
+  it("Refresh also has the next Sort sheet read the transactions again (the transfers YNAB holds), keeping the tally until then (mw-6ww.148.66)", async () => {
+    const user = userEvent.setup();
+    renderSettings();
+    await user.click(screen.getByRole("button", { name: "Make key" }));
+    await screen.findByText("Key unlocked for today.");
+    await turnOn(user);
+    await user.type(screen.getByLabelText("Personal Access Token"), TOKEN);
+    await user.click(screen.getByRole("button", { name: "Check" }));
+    await user.click(await screen.findByRole("button", { name: "Our Budget" }));
+    await screen.findByText("Connected as Our Budget");
+    localStorage.setItem(TALLY_KEY, JSON.stringify({ budgetId: "b1", since: "2024-11-01", readAt: Date.now(), payees: { Costco: { c1: 2 } }, transfers: [] }));
+    await user.click(screen.getByRole("button", { name: "Refresh" }));
+    await waitFor(() => expect(readTally()?.readAt).toBe(0));
+    expect(readTally()?.payees).toEqual({ Costco: { c1: 2 } });
   });
 
   it("Clear All Data turns it Off and forgets the token, the cache and the payee rules", async () => {

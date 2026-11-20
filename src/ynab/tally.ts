@@ -20,6 +20,9 @@ export const TALLY_RETRY_MS = 60 * 60_000;
 export const INTERNAL_GROUP = "Internal Master Category";
 const UNCATEGORIZED = "uncategorized";
 
+/** How far back the transfers kept with the tally reach: a card payment is shown as the transfer YNAB holds only while it is recent. */
+export const TRANSFER_WINDOW_DAYS = 45;
+
 /** Per payee as YNAB names it, per category id: how many charges. */
 export type PayeeTally = Record<string, Record<string, number>>;
 
@@ -30,6 +33,16 @@ export interface Tally {
   /** when it was read, epoch ms */
   readAt: number;
   payees: PayeeTally;
+  /** the transfers between his accounts YNAB already holds, recent ones; not set on a tally kept before they were (it is read again) */
+  transfers?: RecentTransfer[];
+}
+
+/** A transfer YNAB holds: the account the money left, the account it reached (YNAB account ids), the day, and the dollars. */
+export interface RecentTransfer {
+  from: string;
+  to: string;
+  date: string;
+  amount: number;
 }
 
 const repo = new YnabRepository();
@@ -61,11 +74,41 @@ export function tallyTransactions(rows: readonly TallyRow[], notCounted: Readonl
   return payees;
 }
 
+/** As much of a transaction YNAB reads back as the transfers look at. */
+export type TransferRow = Pick<YnabTransactionWire, "account_id" | "date" | "amount" | "transfer_account_id" | "deleted">;
+
+/**
+ * The transfers of `rows` dated `since` or later: each once, though YNAB holds both its sides, as the account the money left, the account
+ * it reached, the day and the dollars. A deleted row, a row that is no transfer, and one of no amount are left out.
+ */
+export function recentTransfers(rows: readonly TransferRow[], since: string): RecentTransfer[] {
+  const found = new Map<string, RecentTransfer>();
+  for (const row of rows) {
+    if (row.deleted || !row.transfer_account_id || !row.amount || row.date < since) continue;
+    const out = row.amount < 0;
+    const transfer: RecentTransfer = {
+      from: out ? row.account_id : row.transfer_account_id,
+      to: out ? row.transfer_account_id : row.account_id,
+      date: row.date,
+      amount: Math.abs(row.amount) / 1000,
+    };
+    found.set(`${transfer.from}>${transfer.to}@${transfer.date}:${transfer.amount}`, transfer);
+  }
+  return [...found.values()];
+}
+
+function isRecentTransfer(value: unknown): value is RecentTransfer {
+  if (typeof value !== "object" || value === null) return false;
+  const t = value as Partial<RecentTransfer>;
+  return typeof t.from === "string" && typeof t.to === "string" && typeof t.date === "string" && typeof t.amount === "number";
+}
+
 function isTally(value: unknown): value is Tally {
   if (typeof value !== "object" || value === null) return false;
   const t = value as Partial<Tally>;
   if (typeof t.budgetId !== "string" || typeof t.since !== "string" || typeof t.readAt !== "number") return false;
   if (typeof t.payees !== "object" || t.payees === null) return false;
+  if (t.transfers !== undefined && !(Array.isArray(t.transfers) && t.transfers.every(isRecentTransfer))) return false;
   return Object.values(t.payees).every(
     (byCategory) => typeof byCategory === "object" && byCategory !== null && Object.values(byCategory).every((n) => typeof n === "number" && n > 0),
   );
@@ -78,6 +121,17 @@ export function readTally(): Tally | null {
     return isTally(kept) ? kept : null;
   } catch {
     return null;
+  }
+}
+
+/** Makes the tally one that is read again by the next sheet, keeping what it holds until then (the Settings refresh asks for this). */
+export function staleTally(): void {
+  const kept = readTally();
+  if (!kept) return;
+  try {
+    localStorage.setItem(TALLY_KEY, JSON.stringify({ ...kept, readAt: 0 }));
+  } catch {
+    // storage refused: the tally is read again when it is old
   }
 }
 
@@ -107,7 +161,8 @@ export async function refreshTally(client: YnabClient, options: { now?: number }
   const connection = await repo.getConnection();
   if (!connection) return;
   const kept = readTally();
-  if (kept && kept.budgetId === connection.budgetId && now - kept.readAt < TALLY_FRESH_MS) return;
+  // a tally kept before the transfers were kept with it has none: it is read again, and a delta would not bring them
+  if (kept && kept.budgetId === connection.budgetId && kept.transfers !== undefined && now - kept.readAt < TALLY_FRESH_MS) return;
   const stamp = (key: string) => Number(localStorage.getItem(key)) || 0;
   if (stamp(YNAB_BUSY_KEY) > now) return;
   const failedAt = stamp(TALLY_FAILED_KEY);
@@ -128,7 +183,7 @@ export async function refreshTally(client: YnabClient, options: { now?: number }
   const internal = new Set((await repo.listCategories()).filter((c) => c.groupName === INTERNAL_GROUP).map((c) => c.id));
   // YNAB may have been turned Off (or another budget chosen) while the read was out: what it brought is then not kept.
   if ((await repo.getConnection())?.budgetId !== connection.budgetId) return;
-  const tally: Tally = { budgetId: connection.budgetId, since, readAt: now, payees: tallyTransactions(rows, internal) };
+  const tally: Tally = { budgetId: connection.budgetId, since, readAt: now, payees: tallyTransactions(rows, internal), transfers: recentTransfers(rows, day(now - TRANSFER_WINDOW_DAYS * 24 * 60 * 60_000)) };
   try {
     localStorage.setItem(TALLY_KEY, JSON.stringify(tally));
     localStorage.removeItem(TALLY_FAILED_KEY);

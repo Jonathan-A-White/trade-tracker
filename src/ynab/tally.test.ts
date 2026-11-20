@@ -2,7 +2,7 @@ import { db } from "@/db/database";
 import { YnabRepository } from "@/db/repositories/ynab-repository";
 import { createYnabClient } from "./api";
 import { fakeYnab, groupOf, type FakeYnab, type FakeYnabTransaction } from "./fake-ynab";
-import { TALLY_FRESH_MS, TALLY_KEY, TALLY_WINDOW_DAYS, readTally, refreshTally, tallyTransactions } from "./tally";
+import { TALLY_FRESH_MS, TALLY_KEY, TALLY_WINDOW_DAYS, readTally, recentTransfers, refreshTally, staleTally, tallyTransactions } from "./tally";
 import { YNAB_BUSY_KEY } from "./writer";
 
 const repo = new YnabRepository();
@@ -153,5 +153,44 @@ describe("the tally of YNAB's transactions by payee and category", () => {
     expect(readTally()).toBeNull();
     localStorage.setItem(TALLY_KEY, JSON.stringify({ budgetId: "b1", payees: { Logos: { c4: "nine" } } }));
     expect(readTally()).toBeNull();
+  });
+});
+
+describe("the transfers YNAB already holds, kept with the tally (mw-6ww.148.66)", () => {
+  const move = (over: Partial<FakeYnabTransaction>): FakeYnabTransaction =>
+    charge("Transfer : Amazon & Whole Foods", null, { account_id: "pnc", date: "2026-11-18", amount: -684_730, transfer_account_id: "awf", ...over });
+
+  it("keeps each transfer once, from the account the money left to the account it reached, in dollars", () => {
+    const both = recentTransfers(
+      [move({}), move({ account_id: "awf", amount: 684_730, payee_name: "Transfer : PNC Checking", transfer_account_id: "pnc" })],
+      "2026-10-01",
+    );
+    expect(both).toEqual([{ from: "pnc", to: "awf", date: "2026-11-18", amount: 684.73 }]);
+  });
+
+  it("leaves out an ordinary charge, a deleted row, one before the window, and a zero amount", () => {
+    expect(recentTransfers([charge("Costco", "c1"), move({ deleted: true }), move({ date: "2026-09-01" }), move({ amount: 0 })], "2026-10-01")).toEqual([]);
+  });
+
+  it("refreshTally keeps the recent transfers, and reads again a tally kept before it kept them", async () => {
+    ynab.transactions.push(move({}));
+    await refreshTally(client(), { now: NOW });
+    expect(readTally()?.transfers).toEqual([{ from: "pnc", to: "awf", date: "2026-11-18", amount: 684.73 }]);
+    const kept = JSON.parse(localStorage.getItem(TALLY_KEY)!) as Record<string, unknown>;
+    delete kept.transfers;
+    localStorage.setItem(TALLY_KEY, JSON.stringify(kept));
+    const before = reads().length;
+    await refreshTally(client(), { now: NOW + 1000 });
+    expect(reads().length).toBe(before + 1);
+    expect(readTally()?.transfers).toHaveLength(1);
+  });
+
+  it("staleTally makes the next sheet read the transactions again, and forgets nothing else", async () => {
+    await refreshTally(client(), { now: NOW });
+    staleTally();
+    expect(readTally()?.payees).toEqual({});
+    const before = reads().length;
+    await refreshTally(client(), { now: NOW + 1000 });
+    expect(reads().length).toBe(before + 1);
   });
 });
