@@ -36,6 +36,8 @@ export interface YnabPayeeWire {
   id: string;
   name: string;
   deleted: boolean;
+  /** set on the payee YNAB makes for transfers into an account */
+  transfer_account_id?: string | null;
 }
 
 /** A list read from YNAB: the rows and the server_knowledge to ask the next delta from. */

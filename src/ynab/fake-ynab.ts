@@ -82,8 +82,8 @@ export function accountOf(id: string, name: string, type = "checking", onBudget 
   return { id, name, type, on_budget: onBudget, closed: false, deleted: false };
 }
 
-export function payeeOf(id: string, name: string): YnabPayeeWire {
-  return { id, name, deleted: false };
+export function payeeOf(id: string, name: string, transferAccountId?: string): YnabPayeeWire {
+  return { id, name, deleted: false, ...(transferAccountId ? { transfer_account_id: transferAccountId } : {}) };
 }
 
 /** A fake YNAB that accepts exactly `token`; any other answers 401. */
@@ -129,7 +129,7 @@ export function fakeYnab(token: string, budgets: FakeYnabBudget[]): FakeYnab {
           // as YNAB does: naming the 'Transfer : <account>' payee makes the transaction a transfer to that account
           const budget = fake.budgets.find((b) => b.id === decodeURIComponent(tx[1]!));
           const transferPayee = written.payee_id ? budget?.payees.find((p) => p.id === written.payee_id && p.name.startsWith("Transfer : ")) : undefined;
-          const target = transferPayee ? budget?.accounts.find((a) => `Transfer : ${a.name}` === transferPayee.name) : undefined;
+          const target = transferPayee ? budget?.accounts.find((a) => a.id === transferPayee.transfer_account_id || `Transfer : ${a.name}` === transferPayee.name) : undefined;
           if (target) {
             made.transfer_account_id = target.id;
             made.payee_name = transferPayee!.name;

@@ -56,6 +56,12 @@ describe("YnabRepository", () => {
     expect((await repo.getConnection())?.payeesKnowledge).toBe(6);
   });
 
+  it("keeps the account a transfer payee is for, and nothing extra on other payees", async () => {
+    await repo.saveConnection({ budgetId: "b1", budgetName: "Our Budget" });
+    await repo.applyPayees([payeeOf("p1", "Trader Joe's"), payeeOf("p2", "Transfer : Chase Amazon", "a3")], 4);
+    expect(await repo.listPayees()).toEqual([{ id: "p1", name: "Trader Joe's" }, { id: "p2", name: "Transfer : Chase Amazon", transferAccountId: "a3" }]);
+  });
+
   it("clears the connection and everything cached", async () => {
     await repo.saveConnection({ budgetId: "b1", budgetName: "Our Budget" });
     await repo.applyPayees([payeeOf("p1", "Trader Joe's")], 4);

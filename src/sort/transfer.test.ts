@@ -83,4 +83,17 @@ describe("transferOffer: a card payment is a transfer, not an expense", () => {
     expect(transferPayee(amazon, [{ id: "p1", name: "Trader Joe's" }, { id: "p9", name: "Transfer : Chase Amazon" }])?.id).toBe("p9");
     expect(transferPayee(amazon, [{ id: "p1", name: "Trader Joe's" }])).toBeUndefined();
   });
+
+  // YNAB's own payee row says which account it is the transfer payee of (transfer_account_id), so a rename does not lose it
+  it("finds the transfer payee by its account id when the account was renamed after the payee was read", () => {
+    const renamed = { ...amazon, name: "Chase Amazon Prime" };
+    const payees = [{ id: "p1", name: "Trader Joe's" }, { id: "p9", name: "Transfer : Chase Amazon", transferAccountId: amazon.id }];
+    expect(transferPayee(renamed, payees)?.id).toBe("p9");
+    expect(transferPayee(amazon, [{ id: "p9", name: "Transfer : Old Name", transferAccountId: amazon.id }])?.id).toBe("p9");
+  });
+
+  it("does not take another account's transfer payee by name when the payee names a different account", () => {
+    const payees = [{ id: "p9", name: "Transfer : Chase Amazon", transferAccountId: "some-other-account" }];
+    expect(transferPayee(amazon, payees)).toBeUndefined();
+  });
 });

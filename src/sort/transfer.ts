@@ -78,8 +78,14 @@ function paymentArriving(merchant: string, card: YnabAccount, accounts: readonly
   return sources.length === 1 ? { account: card, source: sources[0]! } : { account: card, sources };
 }
 
-/** YNAB's payee for the transfers into an account, the one a write names to make a transfer ('Transfer : <account>'). */
+/**
+ * YNAB's payee for the transfers into an account, the one a write names to make a transfer. It is found by the account id the payee
+ * carries (so a renamed account, or a payee list read before the rename, still matches); a payee cached without one is found by its name
+ * 'Transfer : <account>', unless it names a different account.
+ */
 export function transferPayee(account: YnabAccount, payees: readonly YnabPayee[]): YnabPayee | undefined {
+  const byId = payees.find((p) => p.transferAccountId === account.id);
+  if (byId) return byId;
   const want = `transfer : ${account.name}`.toLowerCase();
-  return payees.find((p) => p.name.trim().toLowerCase().replace(/\s*:\s*/, " : ") === want);
+  return payees.find((p) => !p.transferAccountId && p.name.trim().toLowerCase().replace(/\s*:\s*/, " : ") === want);
 }

@@ -66,7 +66,7 @@ export class YnabRepository {
     await db.transaction("rw", [db.ynabPayees, db.ynabConnection], async () => {
       for (const p of payees) {
         if (p.deleted) await db.ynabPayees.delete(p.id);
-        else await db.ynabPayees.put({ id: p.id, name: p.name });
+        else await db.ynabPayees.put({ id: p.id, name: p.name, ...(p.transfer_account_id ? { transferAccountId: p.transfer_account_id } : {}) });
       }
       await db.ynabConnection.update(CONNECTION_ID, { payeesKnowledge: knowledge });
     });
