@@ -32,8 +32,8 @@ import {
   type SortChargeAsk,
   type Suggestion,
 } from "./suggest";
-import { readTally } from "@/ynab/tally";
-import { transferOffer, transferPayee } from "./transfer";
+import { readTally, TALLY_FRESH_MS } from "@/ynab/tally";
+import { heldTransfer, transferOffer, transferPayee } from "./transfer";
 import type { FamilyFeed } from "./sort-context";
 import type { FeedPhase } from "./useAlerts";
 import { chargeDate, handOff, money, readSorted, takeBack, whenLine, type WaitingCharge } from "./waiting";
@@ -164,7 +164,11 @@ function useBalances(enabled: boolean, refresh: () => Promise<void>, timing: Lau
  * else once this sheet's read of it has ended, whether it was read or not.
  */
 function useTallyRead(enabled: boolean, refresh: () => Promise<void>): boolean {
-  const [kept] = useState(() => readTally() !== null);
+  // a tally old enough to be read again (or kept before the transfers were) is waited for, so the sheet is not drawn from a stale one
+  const [kept] = useState(() => {
+    const tally = readTally();
+    return tally !== null && tally.transfers !== undefined && Date.now() - tally.readAt < TALLY_FRESH_MS;
+  });
   const [ended, setEnded] = useState(false);
   const refreshRef = useRef(refresh);
   useEffect(() => {
@@ -393,6 +397,7 @@ function ChargeSheet({ family, charge, onClose }: { family: FamilyFeed; charge: 
   // first what he taught, else what the merchant normally goes to, both at once with no grist; else the mill is asked
   const tallyRead = useTallyRead(ynabOn && !shots, family.refreshTally);
   // a card payment is money moved to one of his cards, not an expense: offered as a Transfer (to a card YNAB has a transfer payee for) until he says otherwise
+  // a payment YNAB already holds as a transfer (same amount, within two days) is shown as that one, whatever the alert calls the merchant
   const offer =
     ynabOn && !shots && tallyRead && accounts && payees && categories
       ? transferOffer(
@@ -400,9 +405,11 @@ function ChargeSheet({ family, charge, onClose }: { family: FamilyFeed; charge: 
           accounts.find((a) => a.id === account),
           accounts.filter((a) => a.type !== "creditCard" || transferPayee(a, payees)),
           seenCategoryIds(alert.merchant ?? "", categories, readTally()).size > 0,
+          heldTransfer(amount, chargeDate(alert.when), accounts.find((a) => a.id === account), accounts, readTally()?.transfers ?? []),
         )
       : null;
-  const transferMode = offer !== null && !notTransfer && categoryId === null && !splitting;
+  // a transfer YNAB already holds is shown whatever a suggestion has chosen meanwhile: there is nothing to choose
+  const transferMode = offer !== null && !notTransfer && (offer.held === true || (categoryId === null && !splitting));
   const transferTo = offer ? (offer.account ?? offer.cards?.find((c) => c.id === chosenCard)) : undefined;
   // a payment read on the card itself comes from a cash account: the one there is, or the one he chooses of several
   const transferSource = offer ? (offer.source ?? offer.sources?.find((a) => a.id === chosenSource)) : undefined;
@@ -478,10 +485,14 @@ function ChargeSheet({ family, charge, onClose }: { family: FamilyFeed; charge: 
     setParts(next);
   };
 
-  const ready = transferMode ? !!transferPayeeId && (!offer?.sources || !!transferSource) : splitting ? splitReady(parts, amount) : categoryId !== null;
+  // the transfer YNAB already holds needs no account chosen and no write
+  const heldMode = transferMode && offer?.held === true;
+  const ready = heldMode ? true : transferMode ? !!transferPayeeId && (!offer?.sources || !!transferSource) : splitting ? splitReady(parts, amount) : categoryId !== null;
   const reason = !ynabOn
     ? null
-    : !family.writer
+    : heldMode
+      ? null
+      : !family.writer
       ? "This phone cannot write to YNAB yet."
       : !account
         ? "Choose the YNAB account this card goes with."
@@ -500,15 +511,12 @@ function ChargeSheet({ family, charge, onClose }: { family: FamilyFeed; charge: 
           : categoryId === null
             ? "Choose a category."
             : null;
-  const canDone = ynabOn && !!family.writer && !!account && ready && !saving;
+  const canDone = ynabOn && (heldMode || (!!family.writer && !!account)) && ready && !saving;
 
-  async function done() {
-    if (!canDone || !family.writer || !account) return;
-    setSaving(true);
-    setSaveError(null);
-    const input: YnabTransactionInput = {
+  function inputFor(accountId: string): YnabTransactionInput {
+    return {
       // a payment read on the card itself is written from the cash account it came from, as a transfer to the card
-      accountId: transferMode && transferSource ? transferSource.id : account,
+      accountId: transferMode && transferSource ? transferSource.id : accountId,
       date: chargeDate(alert.when),
       amount,
       ...(transferMode && transferTo && transferPayeeId
@@ -521,6 +529,14 @@ function ChargeSheet({ family, charge, onClose }: { family: FamilyFeed; charge: 
           }),
       ...(memo.trim() ? { memo: memo.trim() } : {}),
     };
+  }
+
+  async function done() {
+    if (!canDone || (!heldMode && (!family.writer || !account))) return;
+    setSaving(true);
+    setSaveError(null);
+    // the transfer YNAB already holds is not written again: Done only takes the alert off the list
+    const write = heldMode || !family.writer || !account ? null : { writer: family.writer, input: inputFor(account) };
     // the first Done of the family takes it: one another phone already took is not written twice
     const taken = await family.feed.take(alert.id);
     if (taken === "gone") {
@@ -529,7 +545,7 @@ function ChargeSheet({ family, charge, onClose }: { family: FamilyFeed; charge: 
       return;
     }
     try {
-      await family.writer.create(input, { localId: `alert-${alert.id}` });
+      if (write) await write.writer.create(write.input, { localId: `alert-${alert.id}` });
       // the account he chose for a card the book did not map is kept for its next charge; failing to keep it loses nothing sent
       if (!cardAccount && chosenAccount && alert.last4) await rememberAccount(alert.last4, chosenAccount).catch(() => {});
       family.sortedHere(charge, taken === "claimed");
@@ -625,7 +641,7 @@ function ChargeSheet({ family, charge, onClose }: { family: FamilyFeed; charge: 
         <p className="mt-4 text-base text-gray-700 dark:text-gray-300">Connect YNAB under Settings to sort a charge into a category.</p>
       ) : (
         <div className="mt-4 space-y-4">
-          {!cardAccount && accounts && (
+          {!cardAccount && accounts && !heldMode && (
             <div className="space-y-1">
               <label htmlFor={accountId} className="text-sm font-medium text-gray-700 dark:text-gray-300">
                 YNAB account
@@ -649,8 +665,20 @@ function ChargeSheet({ family, charge, onClose }: { family: FamilyFeed; charge: 
           {transferMode && offer && (
             <div className="space-y-3">
               <div role="status" className="rounded-lg bg-blue-50 dark:bg-blue-950 px-3 py-2 text-sm text-gray-800 dark:text-gray-100">
-                <p className="text-base font-semibold">{transferSource && transferTo ? `Transfer from ${transferSource.name}` : transferTo ? `Transfer to ${transferTo.name}` : "Transfer to a card"}</p>
-                <p className="mt-1">This looks like a credit card payment, so YNAB gets it as money moved to the card, with no budget category.</p>
+                <p className="text-base font-semibold">
+                  {heldMode && transferSource && transferTo
+                    ? `Transfer from ${transferSource.name} to ${transferTo.name}`
+                    : transferSource && transferTo
+                      ? `Transfer from ${transferSource.name}`
+                      : transferTo
+                        ? `Transfer to ${transferTo.name}`
+                        : "Transfer to a card"}
+                </p>
+                <p className="mt-1">
+                  {heldMode
+                    ? "YNAB already has this payment as a transfer, so nothing is written to YNAB. Done only takes it off the list."
+                    : "This looks like a credit card payment, so YNAB gets it as money moved to the card, with no budget category."}
+                </p>
               </div>
               {offer.cards && (
                 <div className="space-y-1">

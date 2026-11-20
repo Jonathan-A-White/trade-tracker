@@ -4,8 +4,13 @@
 // ('Amazon & Whole Foods' for the account 'Chase Amazon'), which counts when the charge is on a cash account, or on a card number the
 // book has no account for yet, and the merchant has never been sorted as an expense before. On a card account itself a purchase is never
 // a payment to it, but the payment arriving there (the merchant says payment, or is the card's own whole name of two words or more)
-// is a transfer from his checking or savings account (mw-6ww.148.59).
+// is a transfer from his checking or savings account (mw-6ww.148.59). A payment YNAB already holds as a transfer (same amount, within two
+// days, on the charge's account, or on any account when its card number is unmapped) is shown as that transfer whatever the merchant
+// says, and nothing is written to YNAB for it (mw-6ww.148.66).
 import type { YnabAccount, YnabPayee } from "@/contracts/types";
+import type { RecentTransfer } from "@/ynab/tally";
+
+export type { RecentTransfer };
 
 /** The merchant says it is a card payment. */
 const PAYMENT_WORDS = [
@@ -37,10 +42,47 @@ function wordsOf(name: string): string[] {
 /** What the sheet offers: the card account the charge pays, or the cards to choose from when the merchant says payment but not which. */
 export type TransferOffer =
   /** `source`, when set, is the cash account the money comes from: the charge was read on the card itself, so the write goes on that account */
-  | { account: YnabAccount; cards?: undefined; source?: YnabAccount; sources?: undefined }
+  | { account: YnabAccount; cards?: undefined; source?: YnabAccount; sources?: undefined; held?: undefined }
   /** `sources`: the payment arrived on the card and he has two or more checking or savings accounts, so he says which one paid it */
-  | { account: YnabAccount; cards?: undefined; source?: undefined; sources: YnabAccount[] }
-  | { account?: undefined; cards: YnabAccount[]; source?: undefined; sources?: undefined };
+  | { account: YnabAccount; cards?: undefined; source?: undefined; sources: YnabAccount[]; held?: undefined }
+  | { account?: undefined; cards: YnabAccount[]; source?: undefined; sources?: undefined; held?: undefined }
+  /** YNAB already holds the payment as a transfer from `source` to `account`: nothing is asked and nothing is written */
+  | { account: YnabAccount; cards?: undefined; source: YnabAccount; sources?: undefined; held: true };
+
+/** A transfer YNAB already holds for the charge: the account the money left and the account it reached. */
+export interface HeldTransfer {
+  from: YnabAccount;
+  to: YnabAccount;
+}
+
+const DAY_MS = 24 * 60 * 60_000;
+/** How many days apart the charge and YNAB's transfer may be dated (the bank's day and the alert's differ). */
+export const HELD_DAYS = 2;
+
+const dayNumber = (date: string): number => Date.parse(`${date}T00:00:00Z`) / DAY_MS;
+
+/**
+ * The transfer YNAB already holds for a charge of `amount` dollars on `date` (YYYY-MM-DD), or null. The amount must be the same to the
+ * cent and the day within HELD_DAYS. `on` is the account the charge was read on: a card is matched as the account the money reached, a
+ * cash account as the one it left; with no account (an unmapped card number) a transfer between any two of his accounts matches. Of
+ * several the nearest day wins.
+ */
+export function heldTransfer(amount: number, date: string, on: YnabAccount | undefined, accounts: readonly YnabAccount[], held: readonly RecentTransfer[]): HeldTransfer | null {
+  const cents = Math.round(amount * 100);
+  const want = dayNumber(date);
+  let best: { gap: number; found: HeldTransfer } | null = null;
+  for (const t of held) {
+    if (Math.round(t.amount * 100) !== cents) continue;
+    const gap = Math.abs(dayNumber(t.date) - want);
+    if (!(gap <= HELD_DAYS) || (best && best.gap <= gap)) continue;
+    const from = accounts.find((a) => a.id === t.from);
+    const to = accounts.find((a) => a.id === t.to);
+    if (!from || !to) continue;
+    if (on && !(on.type === "creditCard" ? on.id === to.id : on.id === from.id)) continue;
+    best = { gap, found: { from, to } };
+  }
+  return best?.found ?? null;
+}
 
 export function saysCardPayment(merchant: string): boolean {
   return PAYMENT_WORDS.some((re) => re.test(merchant));
@@ -48,9 +90,17 @@ export function saysCardPayment(merchant: string): boolean {
 
 /**
  * The transfer a charge is, or null when it is an expense. `from` is the account the charge is on, `soldAsExpense` whether the merchant
- * has been sorted into a category before (then a name alone does not make it a payment).
+ * has been sorted into a category before (then a name alone does not make it a payment). `held`, the transfer YNAB already has for the
+ * charge, comes first: it says what the charge is whatever the merchant is called.
  */
-export function transferOffer(merchant: string, from: YnabAccount | undefined, accounts: readonly YnabAccount[], soldAsExpense: boolean): TransferOffer | null {
+export function transferOffer(
+  merchant: string,
+  from: YnabAccount | undefined,
+  accounts: readonly YnabAccount[],
+  soldAsExpense: boolean,
+  held?: HeldTransfer | null,
+): TransferOffer | null {
+  if (held) return { account: held.to, source: held.from, held: true };
   if (!merchant.trim()) return null;
   if (from?.type === "creditCard") return paymentArriving(merchant, from, accounts, soldAsExpense);
   const cards = accounts.filter((a) => a.type === "creditCard" && !a.closed && a.id !== from?.id);

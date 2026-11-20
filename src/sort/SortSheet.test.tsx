@@ -384,6 +384,80 @@ describe("the Sort sheet: a credit-card payment is a transfer, not an expense (m
   });
 });
 
+// mw-6ww.148.66: his $684.73 payment, already a transfer in his YNAB, read on the sheet as 'A charge' (the alert names no merchant)
+describe("the Sort sheet: a payment YNAB already holds as a transfer is shown as that transfer (mw-6ww.148.66)", () => {
+  let held: FakeYnab;
+  const PAID = new Date(2026, 10, 18, 21, 47).toISOString();
+  const tx = (id: string, account: string, amount: number, payee: string, to: string, date = "2026-11-18"): FakeYnabTransaction => ({ id, account_id: account, date, amount, payee_name: payee, category_id: null, transfer_account_id: to });
+  const seams = (): Partial<SortSeams> => ({ refreshTally: () => refreshTally(createYnabClient("good", held.fetch), { now: Date.parse("2026-11-20T12:00:00Z") }) });
+
+  beforeEach(async () => {
+    const repo = new YnabRepository();
+    await repo.applyAccounts(
+      [
+        { ...accountOf("a1", "Chase Freedom"), deleted: true },
+        { ...accountOf("a2", "Citi Double"), deleted: true },
+        accountOf("pnc", "PNC Checking"),
+        accountOf("td", "TD Bank Checking"),
+        accountOf("sav", "PNC Savings", "savings"),
+        accountOf("awf", "Amazon & Whole Foods", "creditCard"),
+        accountOf("tgt", "Target", "creditCard"),
+      ],
+      2,
+    );
+    await repo.applyPayees([{ id: "tp-awf", name: "Transfer : Amazon & Whole Foods", deleted: false, transfer_account_id: "awf" }], 1);
+    held = fakeYnab("good", [{ id: "b1", name: "Our Budget", categoryGroups: [], accounts: [], payees: [] }]);
+    held.transactions.push(
+      tx("h1", "pnc", -684_730, "Transfer : Amazon & Whole Foods", "awf"),
+      tx("h2", "awf", 684_730, "Transfer : PNC Checking", "pnc"),
+    );
+  });
+
+  const showsHeldTransfer = async (alertId: string) => {
+    const sheet = await screen.findByRole("dialog", { name: "$684.73 at A charge" });
+    expect(await within(sheet).findByText("Transfer from PNC Checking to Amazon & Whole Foods")).toBeInTheDocument();
+    expect(within(sheet).queryByRole("radio")).not.toBeInTheDocument();
+    expect(within(sheet).queryByText(/Stuff I Forgot to Budget For/)).not.toBeInTheDocument();
+    expect(within(sheet).queryByRole("button", { name: "Split" })).not.toBeInTheDocument();
+    expect(alertId).toBeTruthy();
+    return sheet;
+  };
+
+  it("on a card number the book has no account for (4944), no merchant: the transfer YNAB holds, no category, and Done writes nothing to YNAB", async () => {
+    const user = userEvent.setup();
+    const alert = backend.receive({ kind: "charge", amount: "684.73", last4: "4944", when: PAID });
+    renderPhone(`/sort/${alert.id}`, seams());
+    const sheet = await showsHeldTransfer(alert.id);
+    const done = within(sheet).getByRole("button", { name: "Done" });
+    await waitFor(() => expect(done).toBeEnabled());
+    await user.click(done);
+    await waitFor(() => expect(where()).toBe("/"));
+    expect(create).not.toHaveBeenCalled();
+    expect(localStorage.getItem(LEARNED_KEY)).toBeNull();
+  });
+
+  it("on the Amazon & Whole Foods card itself (4944 mapped to it): the same transfer, picker of cash accounts not needed, nothing written", async () => {
+    const user = userEvent.setup();
+    await new FamilyRepository().addCard({ lastFour: "4944", owner: "Jonathan", accountId: "awf" });
+    const alert = backend.receive({ kind: "charge", amount: "684.73", last4: "4944", when: PAID });
+    renderPhone(`/sort/${alert.id}`, seams());
+    const sheet = await showsHeldTransfer(alert.id);
+    expect(within(sheet).queryByLabelText("Paid from")).not.toBeInTheDocument();
+    await user.click(within(sheet).getByRole("button", { name: "Done" }));
+    await waitFor(() => expect(where()).toBe("/"));
+    expect(create).not.toHaveBeenCalled();
+  });
+
+  it("a charge of the same amount that YNAB holds no transfer for is still sorted by category", async () => {
+    held.transactions.length = 0;
+    const alert = backend.receive({ kind: "charge", amount: "684.73", last4: "4944", when: PAID });
+    renderPhone(`/sort/${alert.id}`, seams());
+    const sheet = await screen.findByRole("dialog", { name: "$684.73 at A charge" });
+    expect(await within(sheet).findByRole("radio", { name: /Groceries/ })).toBeInTheDocument();
+    expect(within(sheet).queryByText(/^Transfer/)).not.toBeInTheDocument();
+  });
+});
+
 describe("the Sort sheet and a double tap", () => {
   it("the second tap of the one that opened the sheet, landing on the dimmed page, does not close it", async () => {
     tapSettings.ms = 300;

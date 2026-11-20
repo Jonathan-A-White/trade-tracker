@@ -1,5 +1,5 @@
 import type { YnabAccount } from "@/contracts/types";
-import { saysCardPayment, transferOffer, transferPayee } from "./transfer";
+import { heldTransfer, saysCardPayment, transferOffer, transferPayee, type RecentTransfer } from "./transfer";
 
 const acct = (id: string, name: string, type = "checking"): YnabAccount => ({ id, name, type, onBudget: true, closed: false });
 const checking = acct("a1", "Chase Checking");
@@ -95,5 +95,58 @@ describe("transferOffer: a card payment is a transfer, not an expense", () => {
   it("does not take another account's transfer payee by name when the payee names a different account", () => {
     const payees = [{ id: "p9", name: "Transfer : Chase Amazon", transferAccountId: "some-other-account" }];
     expect(transferPayee(amazon, payees)).toBeUndefined();
+  });
+
+  // mw-6ww.148.66: the alert names no merchant ('A charge' on the sheet); YNAB already holds the payment as a transfer
+  describe("a payment YNAB already holds as a transfer", () => {
+    const pnc = acct("r1", "PNC Checking");
+    const td = acct("r8", "TD Bank Checking");
+    const sav = acct("r9", "PNC Savings", "savings");
+    const awf = acct("r3", "Amazon & Whole Foods", "creditCard");
+    const costco = acct("r4", "Costco", "creditCard");
+    const gift = acct("r2", "Amazon Gift Card", "cash");
+    const all = [pnc, td, sav, gift, awf, costco];
+    // YNAB: 2026-11-18, PNC Checking -684.73, payee 'Transfer : Amazon & Whole Foods'
+    const held: RecentTransfer[] = [{ from: "r1", to: "r3", date: "2026-11-18", amount: 684.73 }];
+
+    it("his $684.73 with merchant 'A charge' on an unmapped card number is the transfer from PNC Checking to Amazon & Whole Foods, whatever the merchant", () => {
+      expect(heldTransfer(684.73, "2026-11-18", undefined, all, held)).toEqual({ from: pnc, to: awf });
+      expect(transferOffer("A charge", undefined, all, false, heldTransfer(684.73, "2026-11-18", undefined, all, held))).toEqual({ account: awf, source: pnc, held: true });
+      expect(transferOffer("", undefined, all, false, heldTransfer(684.73, "2026-11-18", undefined, all, held))).toEqual({ account: awf, source: pnc, held: true });
+    });
+
+    it("on the Amazon & Whole Foods card itself, or on PNC Checking, it is the same transfer", () => {
+      expect(heldTransfer(684.73, "2026-11-18", awf, all, held)).toEqual({ from: pnc, to: awf });
+      expect(heldTransfer(684.73, "2026-11-18", pnc, all, held)).toEqual({ from: pnc, to: awf });
+    });
+
+    it("the date may differ by two days, not three; the amount must be the same to the cent", () => {
+      expect(heldTransfer(684.73, "2026-11-20", undefined, all, held)).not.toBeNull();
+      expect(heldTransfer(684.73, "2026-11-16", undefined, all, held)).not.toBeNull();
+      expect(heldTransfer(684.73, "2026-11-21", undefined, all, held)).toBeNull();
+      expect(heldTransfer(684.72, "2026-11-18", undefined, all, held)).toBeNull();
+    });
+
+    it("an account the transfer does not touch, or a checking account that only received it, is not matched", () => {
+      expect(heldTransfer(684.73, "2026-11-18", costco, all, held)).toBeNull();
+      expect(heldTransfer(684.73, "2026-11-18", td, all, held)).toBeNull();
+      expect(heldTransfer(684.73, "2026-11-18", undefined, [pnc, td], held)).toBeNull();
+    });
+
+    it("a transfer between his savings and checking is matched on either account kind, once per account kind", () => {
+      const move: RecentTransfer[] = [{ from: "r9", to: "r1", date: "2026-11-18", amount: 50 }];
+      expect(heldTransfer(50, "2026-11-18", sav, all, move)).toEqual({ from: sav, to: pnc });
+      expect(heldTransfer(50, "2026-11-18", undefined, all, move)).toEqual({ from: sav, to: pnc });
+      expect(heldTransfer(50, "2026-11-18", pnc, all, move)).toBeNull();
+    });
+  });
+
+  it("a payment arriving on a card with checking, checking and savings accounts offers all three to pick from (mw-6ww.148.66)", () => {
+    const pnc = acct("r1", "PNC Checking");
+    const td = acct("r8", "TD Bank Checking");
+    const sav = acct("r9", "PNC Savings", "savings");
+    const awf = acct("r3", "Amazon & Whole Foods", "creditCard");
+    expect(transferOffer("Payment Thank You", awf, [pnc, td, sav, awf], false)).toEqual({ account: awf, sources: [pnc, td, sav] });
+    expect(transferOffer("AUTOPAY", awf, [pnc, td, sav, awf], false)).toEqual({ account: awf, sources: [pnc, td, sav] });
   });
 });
