@@ -5,6 +5,7 @@ import type { YnabAccount, YnabCategory } from "@/contracts/types";
 import { CheckImageRepository } from "@/db/repositories/check-image-repository";
 import { YnabRepository } from "@/db/repositories/ynab-repository";
 import { fallbackCategory, seenCategoryIds, suggestAtOnce } from "@/sort/suggest";
+import { transferOffer } from "@/sort/transfer";
 import { money } from "@/sort/waiting";
 import type { YnabClient } from "./api";
 import { memoFor, resolveCheckRead, type CheckRead } from "./check-read";
@@ -266,8 +267,10 @@ export function buildItems(rows: readonly YnabTransactionWire[], context: Cleanu
         return { ...base, categoryId: null, fixedLabel: "Transfer", ...describeTransfer(row, accounts, known) };
       }
       const isInflow = check === null && row.amount > 0;
-      const found = check === null ? suggestion(payee, isInflow) : null;
       const seen = [...new Set([...(history.get(payeeKey(payee)) ?? []).map((e) => e.categoryId), ...seenCategoryIds(payee, categories, tally)])];
+      // a payee that reads as a payment to one of his cards is money moved, not spending: no budget category is offered from its history
+      const payment = check === null ? transferOffer(payee, accounts.find((a) => a.id === row.account_id), accounts, seen.length > 0) : null;
+      const found = check === null && !payment ? suggestion(payee, isInflow) : null;
       if (!isUncategorized(row.category_id, row.category_name, notCounted)) {
         const own = categories.find((c) => c.id === row.category_id);
         if (!own) {
@@ -279,6 +282,10 @@ export function buildItems(rows: readonly YnabTransactionWire[], context: Cleanu
         const confidence: Confidence = agrees ? found.confidence : "unsure";
         const why = check !== null ? "Add the check's image and it is read for who was paid." : agrees ? found.why : found ? `Its history here went to ${categories.find((c) => c.id === found.categoryId)?.name ?? "another category"}, not ${own.name}.` : "Nothing in its history to check that.";
         return { ...base, seen, categoryId: own.id, note: alreadyIn(own.name), confidence, why, ticked: agrees };
+      }
+      if (payment) {
+        const card = payment.account ? payment.account.name : "one of your cards";
+        return { ...base, seen, categoryId: null, note: `Looks like a payment to ${card}: a transfer, not spending`, confidence: "unsure", why: "YNAB has not matched it as a transfer, so no budget category is offered; change its payee to the card's transfer in YNAB.", ticked: false };
       }
       if (found) return { ...base, seen, categoryId: found.categoryId, confidence: found.confidence, why: found.why, ticked: found.confidence === "sure" };
       if (isInflow) {
