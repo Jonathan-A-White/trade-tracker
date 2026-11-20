@@ -501,7 +501,8 @@ function ChargeSheet({ family, charge, onClose }: { family: FamilyFeed; charge: 
     setSaving(true);
     setSaveError(null);
     const input: YnabTransactionInput = {
-      accountId: account,
+      // a payment read on the card itself is written from the cash account it came from, as a transfer to the card
+      accountId: transferMode && offer?.source ? offer.source.id : account,
       date: chargeDate(alert.when),
       amount,
       ...(transferMode && transferTo && transferPayeeId
@@ -642,7 +643,7 @@ function ChargeSheet({ family, charge, onClose }: { family: FamilyFeed; charge: 
           {transferMode && offer && (
             <div className="space-y-3">
               <div role="status" className="rounded-lg bg-blue-50 dark:bg-blue-950 px-3 py-2 text-sm text-gray-800 dark:text-gray-100">
-                <p className="text-base font-semibold">{transferTo ? `Transfer to ${transferTo.name}` : "Transfer to a card"}</p>
+                <p className="text-base font-semibold">{offer.source && transferTo ? `Transfer from ${offer.source.name}` : transferTo ? `Transfer to ${transferTo.name}` : "Transfer to a card"}</p>
                 <p className="mt-1">This looks like a credit card payment, so YNAB gets it as money moved to the card, with no budget category.</p>
               </div>
               {offer.cards && (

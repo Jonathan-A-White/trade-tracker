@@ -332,6 +332,34 @@ describe("the Sort sheet: a credit-card payment is a transfer, not an expense (m
     expect(create.mock.calls[0]![0]).toMatchObject({ transfer: { accountId: "a4", payeeId: "tp4" } });
   });
 
+  // mw-6ww.148.59: his $684.73 charge on •••• 4944 still read as an expense
+  it("a card number the book has no account for is offered the transfer too, and Done writes it once he has chosen the account", async () => {
+    const user = userEvent.setup();
+    const alert = backend.receive({ kind: "charge", amount: "684.73", merchant: "Amazon & Whole Foods", last4: "4944", when: WHEN });
+    renderPhone(`/sort/${alert.id}`);
+    const sheet = await screen.findByRole("dialog", { name: "$684.73 at Amazon & Whole Foods" });
+    expect(await within(sheet).findByText("Transfer to Chase Amazon")).toBeInTheDocument();
+    expect(within(sheet).queryByText(/Stuff I Forgot to Budget For/)).not.toBeInTheDocument();
+    await user.selectOptions(within(sheet).getByLabelText(/account/i), "a1");
+    await user.click(within(sheet).getByRole("button", { name: "Done" }));
+    await waitFor(() => expect(create).toHaveBeenCalled());
+    expect(create.mock.calls[0]![0]).toMatchObject({ accountId: "a1", transfer: { accountId: "a3", payeeId: "tp3" } });
+  });
+
+  it("the payment arriving on the card itself reads Transfer from the one checking account and is written on that account", async () => {
+    const user = userEvent.setup();
+    // one cash account only: with two the source is not guessed
+    await new YnabRepository().applyAccounts([{ ...accountOf("a2", "Citi Double"), deleted: true }], 3);
+    const alert = backend.receive({ kind: "charge", amount: "684.73", merchant: "Payment Thank You", last4: "4944", when: WHEN });
+    renderPhone(`/sort/${alert.id}`);
+    const sheet = await screen.findByRole("dialog", { name: "$684.73 at Payment Thank You" });
+    await user.selectOptions(await within(sheet).findByLabelText(/account/i), "a3");
+    expect(await within(sheet).findByText("Transfer from Chase Checking")).toBeInTheDocument();
+    await user.click(within(sheet).getByRole("button", { name: "Done" }));
+    await waitFor(() => expect(create).toHaveBeenCalled());
+    expect(create.mock.calls[0]![0]).toMatchObject({ accountId: "a1", amount: 684.73, transfer: { accountId: "a3", payeeId: "tp3" } });
+  });
+
   it("an ordinary merchant on the same checking account is still sorted by category", async () => {
     const alert = backend.receive({ kind: "charge", amount: "43.12", merchant: "Trader Joe's", last4: "1234", when: WHEN });
     renderPhone(`/sort/${alert.id}`);
