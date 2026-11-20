@@ -76,6 +76,27 @@ describe("caching a YNAB budget in Dexie", () => {
     expect((await repo.getConnection())?.payeesKnowledge).toBe(120);
   });
 
+  it("a refresh gives a payee cached without its transfer account id that id, though the delta is empty", async () => {
+    const withTransfer = budgets();
+    withTransfer[0].payees.push(payeeOf("p2", "Transfer : Chase Amazon", "a1"));
+    const ynab = fakeYnab("good", withTransfer);
+    // YNAB answers a delta with only what changed, here nothing
+    const client = createYnabClient("good", async (input, init) => {
+      const url = String(input);
+      if (url.includes("/payees") && url.includes("last_knowledge_of_server")) {
+        return new Response(JSON.stringify({ data: { payees: [], server_knowledge: 120 } }), { status: 200 });
+      }
+      return ynab.fetch(input, init);
+    });
+    await connectBudget(client, { id: "b1", name: "Our Budget" });
+    // a row cached before the transfer account id was kept
+    await db.ynabPayees.put({ id: "p2", name: "Transfer : Chase Amazon" });
+    await refreshCache(client);
+    const payee = (await repo.listPayees()).find((p) => p.id === "p2");
+    expect(payee?.transferAccountId).toBe("a1");
+    expect((await repo.getConnection())?.payeesKnowledge).toBe(100);
+  });
+
   it("a refresh with no connection does nothing", async () => {
     const ynab = fakeYnab("good", budgets());
     await refreshCache(createYnabClient("good", ynab.fetch));

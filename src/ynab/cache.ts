@@ -30,8 +30,14 @@ export async function refreshCache(client: YnabClient): Promise<void> {
   const { budgetId } = connection;
   const categories = await client.categoryGroups(budgetId, connection.categoriesKnowledge);
   const accounts = await client.accounts(budgetId, connection.accountsKnowledge);
-  const payees = await client.payees(budgetId, connection.payeesKnowledge);
+  // A transfer payee cached before its account id was kept has no id, and a delta never repeats an unchanged payee: read them all again.
+  const payees = await client.payees(budgetId, (await hasTransferPayeeWithoutId()) ? undefined : connection.payeesKnowledge);
   await repo.applyCategories(categories.rows, categories.serverKnowledge);
   await repo.applyAccounts(accounts.rows, accounts.serverKnowledge);
   await repo.applyPayees(payees.rows, payees.serverKnowledge);
+}
+
+/** Whether a cached payee is named like YNAB's "Transfer : <account>" payee yet holds no transfer account id. */
+async function hasTransferPayeeWithoutId(): Promise<boolean> {
+  return (await repo.listPayees()).some((p) => !p.transferAccountId && /^transfer\s*:/i.test(p.name.trim()));
 }
