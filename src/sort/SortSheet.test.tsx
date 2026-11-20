@@ -348,7 +348,7 @@ describe("the Sort sheet: a credit-card payment is a transfer, not an expense (m
 
   it("the payment arriving on the card itself reads Transfer from the one checking account and is written on that account", async () => {
     const user = userEvent.setup();
-    // one cash account only: with two the source is not guessed
+    // one cash account only: with two he is asked Paid from
     await new YnabRepository().applyAccounts([{ ...accountOf("a2", "Citi Double"), deleted: true }], 3);
     const alert = backend.receive({ kind: "charge", amount: "684.73", merchant: "Payment Thank You", last4: "4944", when: WHEN });
     renderPhone(`/sort/${alert.id}`);
@@ -358,6 +358,21 @@ describe("the Sort sheet: a credit-card payment is a transfer, not an expense (m
     await user.click(within(sheet).getByRole("button", { name: "Done" }));
     await waitFor(() => expect(create).toHaveBeenCalled());
     expect(create.mock.calls[0]![0]).toMatchObject({ accountId: "a1", amount: 684.73, transfer: { accountId: "a3", payeeId: "tp3" } });
+  });
+
+  it("the payment arriving on the card itself with two cash accounts asks Paid from, and Done waits for the choice", async () => {
+    const user = userEvent.setup();
+    const alert = backend.receive({ kind: "charge", amount: "684.73", merchant: "Payment Thank You", last4: "4944", when: WHEN });
+    renderPhone(`/sort/${alert.id}`);
+    const sheet = await screen.findByRole("dialog", { name: "$684.73 at Payment Thank You" });
+    await user.selectOptions(await within(sheet).findByLabelText(/account/i), "a3");
+    const paidFrom = await within(sheet).findByLabelText("Paid from");
+    expect(within(sheet).getByRole("button", { name: "Done" })).toBeDisabled();
+    await user.selectOptions(paidFrom, "a2");
+    expect(await within(sheet).findByText("Transfer from Citi Double")).toBeInTheDocument();
+    await user.click(within(sheet).getByRole("button", { name: "Done" }));
+    await waitFor(() => expect(create).toHaveBeenCalled());
+    expect(create.mock.calls[0]![0]).toMatchObject({ accountId: "a2", amount: 684.73, transfer: { accountId: "a3", payeeId: "tp3" } });
   });
 
   it("an ordinary merchant on the same checking account is still sorted by category", async () => {

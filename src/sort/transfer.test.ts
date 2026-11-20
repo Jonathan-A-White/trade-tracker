@@ -63,10 +63,20 @@ describe("transferOffer: a card payment is a transfer, not an expense", () => {
       expect(transferOffer("Costco", pnc, all, true)).toBeNull();
     });
 
-    it("a payment-words credit on a card is a transfer from checking; with two checking accounts it is not guessed", () => {
+    it("a payment-words credit on a card is a transfer from checking; with two cash accounts he chooses which", () => {
       expect(transferOffer("Payment Thank You", dc, all, false)).toEqual({ account: dc, source: pnc });
-      expect(transferOffer("Payment Thank You", dc, [...all, acct("r7", "Savings Plus", "savings")], false)).toBeNull();
+      expect(transferOffer("Payment Thank You", dc, [...all, acct("r7", "Savings Plus", "savings")], false)).toEqual({ account: dc, sources: [pnc, acct("r7", "Savings Plus", "savings")] });
     });
+  });
+
+  // his real budget has PNC Checking, TD Bank Checking and PNC Savings: the paying account cannot be guessed, he is asked
+  it("(b) on his real accounts the payment arriving on the Amazon & Whole Foods card asks which of his three cash accounts paid it", () => {
+    const pnc = acct("r1", "PNC Checking");
+    const td = acct("r8", "TD Bank Checking");
+    const sav = acct("r9", "PNC Savings", "savings");
+    const awf = acct("r3", "Amazon & Whole Foods", "creditCard");
+    const gift = acct("r2", "Amazon Gift Card", "cash");
+    expect(transferOffer("Amazon & Whole Foods", awf, [pnc, td, sav, gift, awf], false)).toEqual({ account: awf, sources: [pnc, td, sav] });
   });
 
   it("finds the payee YNAB makes for transfers into an account", () => {

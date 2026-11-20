@@ -357,6 +357,7 @@ function ChargeSheet({ family, charge, onClose }: { family: FamilyFeed; charge: 
   const reasonId = useId();
   const onceId = useId();
   const cardId = useId();
+  const sourceId = useId();
   const ynabOn = useYnabOn();
   const categories = useLiveQuery(
     async () => (await ynab.listCategories()).filter((c: YnabCategory) => !c.hidden && !NOT_FOR_CHARGES.has(c.groupName)),
@@ -388,6 +389,7 @@ function ChargeSheet({ family, charge, onClose }: { family: FamilyFeed; charge: 
   const [suggestion, setSuggestion] = useState<Suggestion | null>(null);
   const [notTransfer, setNotTransfer] = useState(false);
   const [chosenCard, setChosenCard] = useState("");
+  const [chosenSource, setChosenSource] = useState("");
   // first what he taught, else what the merchant normally goes to, both at once with no grist; else the mill is asked
   const tallyRead = useTallyRead(ynabOn && !shots, family.refreshTally);
   // a card payment is money moved to one of his cards, not an expense: offered as a Transfer (to a card YNAB has a transfer payee for) until he says otherwise
@@ -402,6 +404,8 @@ function ChargeSheet({ family, charge, onClose }: { family: FamilyFeed; charge: 
       : null;
   const transferMode = offer !== null && !notTransfer && categoryId === null && !splitting;
   const transferTo = offer ? (offer.account ?? offer.cards?.find((c) => c.id === chosenCard)) : undefined;
+  // a payment read on the card itself comes from a cash account: the one there is, or the one he chooses of several
+  const transferSource = offer ? (offer.source ?? offer.sources?.find((a) => a.id === chosenSource)) : undefined;
   const transferPayeeId = transferTo && payees ? transferPayee(transferTo, payees)?.id : undefined;
   const suggesting = ynabOn && !shots && !transferMode;
   const [atOnce, setAtOnce] = useState<AtOnce | "ask" | null>(null);
@@ -474,7 +478,7 @@ function ChargeSheet({ family, charge, onClose }: { family: FamilyFeed; charge: 
     setParts(next);
   };
 
-  const ready = transferMode ? !!transferPayeeId : splitting ? splitReady(parts, amount) : categoryId !== null;
+  const ready = transferMode ? !!transferPayeeId && (!offer?.sources || !!transferSource) : splitting ? splitReady(parts, amount) : categoryId !== null;
   const reason = !ynabOn
     ? null
     : !family.writer
@@ -483,7 +487,9 @@ function ChargeSheet({ family, charge, onClose }: { family: FamilyFeed; charge: 
         ? "Choose the YNAB account this card goes with."
         : transferMode
           ? transferPayeeId
-            ? null
+            ? offer?.sources && !transferSource
+              ? "Choose which account paid it."
+              : null
             : "Choose which card this pays."
         : splitting
           ? remainderCents(parts, amount) !== 0
@@ -502,7 +508,7 @@ function ChargeSheet({ family, charge, onClose }: { family: FamilyFeed; charge: 
     setSaveError(null);
     const input: YnabTransactionInput = {
       // a payment read on the card itself is written from the cash account it came from, as a transfer to the card
-      accountId: transferMode && offer?.source ? offer.source.id : account,
+      accountId: transferMode && transferSource ? transferSource.id : account,
       date: chargeDate(alert.when),
       amount,
       ...(transferMode && transferTo && transferPayeeId
@@ -643,7 +649,7 @@ function ChargeSheet({ family, charge, onClose }: { family: FamilyFeed; charge: 
           {transferMode && offer && (
             <div className="space-y-3">
               <div role="status" className="rounded-lg bg-blue-50 dark:bg-blue-950 px-3 py-2 text-sm text-gray-800 dark:text-gray-100">
-                <p className="text-base font-semibold">{offer.source && transferTo ? `Transfer from ${offer.source.name}` : transferTo ? `Transfer to ${transferTo.name}` : "Transfer to a card"}</p>
+                <p className="text-base font-semibold">{transferSource && transferTo ? `Transfer from ${transferSource.name}` : transferTo ? `Transfer to ${transferTo.name}` : "Transfer to a card"}</p>
                 <p className="mt-1">This looks like a credit card payment, so YNAB gets it as money moved to the card, with no budget category.</p>
               </div>
               {offer.cards && (
@@ -661,6 +667,26 @@ function ChargeSheet({ family, charge, onClose }: { family: FamilyFeed; charge: 
                     {offer.cards.map((c) => (
                       <option key={c.id} value={c.id}>
                         {c.name}
+                      </option>
+                    ))}
+                  </select>
+                </div>
+              )}
+              {offer.sources && (
+                <div className="space-y-1">
+                  <label htmlFor={sourceId} className="text-sm font-medium text-gray-700 dark:text-gray-300">
+                    Paid from
+                  </label>
+                  <select
+                    id={sourceId}
+                    value={chosenSource}
+                    onChange={(e) => setChosenSource(e.target.value)}
+                    className="min-h-12 w-full rounded-lg border border-gray-300 dark:border-gray-600 bg-white dark:bg-gray-900 px-3 text-base text-gray-900 dark:text-gray-100"
+                  >
+                    <option value="">Choose the account</option>
+                    {offer.sources.map((a) => (
+                      <option key={a.id} value={a.id}>
+                        {a.name}
                       </option>
                     ))}
                   </select>
