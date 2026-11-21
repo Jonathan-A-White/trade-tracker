@@ -28,7 +28,8 @@ export async function refreshCache(client: YnabClient): Promise<void> {
   const connection = await repo.getConnection();
   if (!connection) return;
   const { budgetId } = connection;
-  const categories = await client.categoryGroups(budgetId, connection.categoriesKnowledge);
+  // A category cached before its balance was kept has none, and a delta never repeats an unchanged category: read them all again.
+  const categories = await client.categoryGroups(budgetId, (await hasCategoryWithoutBalance()) ? undefined : connection.categoriesKnowledge);
   const accounts = await client.accounts(budgetId, connection.accountsKnowledge);
   // A transfer payee cached before its account id was kept has no id, and a delta never repeats an unchanged payee: read them all again.
   const payees = await client.payees(budgetId, (await hasTransferPayeeWithoutId()) ? undefined : connection.payeesKnowledge);
@@ -40,4 +41,9 @@ export async function refreshCache(client: YnabClient): Promise<void> {
 /** Whether a cached payee is named like YNAB's "Transfer : <account>" payee yet holds no transfer account id. */
 async function hasTransferPayeeWithoutId(): Promise<boolean> {
   return (await repo.listPayees()).some((p) => !p.transferAccountId && /^transfer\s*:/i.test(p.name.trim()));
+}
+
+/** Whether a cached category holds no balance (it was cached before the balance was kept). */
+async function hasCategoryWithoutBalance(): Promise<boolean> {
+  return (await repo.listCategories()).some((c) => typeof c.balance !== "number");
 }

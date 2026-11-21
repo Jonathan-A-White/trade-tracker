@@ -16,14 +16,14 @@ function budgets() {
     {
       id: "b1",
       name: "Our Budget",
-      categoryGroups: [groupOf("g1", "Food", [["c1", "Groceries"]])],
+      categoryGroups: [groupOf("g1", "Food", [["c1", "Groceries", 10000]])],
       accounts: [accountOf("a1", "Checking")],
       payees: [payeeOf("p1", "Trader Joe's")],
     },
     {
       id: "b2",
       name: "Side Budget",
-      categoryGroups: [groupOf("g9", "Fun", [["c9", "Movies"]])],
+      categoryGroups: [groupOf("g9", "Fun", [["c9", "Movies", 5000]])],
       accounts: [accountOf("a9", "Savings")],
       payees: [payeeOf("p9", "Cinema")],
     },
@@ -95,6 +95,25 @@ describe("caching a YNAB budget in Dexie", () => {
     const payee = (await repo.listPayees()).find((p) => p.id === "p2");
     expect(payee?.transferAccountId).toBe("a1");
     expect((await repo.getConnection())?.payeesKnowledge).toBe(100);
+  });
+
+  it("a refresh gives a category cached without its balance that balance, though the delta is empty", async () => {
+    const withBalance = budgets();
+    withBalance[0].categoryGroups = [groupOf("g1", "Food", [["c1", "Groceries", 42500]])];
+    const ynab = fakeYnab("good", withBalance);
+    // YNAB answers a delta with only what changed, here nothing
+    const client = createYnabClient("good", async (input, init) => {
+      const url = String(input);
+      if (url.includes("/categories") && url.includes("last_knowledge_of_server")) {
+        return new Response(JSON.stringify({ data: { category_groups: [], server_knowledge: 120 } }), { status: 200 });
+      }
+      return ynab.fetch(input, init);
+    });
+    await connectBudget(client, { id: "b1", name: "Our Budget" });
+    // a row cached before the balance was kept
+    await db.ynabCategories.put({ id: "c1", groupId: "g1", groupName: "Food", name: "Groceries", hidden: false });
+    await refreshCache(client);
+    expect((await repo.listCategories()).find((c) => c.id === "c1")?.balance).toBe(42.5);
   });
 
   it("a refresh with no connection does nothing", async () => {
