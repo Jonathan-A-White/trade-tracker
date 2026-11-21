@@ -305,9 +305,12 @@ export class PendingLookupRepository {
 
   /** The lookup will not be answered as it stands; the reason is shown with Retry. */
   async markFailed(id: string, error: string): Promise<void> {
-    const lookup = await db.pendingLookups.get(id);
-    await db.pendingLookups.update(id, { status: "failed", error });
-    if (lookup?.mode === "estimate") await this.flagUnpriced(lookup);
+    // One transaction: the line never shows the failure a moment before its 'Add price' flag.
+    await db.transaction("rw", [db.pendingLookups, db.tripItems, db.trips], async () => {
+      const lookup = await db.pendingLookups.get(id);
+      await db.pendingLookups.update(id, { status: "failed", error });
+      if (lookup?.mode === "estimate") await this.flagUnpriced(lookup);
+    });
   }
 
   /** An estimate that did not come: the line, still without a price, asks for one ('Add price'). */

@@ -1,3 +1,4 @@
+import Dexie from "dexie";
 import { db } from "@/db/database";
 import type { ItemFromPhotosAnswer } from "@/contracts/types";
 import { PendingLookupRepository } from "./pending-lookup-repository";
@@ -165,6 +166,33 @@ describe("Use an estimate: the answer", () => {
     await lookups.markFailed(lookup.id, "The factory could not estimate this one.");
 
     expect((await db.tripItems.get(line.id))?.priceFlag).toBe("add");
+  });
+
+  it("marks the lookup failed and flags the line in one transaction, so the failure never shows without the flag", async () => {
+    const { line } = await wrongPriceLine();
+    const lookup = (await lookups.askForEstimate(line.id))!;
+
+    // Dexie's hooks cannot be unsubscribed safely here, so the recorders are switched off after the call.
+    let recording = true;
+    const seen: Array<{ table: string; tx: unknown }> = [];
+    db.pendingLookups.hook("updating", () => {
+      if (recording) seen.push({ table: "pendingLookups", tx: Dexie.currentTransaction?.idbtrans });
+    });
+    db.tripItems.hook("updating", () => {
+      if (recording) seen.push({ table: "tripItems", tx: Dexie.currentTransaction?.idbtrans });
+    });
+    try {
+      await lookups.markFailed(lookup.id, "The factory could not estimate this one.");
+    } finally {
+      recording = false;
+    }
+
+    const lookupWrite = seen.find((w) => w.table === "pendingLookups");
+    const lineWrite = seen.find((w) => w.table === "tripItems");
+    expect(Boolean(lookupWrite?.tx)).toBe(true);
+    expect(Boolean(lineWrite?.tx)).toBe(true);
+    // compared as a boolean: a failing diff of two Dexie transactions never finishes printing
+    expect(lineWrite?.tx === lookupWrite?.tx).toBe(true);
   });
 
   it("lists estimate lookups with the price-only ones as the lookups a line can be waiting on", async () => {
