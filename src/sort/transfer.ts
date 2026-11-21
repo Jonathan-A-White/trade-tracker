@@ -168,6 +168,8 @@ export interface JudgedCharge {
   payees: readonly YnabPayee[];
   categories: readonly YnabCategory[];
   tally: Tally | null;
+  /** whether the merchant has been sorted into a category before, when the caller knows it better than the tally does (Clean up adds YNAB's own history) */
+  soldAsExpense?: boolean;
 }
 
 /**
@@ -177,7 +179,7 @@ export interface JudgedCharge {
  */
 export function judgeTransfer(c: JudgedCharge): TransferJudgement {
   const held = heldTransfer(c.amount, c.date, c.account, c.accounts, c.tally?.transfers ?? []);
-  const soldAsExpense = seenCategoryIds(c.merchant, c.categories, c.tally).size > 0;
+  const soldAsExpense = c.soldAsExpense ?? seenCategoryIds(c.merchant, c.categories, c.tally).size > 0;
   const offer = transferOffer(c.merchant, c.account, c.accounts, soldAsExpense, held);
   if (!offer || offer.held) return { offer, missing: [] };
   const writable = (a: YnabAccount) => transferPayee(a, c.payees) !== undefined;

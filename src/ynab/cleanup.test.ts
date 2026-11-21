@@ -516,7 +516,8 @@ describe("both sides of a transfer are a transfer (his words, 2026-11-12: 'make 
 describe("a card payment the bank imported that YNAB has not matched as a transfer (mw-6ww.148.54)", () => {
   const account = (id: string, name: string, type: string): YnabAccount => ({ id, name, type, onBudget: true, closed: false });
   const accounts = [account("chk", "PNC Checking", "checking"), account("cc", "Chase Amazon", "creditCard")];
-  const ctx = (past: YnabTransactionWire[] = []) => ({ categories, history: payeeHistory(past, none), tally: null, notCounted: none, accounts });
+  const payees = [{ id: "p-cc", name: "Transfer : Chase Amazon", transferAccountId: "cc" }];
+  const ctx = (past: YnabTransactionWire[] = []) => ({ categories, history: payeeHistory(past, none), tally: null, notCounted: none, accounts, payees });
   // the payee has been categorized before: a history that would otherwise be Sure
   const past = ["2026-01-01", "2026-01-02", "2026-01-03"].map((d) => tx("AUTOPAY", "c1", d, { account_id: "cc" }));
 
@@ -531,6 +532,17 @@ describe("a card payment the bank imported that YNAB has not matched as a transf
     const row = tx("AUTOPAY", null, "2026-02-01", { account_id: "chk", approved: false, amount: -684_730 });
     const [item] = buildItems([row], ctx(past));
     expect(item).toMatchObject({ categoryId: null, ticked: false });
+  });
+
+  it("says the transfer payee is missing when the card has none, never a bare 'Looks like a payment' (mw-6ww.148.73)", () => {
+    const row = tx("AUTOPAY", null, "2026-02-01", { account_id: "cc", approved: false, amount: 684_730 });
+    const [item] = buildItems([row], { ...ctx(past), payees: [] });
+    expect(item).toMatchObject({ categoryId: null, ticked: false, confidence: "unsure" });
+    expect(item!.note).toMatch(/Transfer payee missing for Chase Amazon/);
+    expect(item!.note).not.toMatch(/Looks like a payment/);
+    // and with the payee cached the card is named as the payment's
+    const [named] = buildItems([row], ctx(past));
+    expect(named!.note).toMatch(/Looks like a payment to Chase Amazon/);
   });
 
   it("leaves an ordinary payee to its history", () => {
