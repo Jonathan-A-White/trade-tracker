@@ -196,6 +196,14 @@ describe("Settings > Family", () => {
     expect(await within(family(container)).findByText(/Forwarding works/)).toBeInTheDocument();
   });
 
+  it("a hold alert counts as proof that forwarding works too", async () => {
+    backend.receive({ kind: "hold", amount: "1.00", merchant: "GOOGLE*GPAY TEMP", last4: "1234", when: "2026-10-31T12:00:00Z" });
+    const user = userEvent.setup();
+    const { container } = renderSettings();
+    await makeKeyAndTurnOn(user, container);
+    expect(await within(family(container)).findByText(/Forwarding works/)).toBeInTheDocument();
+  });
+
   it("does not wait forever: an empty feed says no mail has come yet, and that nothing more is needed if Gmail said confirmed", async () => {
     const user = userEvent.setup();
     const { container } = renderSettings();

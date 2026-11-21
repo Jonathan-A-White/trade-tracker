@@ -80,4 +80,27 @@ describe("temporary holds", () => {
     const real = alert(3, "SHELL OIL 5744", "42.17", "2026-11-13T05:00:00Z");
     expect(temporaryHolds([recent, older, real], now).map((a) => a.id)).toEqual([recent.id]);
   });
+  describe("an alert Postern marks kind 'hold'", () => {
+    const asHold = (a: FamilyAlert): FamilyAlert => ({ ...a, kind: "hold" });
+
+    it("is drawn as a hold and stays out of Waiting", () => {
+      const hold = asHold(alert(1, "GOOGLE*GPAY TEMP MOUNTAIN VIEW USA"));
+      expect(temporaryHolds([hold]).map((a) => a.id)).toEqual([hold.id]);
+      expect(waitingCharges([hold], book, "Jonathan", new Set())).toEqual([]);
+    });
+
+    it("is still drawn for a kind-charge alert, the same as before", () => {
+      const charge = alert(1, "GOOGLE*GPAY TEMP MOUNTAIN VIEW USA");
+      expect(temporaryHolds([charge]).map((a) => a.id)).toEqual([charge.id]);
+      expect(waitingCharges([charge], book, "Jonathan", new Set())).toEqual([]);
+    });
+
+    it("drops off after two days, and needs an amount", () => {
+      const now = new Date("2026-11-13T12:00:00Z");
+      const recent = asHold(alert(1, "GOOGLE*GPAY TEMP", "1.00", "2026-11-13T04:33:00Z"));
+      const older = asHold(alert(2, "GOOGLE*GPAY TEMP", "1.00", "2026-11-09T04:33:00Z"));
+      const noAmount = { ...asHold(alert(3, "GOOGLE*GPAY TEMP")), amount: undefined };
+      expect(temporaryHolds([recent, older, noAmount], now).map((a) => a.id)).toEqual([recent.id]);
+    });
+  });
 });

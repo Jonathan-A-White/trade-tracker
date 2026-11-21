@@ -65,8 +65,12 @@ const HOLD_WORDS: readonly RegExp[] = [
   /\bCARD\s+VERIFICATION\b/i,
 ];
 
-/** True when the alert is a temporary authorization: nothing to sort, it drops off by itself. */
+/**
+ * True when the alert is a temporary authorization: nothing to sort, it drops off by itself. An alert Postern marks kind 'hold' is
+ * one already; a kind 'charge' is one when its descriptor says so.
+ */
 export function isTemporaryHold(alert: FamilyAlert): boolean {
+  if (alert.kind === "hold") return true;
   if (alert.kind !== "charge") return false;
   const merchant = alert.merchant ?? "";
   return HOLD_WORDS.some((word) => word.test(merchant));

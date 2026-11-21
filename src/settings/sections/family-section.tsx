@@ -63,7 +63,7 @@ function readFeed(before: FeedSeen | null, alerts: FamilyAlert[]): FeedSeen {
     if (alert.kind === "forward-confirm") {
       const link = alert.link && CONFIRM_LINK.test(alert.link) ? alert.link : undefined;
       if (link || alert.code) confirmation = { link, code: alert.code };
-    } else if (alert.kind === "charge" || alert.kind === "amazon") {
+    } else if (alert.kind === "charge" || alert.kind === "hold" || alert.kind === "amazon") {
       lastMail = rememberLastMail({ when: alert.when });
     }
   }

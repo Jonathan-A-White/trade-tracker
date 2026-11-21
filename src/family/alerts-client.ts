@@ -5,7 +5,8 @@ import { door } from "bsv-kit/bsv";
 /** How often the open Family row asks the feed for Gmail's confirmation. */
 export const ALERT_POLL_MS = 5000;
 
-export type FamilyAlertKind = "charge" | "forward-confirm" | "amazon" | "unread";
+/** `hold`: an authorization Postern recognised as temporary (a card check, a pump hold); it drops off by itself, nothing to sort. */
+export type FamilyAlertKind = "charge" | "hold" | "forward-confirm" | "amazon" | "unread";
 
 /** One alert, parsed facts only (the backend never holds a mail). `amount` is a string as the receiver parsed it: "42.17". */
 export interface FamilyAlert {
