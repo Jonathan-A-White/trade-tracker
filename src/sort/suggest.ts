@@ -68,12 +68,15 @@ export interface SortChargeRequest {
 export interface TallyLine {
   category: string;
   count: number;
+  /** the smallest and largest charge in dollars that went to the category, when the tally knows them (schemas/sort-charge-input-1.1) */
+  min?: number;
+  max?: number;
 }
 
 /** A merchant's tally in the sheet's terms: the YNAB payee it met, and its counted charges per category on offer, most first. */
 export interface MerchantTally {
   payee: string;
-  counts: { categoryId: string; name: string; count: number }[];
+  counts: { categoryId: string; name: string; count: number; min?: number; max?: number }[];
   total: number;
 }
 
@@ -105,9 +108,10 @@ export function tallyFor(merchant: string, tally: Tally | null, categories: read
   for (const payee of met.filter((p) => merchantKey(p) === merchantKey(best))) {
     for (const [id, count] of Object.entries(tally.payees[payee]!)) byCategory.set(id, (byCategory.get(id) ?? 0) + count);
   }
+  const sizes = new Map(sizesFor(merchant, tally, categories).map((s) => [s.categoryId, s]));
   const counts = categories
     .filter((c) => byCategory.has(c.id))
-    .map((c) => ({ categoryId: c.id, name: c.name, count: byCategory.get(c.id)! }))
+    .map((c) => ({ categoryId: c.id, name: c.name, count: byCategory.get(c.id)!, ...(sizes.has(c.id) ? { min: sizes.get(c.id)!.min, max: sizes.get(c.id)!.max } : {}) }))
     .sort((a, b) => b.count - a.count || a.name.localeCompare(b.name));
   const total = counts.reduce((sum, c) => sum + c.count, 0);
   return total === 0 ? null : { payee: best, counts, total };
@@ -319,7 +323,7 @@ export function buildRequest(
   lines?: readonly { text: string; price: number }[],
   tally?: MerchantTally | null,
 ): SortChargeRequest {
-  const counted = (tally?.counts ?? []).slice(0, TALLY_SENT).map((c) => ({ category: c.name, count: c.count }));
+  const counted = (tally?.counts ?? []).slice(0, TALLY_SENT).map((c) => ({ category: c.name, count: c.count, ...(c.min === undefined || c.max === undefined ? {} : { min: c.min, max: c.max }) }));
   return {
     merchant: charge.merchant,
     amount: charge.amount,

@@ -105,7 +105,7 @@ describe("what a merchant NORMALLY goes to, from YNAB's tally", () => {
     const tally = tallyOf([...times(3, "Jones Family Farms", "c1"), ...times(5, "Family Dollar", "c3")]);
     expect(tallyFor("JONES FAMILY FARMS, LL SHELTON USA", tally, all)).toEqual({
       payee: "Jones Family Farms",
-      counts: [{ categoryId: "c1", name: "Groceries", count: 3 }],
+      counts: [{ categoryId: "c1", name: "Groceries", count: 3, min: 10, max: 10 }],
       total: 3,
     });
     expect(suggestAtOnce("JONES FAMILY FARMS, LL SHELTON USA", all, tally)?.categoryId).toBe("c1");
@@ -113,7 +113,7 @@ describe("what a merchant NORMALLY goes to, from YNAB's tally", () => {
 
   it("joins the payees YNAB writes two ways, and counts only the categories the sheet offers", () => {
     const tally = tallyOf([...times(2, "Trader Joe's", "c1"), ...times(2, "TRADER JOES", "c1"), ...times(9, "Trader Joe's", "gone")]);
-    expect(tallyFor("TRADER JOE S #552", tally, all)?.counts).toEqual([{ categoryId: "c1", name: "Groceries", count: 4 }]);
+    expect(tallyFor("TRADER JOE S #552", tally, all)?.counts).toEqual([{ categoryId: "c1", name: "Groceries", count: 4, min: 10, max: 10 }]);
   });
 
   it.each([
@@ -233,13 +233,31 @@ describe("the request", () => {
     const tally = tallyOf([...times(2, "Costco", "c1"), ...times(2, "Costco", "c3"), ["Costco", "c2"]]);
     const request = buildRequest({ merchant: "COSTCO WHSE #0123", amount: 99.1 }, cats, [{ amount: 5, category: "Eating Out" }], undefined, tallyFor("COSTCO WHSE #0123", tally, cats));
     expect(request.tally).toEqual([
-      { category: "Groceries", count: 2 },
-      { category: "Household", count: 2 },
-      { category: "Eating Out", count: 1 },
+      { category: "Groceries", count: 2, min: 10, max: 10 },
+      { category: "Household", count: 2, min: 10, max: 10 },
+      { category: "Eating Out", count: 1, min: 10, max: 10 },
     ]);
     expect(request.history).toEqual([]);
     const validate = new Ajv({ strict: true }).compile(schema("sort-charge-input-1.1.schema.json"));
     expect(validate(request), JSON.stringify(validate.errors)).toBe(true);
+  });
+
+  it("carries each category's size range in the tally for a merchant whose charges split by size, valid against the input schema", () => {
+    // c3 Household stands for Utilities here, c4 for Stuff I Forgot to Budget For
+    const mint = tallyOf([...times(4, "Mint Mobile", "c3", undefined, 585), ["Mint Mobile", "c3", undefined, 570], ...times(6, "Mint Mobile", "c4", undefined, 10), ["Mint Mobile", "c4", undefined, 15]]);
+    const request = buildRequest({ merchant: "MINT MOBILE", amount: 100 }, all, [], undefined, tallyFor("MINT MOBILE", mint, all));
+    expect(request.tally).toEqual([
+      { category: "Jonathan's Spending", count: 7, min: 10, max: 15 },
+      { category: "Household", count: 5, min: 570, max: 585 },
+    ]);
+    const validate = new Ajv({ strict: true }).compile(schema(`sort-charge-input-${SORT_CHARGE_VERSION}.schema.json`));
+    expect(validate(request), JSON.stringify(validate.errors)).toBe(true);
+  });
+
+  it("leaves the size out of a tally entry when the tally has none, and sheds it with the entry", () => {
+    const noSizes: Tally = { ...tallyOf(times(3, "Logos", "c4")), sizes: undefined };
+    const request = buildRequest({ merchant: "Logos", amount: 10 }, all, [], undefined, tallyFor("Logos", noSizes, all));
+    expect(request.tally).toEqual([{ category: "Jonathan's Spending", count: 3 }]);
   });
 
   it("is valid against the grind's input schema", () => {

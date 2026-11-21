@@ -11,8 +11,9 @@ The request is a single JSON object with these fields.
   dollars left in it this month (`left` may be left out when it is not known). Name a category
   exactly as written here.
 - `tally` (version 1.1; left out in 1.0): what this merchant NORMALLY goes to. Each entry is
-  `{ category, count }`: how many of the merchant's charges in the family's budget over the
-  last two years went to that category, most first. It may be empty: the budget has no
+  `{ category, count, min, max }`: how many of the merchant's charges in the family's budget over the
+  last two years went to that category, most first, and (`min` and `max`, left out when not
+  known) the smallest and the largest of those charges in dollars. It may be empty: the budget has no
   categorized charges at this merchant (none, or only Uncategorized ones).
 - `history`: the last charges sorted at the same merchant on this phone, newest first, each
   `{ amount, category }` for a charge put in one category, or `{ amount, split }` for a charge
@@ -41,6 +42,10 @@ How to choose.
   app asks you only when no category holds over half of the counts, so expect a close race:
   still pick the one with the most, and when two are level, the one that fits the merchant
   and the amount best. Name only a category that is in `categories`.
+  When the entries' `min`-to-`max` ranges are far apart from each other (a phone bill of $585
+  against $10 top-ups, say) the merchant splits by size: answer the category whose range this
+  charge's `amount` falls in or nearest to, even when it has fewer counts, and say so ("Charges
+  of about $10 here went to Stuff I Forgot to Budget For.").
 - When `tally` is empty and `history` shows the merchant sorted the same way, follow it and
   say so ("The last 6 charges here went to Groceries."). When `history` is mixed, pick the
   category most of its charges went to, not the newest, and say it is the usual one. When the

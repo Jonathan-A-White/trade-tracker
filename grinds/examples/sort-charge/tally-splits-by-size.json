@@ -1,0 +1,20 @@
+{
+  "description": "Mint Mobile's tally has two sizes: $585 renewals went to Utilities, $10 top-ups to Stuff I Forgot to Budget For. A $10 charge follows its size, though Utilities has fewer counts.",
+  "schemaVersion": "1.1",
+  "request": {
+    "merchant": "MINT MOBILE",
+    "amount": 10,
+    "owner": "Jonathan",
+    "categories": [{"name":"Groceries","left":212},{"name":"Utilities","left":40},{"name":"Stuff I Forgot to Budget For","left":75}],
+    "history": [],
+    "tally": [
+      { "category": "Stuff I Forgot to Budget For", "count": 6, "min": 10, "max": 15 },
+      { "category": "Utilities", "count": 5, "min": 570, "max": 585 }
+    ]
+  },
+  "expect": {
+    "category": "Stuff I Forgot to Budget For",
+    "split": { "present": false },
+    "why": { "present": true }
+  }
+}
