@@ -16,7 +16,7 @@ import type { PasskeyPort } from "@/services/passkey";
 import { setFamilyOn, setYnabOn } from "@/settings/connections";
 import { createYnabClient } from "@/ynab/api";
 import { accountOf, fakeYnab, groupOf, type FakeYnab, type FakeYnabTransaction } from "@/ynab/fake-ynab";
-import { refreshTally } from "@/ynab/tally";
+import { refreshTally, TALLY_KEY } from "@/ynab/tally";
 import { SortProvider, type SortSeams } from "./sort-context";
 import { NotAllowed } from "@/factory/mill";
 import { keepReceiptShots, type ReceiptReader } from "./receipt-read";
@@ -455,6 +455,79 @@ describe("the Sort sheet: a payment YNAB already holds as a transfer is shown as
     const sheet = await screen.findByRole("dialog", { name: "$684.73 at A charge" });
     expect(await within(sheet).findByRole("radio", { name: /Groceries/ })).toBeInTheDocument();
     expect(within(sheet).queryByText(/^Transfer/)).not.toBeInTheDocument();
+  });
+});
+
+// mw-6ww.148.70: one judge for the sheet and Home's Waiting
+describe("a card payment is judged a Transfer by one rule: the sheet and Waiting agree (mw-6ww.148.70)", () => {
+  const PAID = new Date(2026, 10, 18, 21, 47).toISOString();
+  const keepTally = (payees: Record<string, Record<string, number>>, transfers: { from: string; to: string; date: string; amount: number }[] = []) =>
+    localStorage.setItem(TALLY_KEY, JSON.stringify({ budgetId: "b1", since: "2024-11-01", readAt: Date.now(), payees, transfers }));
+
+  beforeEach(async () => {
+    const repo = new YnabRepository();
+    await repo.applyAccounts(
+      [
+        { ...accountOf("a1", "Chase Freedom"), deleted: true },
+        { ...accountOf("a2", "Citi Double"), deleted: true },
+        accountOf("pnc", "PNC Checking"),
+        accountOf("awf", "Amazon & Whole Foods", "creditCard"),
+      ],
+      2,
+    );
+    await new FamilyRepository().addCard({ lastFour: "1234", owner: "Jonathan", accountId: "pnc" });
+  });
+
+  const withPayee = () => new YnabRepository().applyPayees([{ id: "tp-awf", name: "Transfer : Amazon & Whole Foods", deleted: false, transfer_account_id: "awf" }], 1);
+
+  // mw-6ww.148.61
+  it("a merchant already in his tally as an expense, named exactly like the card, is still offered the Transfer, with Not a transfer", async () => {
+    await withPayee();
+    keepTally({ "Amazon & Whole Foods": { c1: 3 } });
+    const alert = backend.receive({ kind: "charge", amount: "684.73", merchant: "Amazon & Whole Foods", last4: "1234", when: PAID });
+    renderPhone(`/sort/${alert.id}`);
+    const sheet = await screen.findByRole("dialog", { name: "$684.73 at Amazon & Whole Foods" });
+    expect(await within(sheet).findByText("Transfer to Amazon & Whole Foods")).toBeInTheDocument();
+    expect(within(sheet).getByRole("button", { name: "Not a transfer" })).toBeInTheDocument();
+    expect(within(sheet).queryByRole("radio")).not.toBeInTheDocument();
+  });
+
+  // mw-6ww.148.63
+  it("a card payment whose card has no transfer payee says so, and still offers the categories", async () => {
+    const alert = backend.receive({ kind: "charge", amount: "684.73", merchant: "Amazon & Whole Foods", last4: "1234", when: PAID });
+    renderPhone(`/sort/${alert.id}`);
+    const sheet = await screen.findByRole("dialog", { name: "$684.73 at Amazon & Whole Foods" });
+    expect(await within(sheet).findByText("Transfer payee missing for Amazon & Whole Foods")).toBeInTheDocument();
+    expect(await within(sheet).findByRole("radio", { name: /Groceries/ })).toBeInTheDocument();
+  });
+
+  // mw-6ww.148.68
+  it("Home's Waiting draws a payment YNAB already holds as that transfer before the sheet is opened", async () => {
+    await withPayee();
+    keepTally({}, [{ from: "pnc", to: "awf", date: "2026-11-18", amount: 684.73 }]);
+    backend.receive({ kind: "charge", amount: "684.73", last4: "1234", when: PAID });
+    renderPhone("/");
+    const row = await screen.findByRole("link", { name: /\$684\.73.*A charge/ });
+    expect(await within(row).findByText("Transfer from PNC Checking to Amazon & Whole Foods")).toBeInTheDocument();
+  });
+
+  it("Home's Waiting reads a card payment by its name as a transfer, and a missing payee as a missing payee, as the sheet does", async () => {
+    keepTally({});
+    backend.receive({ kind: "charge", amount: "684.73", merchant: "Amazon & Whole Foods", last4: "1234", when: PAID });
+    renderPhone("/");
+    const row = await screen.findByRole("link", { name: /\$684\.73.*Amazon & Whole Foods/ });
+    expect(await within(row).findByText("Transfer payee missing for Amazon & Whole Foods")).toBeInTheDocument();
+    await withPayee();
+    expect(await within(row).findByText("Transfer to Amazon & Whole Foods")).toBeInTheDocument();
+  });
+
+  it("an ordinary charge in Waiting has no transfer line", async () => {
+    await withPayee();
+    keepTally({});
+    backend.receive({ kind: "charge", amount: "43.12", merchant: "Trader Joe's", last4: "1234", when: PAID });
+    renderPhone("/");
+    const row = await screen.findByRole("link", { name: /Trader Joe's/ });
+    await waitFor(() => expect(within(row).queryByText(/^Transfer/)).not.toBeInTheDocument());
   });
 });
 

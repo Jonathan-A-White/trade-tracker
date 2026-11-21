@@ -33,7 +33,7 @@ import {
   type Suggestion,
 } from "./suggest";
 import { readTally, TALLY_FRESH_MS } from "@/ynab/tally";
-import { heldTransfer, transferOffer, transferPayee } from "./transfer";
+import { judgeTransfer, missingPayeeLine, transferPayee, transferTitle } from "./transfer";
 import type { FamilyFeed } from "./sort-context";
 import type { FeedPhase } from "./useAlerts";
 import { chargeDate, handOff, money, readSorted, takeBack, whenLine, type WaitingCharge } from "./waiting";
@@ -398,23 +398,30 @@ function ChargeSheet({ family, charge, onClose }: { family: FamilyFeed; charge: 
   const tallyRead = useTallyRead(ynabOn && !shots, family.refreshTally);
   // a card payment is money moved to one of his cards, not an expense: offered as a Transfer (to a card YNAB has a transfer payee for) until he says otherwise
   // a payment YNAB already holds as a transfer (same amount, within two days) is shown as that one, whatever the alert calls the merchant
-  const offer =
+  // the same judgement Home's Waiting draws (judgeTransfer); a card with no transfer payee is said in `missing`, not dropped
+  const judged =
     ynabOn && !shots && tallyRead && accounts && payees && categories
-      ? transferOffer(
-          alert.merchant ?? "",
-          accounts.find((a) => a.id === account),
-          accounts.filter((a) => a.type !== "creditCard" || transferPayee(a, payees)),
-          seenCategoryIds(alert.merchant ?? "", categories, readTally()).size > 0,
-          heldTransfer(amount, chargeDate(alert.when), accounts.find((a) => a.id === account), accounts, readTally()?.transfers ?? []),
-        )
+      ? judgeTransfer({
+          merchant: alert.merchant ?? "",
+          amount,
+          date: chargeDate(alert.when),
+          account: accounts.find((a) => a.id === account),
+          accounts,
+          payees,
+          categories,
+          tally: readTally(),
+        })
       : null;
+  const offer = judged?.offer ?? null;
+  const missingPayee = judged?.missing ?? [];
   // a transfer YNAB already holds is shown whatever a suggestion has chosen meanwhile: there is nothing to choose
   const transferMode = offer !== null && !notTransfer && (offer.held === true || (categoryId === null && !splitting));
   const transferTo = offer ? (offer.account ?? offer.cards?.find((c) => c.id === chosenCard)) : undefined;
   // a payment read on the card itself comes from a cash account: the one there is, or the one he chooses of several
   const transferSource = offer ? (offer.source ?? offer.sources?.find((a) => a.id === chosenSource)) : undefined;
   const transferPayeeId = transferTo && payees ? transferPayee(transferTo, payees)?.id : undefined;
-  const suggesting = ynabOn && !shots && !transferMode;
+  // no category is chosen for him until the judgement is made: a suggestion landing first would turn a card payment into an expense
+  const suggesting = ynabOn && !shots && !transferMode && judged !== null;
   const [atOnce, setAtOnce] = useState<AtOnce | "ask" | null>(null);
   if (atOnce === null && suggesting && tallyRead && categories && categories.length > 0) {
     // the alert's own merchant: a charge with none ('A charge' on the sheet) has no tally and teaches nothing
@@ -666,13 +673,7 @@ function ChargeSheet({ family, charge, onClose }: { family: FamilyFeed; charge: 
             <div className="space-y-3">
               <div role="status" className="rounded-lg bg-blue-50 dark:bg-blue-950 px-3 py-2 text-sm text-gray-800 dark:text-gray-100">
                 <p className="text-base font-semibold">
-                  {heldMode && transferSource && transferTo
-                    ? `Transfer from ${transferSource.name} to ${transferTo.name}`
-                    : transferSource && transferTo
-                      ? `Transfer from ${transferSource.name}`
-                      : transferTo
-                        ? `Transfer to ${transferTo.name}`
-                        : "Transfer to a card"}
+                  {transferTitle(offer, transferTo, transferSource)}
                 </p>
                 <p className="mt-1">
                   {heldMode
@@ -723,6 +724,12 @@ function ChargeSheet({ family, charge, onClose }: { family: FamilyFeed; charge: 
               <button type="button" onClick={() => setNotTransfer(true)} className={`${SECONDARY} w-full`}>
                 Not a transfer
               </button>
+            </div>
+          )}
+          {missingPayee.length > 0 && (
+            <div role="status" className="rounded-lg bg-amber-50 dark:bg-amber-950 px-3 py-2 text-sm text-gray-800 dark:text-gray-100">
+              <p className="text-base font-semibold">{missingPayeeLine(missingPayee)}</p>
+              <p className="mt-1">This looks like a credit card payment, but YNAB has no transfer payee for the card yet, so it is shown here as an expense.</p>
             </div>
           )}
           {!transferMode && offer && notTransfer && (

@@ -1,5 +1,5 @@
 import type { YnabAccount } from "@/contracts/types";
-import { heldTransfer, saysCardPayment, transferOffer, transferPayee, type RecentTransfer } from "./transfer";
+import { heldTransfer, judgeTransfer, saysCardPayment, transferOffer, transferPayee, type RecentTransfer } from "./transfer";
 
 const acct = (id: string, name: string, type = "checking"): YnabAccount => ({ id, name, type, onBudget: true, closed: false });
 const checking = acct("a1", "Chase Checking");
@@ -148,5 +148,25 @@ describe("transferOffer: a card payment is a transfer, not an expense", () => {
     const awf = acct("r3", "Amazon & Whole Foods", "creditCard");
     expect(transferOffer("Payment Thank You", awf, [pnc, td, sav, awf], false)).toEqual({ account: awf, sources: [pnc, td, sav] });
     expect(transferOffer("AUTOPAY", awf, [pnc, td, sav, awf], false)).toEqual({ account: awf, sources: [pnc, td, sav] });
+  });
+});
+
+describe("transferOffer: a merchant already sorted as an expense (mw-6ww.148.61)", () => {
+  const awf = acct("r3", "Amazon & Whole Foods", "creditCard");
+  const pnc = acct("r1", "PNC Checking");
+  it("is still a payment when it is the card's whole name, but not when it is one word of it", () => {
+    expect(transferOffer("Amazon & Whole Foods", pnc, [pnc, awf], true)).toEqual({ account: awf });
+    expect(transferOffer("Amazon.com", pnc, [pnc, awf], true)).toBeNull();
+  });
+});
+
+describe("judgeTransfer: a card with no transfer payee is named, not dropped (mw-6ww.148.63)", () => {
+  const awf = acct("r3", "Amazon & Whole Foods", "creditCard");
+  const pnc = acct("r1", "PNC Checking");
+  const base = { merchant: "Amazon & Whole Foods", amount: 10, date: "2026-11-18", account: pnc, accounts: [pnc, awf], categories: [], tally: null };
+  it("offers the transfer with a payee, and says the payee is missing without one", () => {
+    const payee = { id: "p", name: "Transfer : Amazon & Whole Foods", deleted: false, transferAccountId: "r3" };
+    expect(judgeTransfer({ ...base, payees: [payee] })).toEqual({ offer: { account: awf }, missing: [] });
+    expect(judgeTransfer({ ...base, payees: [] })).toEqual({ offer: null, missing: [awf] });
   });
 });

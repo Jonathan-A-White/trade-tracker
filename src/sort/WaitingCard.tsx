@@ -1,15 +1,80 @@
 // Home's Waiting: the family's charges waiting to be sorted (this phone's person's first, then the other's), each opening
 // the Sort sheet, and Sorted today with who sorted each. Nothing is drawn while Family is Off.
+import { useEffect, useRef, useState } from "react";
 import { Link } from "react-router";
+import { useLiveQuery } from "dexie-react-hooks";
+import { YnabRepository } from "@/db/repositories/ynab-repository";
+import { useYnabOn } from "@/settings/connections";
+import { readTally } from "@/ynab/tally";
 import { useNotify } from "@/push/notify";
 import { ANYONE } from "@/family/cards";
 import type { FamilyFeed } from "./sort-context";
-import { money, parseAmount, whenLine, writeMe, type WaitingCharge } from "./waiting";
+import { judgeTransfer, missingPayeeLine, transferTitle, type TransferJudgement } from "./transfer";
+import { chargeDate, money, parseAmount, whenLine, writeMe, type WaitingCharge } from "./waiting";
 
 const ROW = "flex min-h-12 w-full flex-col justify-center rounded-lg bg-white dark:bg-gray-800 border border-gray-200 dark:border-gray-700 px-3 py-2";
 const SMALL_BUTTON = "min-h-12 rounded-lg border border-gray-300 dark:border-gray-600 bg-white dark:bg-gray-800 px-4 text-sm font-medium text-gray-800 dark:text-gray-100";
 
-function ChargeRow({ charge, other }: { charge: WaitingCharge; other: string | null }) {
+const ynab = new YnabRepository();
+
+/**
+ * What the Sort sheet would say of each waiting charge, by the same judge (judgeTransfer), so a card payment reads as a transfer, or as
+ * a missing transfer payee, before it is opened. The tally is read once when Waiting has charges (it is only read again when old).
+ */
+function useJudgements(family: FamilyFeed): Map<string, TransferJudgement> {
+  const ynabOn = useYnabOn();
+  const accounts = useLiveQuery(() => ynab.listAccounts(), []);
+  const payees = useLiveQuery(() => ynab.listPayees(), []);
+  const categories = useLiveQuery(() => ynab.listCategories(), []);
+  const [, setTallyRead] = useState(0);
+  const refreshRef = useRef(family.refreshTally);
+  useEffect(() => {
+    refreshRef.current = family.refreshTally;
+  });
+  const wanted = family.on && ynabOn && family.waiting.length > 0;
+  useEffect(() => {
+    if (!wanted) return;
+    let current = true;
+    refreshRef
+      .current()
+      .catch(() => {})
+      .finally(() => {
+        if (current) setTallyRead((n) => n + 1);
+      });
+    return () => {
+      current = false;
+    };
+  }, [wanted]);
+  const found = new Map<string, TransferJudgement>();
+  if (!wanted || !accounts || !payees || !categories) return found;
+  const open = accounts.filter((a) => !a.closed);
+  const tally = readTally();
+  for (const charge of family.waiting) {
+    const judged = judgeTransfer({
+      merchant: charge.alert.merchant ?? "",
+      amount: charge.amount,
+      date: chargeDate(charge.alert.when),
+      account: open.find((a) => a.id === family.book.account(charge.alert.last4)),
+      accounts: open,
+      payees,
+      categories,
+      tally,
+    });
+    if (judged.offer || judged.missing.length > 0) found.set(charge.alert.id, judged);
+  }
+  return found;
+}
+
+function TransferLine({ judged }: { judged: TransferJudgement }) {
+  const { offer, missing } = judged;
+  if (offer) {
+    const to = offer.account ?? undefined;
+    return <span className="text-sm font-medium text-blue-700 dark:text-blue-400">{transferTitle(offer, to, offer.source)}</span>;
+  }
+  return <span className="text-sm font-medium text-amber-700 dark:text-amber-400">{missingPayeeLine(missing)}</span>;
+}
+
+function ChargeRow({ charge, other, judged }: { charge: WaitingCharge; other: string | null; judged?: TransferJudgement }) {
   const { alert } = charge;
   const facts = [
     alert.last4 ? `•••• ${alert.last4}` : null,
@@ -23,6 +88,11 @@ function ChargeRow({ charge, other }: { charge: WaitingCharge; other: string | n
           <span className="text-base font-semibold text-gray-900 dark:text-gray-100">{money(charge.amount)}</span>{" "}
           <span className="min-w-0 flex-1 break-words text-base text-gray-900 dark:text-gray-100">{charge.merchant}</span>
         </span>{" "}
+        {judged && (
+          <>
+            <TransferLine judged={judged} />{" "}
+          </>
+        )}
         <span className="text-sm text-gray-600 dark:text-gray-400">{facts.join(" · ")}</span>
         {charge.handed && (
           <>
@@ -87,6 +157,7 @@ function NotifyLine() {
 }
 
 export function WaitingCard({ family }: { family: FamilyFeed }) {
+  const judgements = useJudgements(family);
   if (!family.on) return null;
   const mine = family.waiting.filter((c) => c.mine);
   const others = family.waiting.filter((c) => !c.mine);
@@ -112,7 +183,7 @@ export function WaitingCard({ family }: { family: FamilyFeed }) {
         {mine.length > 0 && (
           <ul aria-label="Yours" className="space-y-2">
             {mine.map((charge) => (
-              <ChargeRow key={charge.alert.id} charge={charge} other={family.other} />
+              <ChargeRow key={charge.alert.id} charge={charge} other={family.other} judged={judgements.get(charge.alert.id)} />
             ))}
           </ul>
         )}
@@ -121,7 +192,7 @@ export function WaitingCard({ family }: { family: FamilyFeed }) {
             <h3 className="pt-1 text-sm font-medium text-gray-600 dark:text-gray-400">{othersLabel}</h3>
             <ul aria-label={othersLabel} className="space-y-2">
               {others.map((charge) => (
-                <ChargeRow key={charge.alert.id} charge={charge} other={family.other} />
+                <ChargeRow key={charge.alert.id} charge={charge} other={family.other} judged={judgements.get(charge.alert.id)} />
               ))}
             </ul>
           </>

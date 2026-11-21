@@ -7,8 +7,9 @@
 // is a transfer from his checking or savings account (mw-6ww.148.59). A payment YNAB already holds as a transfer (same amount, within two
 // days, on the charge's account, or on any account when its card number is unmapped) is shown as that transfer whatever the merchant
 // says, and nothing is written to YNAB for it (mw-6ww.148.66).
-import type { YnabAccount, YnabPayee } from "@/contracts/types";
-import type { RecentTransfer } from "@/ynab/tally";
+import type { YnabAccount, YnabCategory, YnabPayee } from "@/contracts/types";
+import type { RecentTransfer, Tally } from "@/ynab/tally";
+import { seenCategoryIds } from "./suggest";
 
 export type { RecentTransfer };
 
@@ -111,7 +112,15 @@ export function transferOffer(
     if (named.length === 1) return { account: named[0]! };
     return cards.length === 1 ? { account: cards[0]! } : { cards: named.length > 1 ? named : cards };
   }
-  return named.length === 1 && !soldAsExpense ? { account: named[0]! } : null;
+  if (named.length !== 1) return null;
+  // a merchant already sorted as an expense is a payment only when it is the card's whole name (of two words or more), not one word of it
+  return !soldAsExpense || isWholeName(named[0]!, mine) ? { account: named[0]! } : null;
+}
+
+/** The merchant is the card's own whole name: the same words, two or more of them. */
+function isWholeName(card: YnabAccount, merchantWords: ReadonlySet<string>): boolean {
+  const own = wordsOf(card.name);
+  return own.length >= 2 && own.length === merchantWords.size && own.every((w) => merchantWords.has(w));
 }
 
 /** A charge read on a card account: a payment received there, paid from his checking or savings account (the one, or the one he chooses of several); any other purchase is an expense. */
@@ -138,4 +147,57 @@ export function transferPayee(account: YnabAccount, payees: readonly YnabPayee[]
   if (byId) return byId;
   const want = `transfer : ${account.name}`.toLowerCase();
   return payees.find((p) => !p.transferAccountId && p.name.trim().toLowerCase().replace(/\s*:\s*/, " : ") === want);
+}
+
+/** What the one judge says of a charge: the transfer it is, or the cards whose transfer payee YNAB has not given us (then it is no offer). */
+export interface TransferJudgement {
+  offer: TransferOffer | null;
+  /** the card accounts the charge reads as a payment to, that have no transfer payee cached: nothing can be written to them */
+  missing: YnabAccount[];
+}
+
+/** What the judge looks at: the charge, the account it is on, and what the phone keeps of his YNAB. */
+export interface JudgedCharge {
+  merchant: string;
+  amount: number;
+  /** YYYY-MM-DD */
+  date: string;
+  /** the account the charge is on; undefined for a card number the book has no account for */
+  account: YnabAccount | undefined;
+  accounts: readonly YnabAccount[];
+  payees: readonly YnabPayee[];
+  categories: readonly YnabCategory[];
+  tally: Tally | null;
+}
+
+/**
+ * The one judgement of a card payment, shared by the Sort sheet and Home's Waiting: a transfer YNAB already holds first, else the
+ * merchant's words or name (transferOffer), then whether the card has a transfer payee to write it to. A card without one is named in
+ * `missing` instead of being dropped, so a payment never shows as an expense with no word of why.
+ */
+export function judgeTransfer(c: JudgedCharge): TransferJudgement {
+  const held = heldTransfer(c.amount, c.date, c.account, c.accounts, c.tally?.transfers ?? []);
+  const soldAsExpense = seenCategoryIds(c.merchant, c.categories, c.tally).size > 0;
+  const offer = transferOffer(c.merchant, c.account, c.accounts, soldAsExpense, held);
+  if (!offer || offer.held) return { offer, missing: [] };
+  const writable = (a: YnabAccount) => transferPayee(a, c.payees) !== undefined;
+  if (offer.cards) {
+    const cards = offer.cards.filter(writable);
+    if (cards.length === 0) return { offer: null, missing: offer.cards };
+    return { offer: cards.length === 1 ? { account: cards[0]! } : { cards }, missing: [] };
+  }
+  return writable(offer.account) ? { offer, missing: [] } : { offer: null, missing: [offer.account] };
+}
+
+/** The line that says the transfer payee is missing: '' when none is. */
+export function missingPayeeLine(missing: readonly YnabAccount[]): string {
+  return missing.length === 0 ? "" : `Transfer payee missing for ${missing.map((a) => a.name).join(" or ")}`;
+}
+
+/** The transfer in words: 'Transfer from PNC Checking to Amazon & Whole Foods'; `to` and `source` are the ones chosen when the offer leaves a choice. */
+export function transferTitle(offer: TransferOffer, to: YnabAccount | undefined, source: YnabAccount | undefined): string {
+  if (offer.held && source && to) return `Transfer from ${source.name} to ${to.name}`;
+  if (source && to) return `Transfer from ${source.name}`;
+  if (to) return `Transfer to ${to.name}`;
+  return "Transfer to a card";
 }
