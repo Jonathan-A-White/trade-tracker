@@ -16,6 +16,7 @@ import { TripItemRow } from "@/components/data-display/trip-item-row";
 import { SubtotalBar } from "@/components/data-display/subtotal-bar";
 import { PendingLineRow } from "@/components/data-display/pending-line-row";
 import { InlineEditor } from "@/components/forms/inline-editor";
+import { UseEstimateButton } from "@/components/forms/use-estimate-button";
 import { ItemForm } from "@/components/forms/item-form";
 import { UndoNotice } from "@/components/undo-notice";
 import { useUndo } from "@/hooks/use-undo";
@@ -384,6 +385,9 @@ export default function ActiveTripPage() {
                         editField === "price" ? "currency" : item?.unitType === "per_lb" ? "decimal" : "integer"
                       }
                     />
+                    {editField === "price" && (
+                      <UseEstimateButton tripItemId={ti.id} onAsked={handleCancelEdit} />
+                    )}
                   </div>
                 );
               }
