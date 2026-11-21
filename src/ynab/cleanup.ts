@@ -4,7 +4,7 @@
 import type { YnabAccount, YnabCategory, YnabPayee } from "@/contracts/types";
 import { CheckImageRepository } from "@/db/repositories/check-image-repository";
 import { YnabRepository } from "@/db/repositories/ynab-repository";
-import { fallbackCategory, seenCategoryIds, suggestAtOnce } from "@/sort/suggest";
+import { bandOfSize, fallbackCategory, seenCategoryIds, suggestAtOnce } from "@/sort/suggest";
 import { judgeTransfer, missingPayeeLine } from "@/sort/transfer";
 import { money } from "@/sort/waiting";
 import type { YnabClient } from "./api";
@@ -83,9 +83,6 @@ export function payeeHistory(rows: readonly YnabTransactionWire[], notCounted: R
   return history;
 }
 
-/** How far outside the sizes a category has held a charge still counts as its size: from a third less to half as much again (PROVISIONAL). */
-const LIKE_SIZE = 1.5;
-
 /**
  * The category of past charges of the new charge's size, when the payee's history splits by size (the Governor, 2026-11-21: Mint
  * Mobile's $585 renewals go to Utilities, its $10 data top-ups to Stuff I Forgot to Budget For). It splits when two or more categories
@@ -96,9 +93,7 @@ function suggestBySize(entries: readonly HistoryEntry[], amount: number, nameOf:
   const byCategory = new Map<string, number[]>();
   for (const e of entries) byCategory.set(e.categoryId, [...(byCategory.get(e.categoryId) ?? []), e.amount]);
   if (byCategory.size < 2) return null;
-  const bands = [...byCategory].map(([categoryId, amounts]) => ({ categoryId, count: amounts.length, from: Math.min(...amounts) / LIKE_SIZE, to: Math.max(...amounts) * LIKE_SIZE }));
-  for (const a of bands) for (const b of bands) if (a !== b && a.from <= b.to && b.from <= a.to) return null;
-  const band = bands.find((b) => amount >= b.from && amount <= b.to);
+  const band = bandOfSize([...byCategory].map(([categoryId, amounts]) => ({ categoryId, count: amounts.length, min: Math.min(...amounts), max: Math.max(...amounts) })), amount);
   const name = band && nameOf(band.categoryId);
   return band && name ? { categoryId: band.categoryId, confidence: band.count >= SURE_FROM ? "sure" : "likely", why: `Charges this size went to ${name}.` } : null;
 }

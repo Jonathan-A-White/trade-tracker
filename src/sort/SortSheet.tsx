@@ -427,7 +427,7 @@ function ChargeSheet({ family, charge, onClose }: { family: FamilyFeed; charge: 
   const [atOnce, setAtOnce] = useState<AtOnce | "ask" | null>(null);
   if (atOnce === null && suggesting && tallyRead && categories && categories.length > 0) {
     // the alert's own merchant: a charge with none ('A charge' on the sheet) has no tally and teaches nothing
-    const local = suggestAtOnce(alert.merchant ?? "", categories, readTally());
+    const local = suggestAtOnce(alert.merchant ?? "", categories, readTally(), amount);
     setAtOnce(local ?? "ask");
     if (local && categoryId === null && !splitting) {
       setSuggestion(local);

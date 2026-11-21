@@ -157,12 +157,47 @@ function learnedFor(merchant: string): Learned | null {
 /** A suggestion made on the phone, with no grist: what he taught, or what the merchant normally goes to. */
 export type AtOnce = { source: "learned" | "tally"; categoryId: string; why: string };
 
+/** How far outside the sizes a category has held a charge still counts as its size: from a third less to half as much again (PROVISIONAL). */
+export const LIKE_SIZE = 1.5;
+
 /**
- * The suggestion made at once, or null when the mill is to be asked: what he taught for the merchant when its category is on offer (by
- * id, else by name), else the category holding over half of at least MAJORITY_FROM of the merchant's counted charges. The newest
- * charge counts as one, like any other.
+ * Where a charge of `amount` (dollars) goes when a payee's charges split by size (the Governor, 2026-11-21: Mint Mobile's $585 renewals
+ * go to Utilities, its $10 data top-ups to Stuff I Forgot to Budget For). `bands` are the smallest and largest charge each category
+ * held. It splits when two or more categories hold charges and no two categories' sizes (each widened by LIKE_SIZE) overlap; the
+ * charge then goes where charges of its size went. Null when there is one category, the sizes overlap, or the charge is of no category's size.
  */
-export function suggestAtOnce(merchant: string, categories: readonly YnabCategory[], tally: Tally | null): AtOnce | null {
+export function bandOfSize<T extends { min: number; max: number }>(bands: readonly T[], amount: number): T | null {
+  if (bands.length < 2) return null;
+  const widened = bands.map((b) => ({ band: b, from: b.min / LIKE_SIZE, to: b.max * LIKE_SIZE }));
+  for (const a of widened) for (const b of widened) if (a !== b && a.from <= b.to && b.from <= a.to) return null;
+  return widened.find((w) => amount >= w.from && amount <= w.to)?.band ?? null;
+}
+
+/** The size of a merchant's charges by category, for the payees tallyFor joins; only the categories the sheet offers count. */
+function sizesFor(merchant: string, tally: Tally, categories: readonly YnabCategory[]) {
+  if (!tally.sizes) return [];
+  const met = Object.keys(tally.sizes).filter((payee) => meets(merchant, payee));
+  if (met.length === 0) return [];
+  const best = met.reduce((a, b) => (merchantKey(b).length > merchantKey(a).length ? b : a));
+  const byCategory = new Map<string, { min: number; max: number }>();
+  for (const payee of met.filter((p) => merchantKey(p) === merchantKey(best))) {
+    for (const [id, range] of Object.entries(tally.sizes[payee]!)) {
+      const kept = byCategory.get(id);
+      byCategory.set(id, kept ? { min: Math.min(kept.min, range.min), max: Math.max(kept.max, range.max) } : range);
+    }
+  }
+  return categories.filter((c) => byCategory.has(c.id)).map((c) => ({ categoryId: c.id, name: c.name, ...byCategory.get(c.id)! }));
+}
+
+/**
+ * The suggestion made at once, or null when the mill is to be asked: the category the charge's size went to when the merchant's charges
+ * split by size (bandOfSize; only when `amount`, in dollars, is given), else what he taught for the merchant when its category is on
+ * offer (by id, else by name), else the category holding over half of at least MAJORITY_FROM of the merchant's counted charges. The
+ * newest charge counts as one, like any other.
+ */
+export function suggestAtOnce(merchant: string, categories: readonly YnabCategory[], tally: Tally | null, amount?: number): AtOnce | null {
+  const bySize = amount !== undefined && tally ? bandOfSize(sizesFor(merchant, tally, categories), amount) : null;
+  if (bySize) return { source: "tally", categoryId: bySize.categoryId, why: `Charges this size went to ${bySize.name}.` };
   const taught = learnedFor(merchant);
   if (taught) {
     const category =

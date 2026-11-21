@@ -26,6 +26,9 @@ export const TRANSFER_WINDOW_DAYS = 45;
 /** Per payee as YNAB names it, per category id: how many charges. */
 export type PayeeTally = Record<string, Record<string, number>>;
 
+/** Per payee as YNAB names it, per category id: the smallest and the largest charge, in dollars, that went there (a split is not counted). */
+export type PayeeSizes = Record<string, Record<string, { min: number; max: number }>>;
+
 export interface Tally {
   budgetId: string;
   /** the first day counted, YYYY-MM-DD */
@@ -33,6 +36,8 @@ export interface Tally {
   /** when it was read, epoch ms */
   readAt: number;
   payees: PayeeTally;
+  /** how big the charges were in each category, per payee; not set on a tally kept before it was (it is read again) */
+  sizes?: PayeeSizes;
   /** the transfers between his accounts YNAB already holds, recent ones; not set on a tally kept before they were (it is read again) */
   transfers?: RecentTransfer[];
 }
@@ -74,6 +79,25 @@ export function tallyTransactions(rows: readonly TallyRow[], notCounted: Readonl
   return payees;
 }
 
+/**
+ * The size of each payee's charges by category, for a charge that goes whole into one category: an outflow that is not deleted, not a
+ * transfer, not a split, and in a category that counts (as tallyTransactions counts). A merchant whose charges split by size (Mint
+ * Mobile's renewals and its data top-ups) is told apart by these (src/sort/suggest.ts, suggestAtOnce).
+ */
+export function tallySizes(rows: readonly TallyRow[], notCounted: ReadonlySet<string>): PayeeSizes {
+  const sizes: PayeeSizes = {};
+  for (const row of rows) {
+    const payee = row.payee_name?.trim();
+    if (!payee || row.deleted || row.transfer_account_id || !(row.amount < 0) || (row.subtransactions && row.subtransactions.length > 0)) continue;
+    if (!row.category_id || notCounted.has(row.category_id) || (row.category_name ?? "").trim().toLowerCase() === UNCATEGORIZED) continue;
+    const dollars = Math.abs(row.amount) / 1000;
+    const byCategory = (sizes[payee] ??= {});
+    const kept = byCategory[row.category_id];
+    byCategory[row.category_id] = kept ? { min: Math.min(kept.min, dollars), max: Math.max(kept.max, dollars) } : { min: dollars, max: dollars };
+  }
+  return sizes;
+}
+
 /** As much of a transaction YNAB reads back as the transfers look at. */
 export type TransferRow = Pick<YnabTransactionWire, "account_id" | "date" | "amount" | "transfer_account_id" | "deleted">;
 
@@ -103,12 +127,26 @@ function isRecentTransfer(value: unknown): value is RecentTransfer {
   return typeof t.from === "string" && typeof t.to === "string" && typeof t.date === "string" && typeof t.amount === "number";
 }
 
+function isPayeeSizes(value: unknown): value is PayeeSizes {
+  if (typeof value !== "object" || value === null) return false;
+  return Object.values(value).every(
+    (byCategory) =>
+      typeof byCategory === "object" &&
+      byCategory !== null &&
+      Object.values(byCategory as Record<string, unknown>).every((r) => {
+        const range = r as { min?: unknown; max?: unknown } | null;
+        return typeof range === "object" && range !== null && typeof range.min === "number" && typeof range.max === "number";
+      }),
+  );
+}
+
 function isTally(value: unknown): value is Tally {
   if (typeof value !== "object" || value === null) return false;
   const t = value as Partial<Tally>;
   if (typeof t.budgetId !== "string" || typeof t.since !== "string" || typeof t.readAt !== "number") return false;
   if (typeof t.payees !== "object" || t.payees === null) return false;
   if (t.transfers !== undefined && !(Array.isArray(t.transfers) && t.transfers.every(isRecentTransfer))) return false;
+  if (t.sizes !== undefined && !isPayeeSizes(t.sizes)) return false;
   return Object.values(t.payees).every(
     (byCategory) => typeof byCategory === "object" && byCategory !== null && Object.values(byCategory).every((n) => typeof n === "number" && n > 0),
   );
@@ -161,8 +199,8 @@ export async function refreshTally(client: YnabClient, options: { now?: number }
   const connection = await repo.getConnection();
   if (!connection) return;
   const kept = readTally();
-  // a tally kept before the transfers were kept with it has none: it is read again, and a delta would not bring them
-  if (kept && kept.budgetId === connection.budgetId && kept.transfers !== undefined && now - kept.readAt < TALLY_FRESH_MS) return;
+  // a tally kept before the transfers, or the sizes, were kept with it has none: it is read again, and a delta would not bring them
+  if (kept && kept.budgetId === connection.budgetId && kept.transfers !== undefined && kept.sizes !== undefined && now - kept.readAt < TALLY_FRESH_MS) return;
   const stamp = (key: string) => Number(localStorage.getItem(key)) || 0;
   if (stamp(YNAB_BUSY_KEY) > now) return;
   const failedAt = stamp(TALLY_FAILED_KEY);
@@ -183,7 +221,7 @@ export async function refreshTally(client: YnabClient, options: { now?: number }
   const internal = new Set((await repo.listCategories()).filter((c) => c.groupName === INTERNAL_GROUP).map((c) => c.id));
   // YNAB may have been turned Off (or another budget chosen) while the read was out: what it brought is then not kept.
   if ((await repo.getConnection())?.budgetId !== connection.budgetId) return;
-  const tally: Tally = { budgetId: connection.budgetId, since, readAt: now, payees: tallyTransactions(rows, internal), transfers: recentTransfers(rows, day(now - TRANSFER_WINDOW_DAYS * 24 * 60 * 60_000)) };
+  const tally: Tally = { budgetId: connection.budgetId, since, readAt: now, payees: tallyTransactions(rows, internal), sizes: tallySizes(rows, internal), transfers: recentTransfers(rows, day(now - TRANSFER_WINDOW_DAYS * 24 * 60 * 60_000)) };
   try {
     localStorage.setItem(TALLY_KEY, JSON.stringify(tally));
     localStorage.removeItem(TALLY_FAILED_KEY);

@@ -26,7 +26,7 @@ import {
   tallyFor,
   type SortChargeRequest,
 } from "./suggest";
-import { tallyTransactions, type Tally } from "@/ynab/tally";
+import { tallySizes, tallyTransactions, type Tally } from "@/ynab/tally";
 
 const key = new Uint8Array(32).fill(5);
 const schema = (name: string) => JSON.parse(readFileSync(resolve(process.cwd(), "schemas", name), "utf8")) as object;
@@ -44,16 +44,20 @@ const cats = [category("c1", "Groceries", 212), category("c2", "Eating Out", 8),
 const spending = category("c4", "Jonathan's Spending", 40);
 const all = [...cats, spending];
 
-/** A tally kept from YNAB's transactions: [payee, category id, date] each one charge. */
-function tallyOf(rows: [string, string, string?][]): Tally {
-  const payees = tallyTransactions(
-    rows.map(([payee, categoryId, date], i) => ({ id: `t${i}`, account_id: "a1", date: date ?? "2026-01-01", amount: -10_000, payee_name: payee, category_id: categoryId })),
-    new Set(),
-  );
-  return { budgetId: "b1", since: "2024-11-05", readAt: 0, payees };
+/** A tally kept from YNAB's transactions: [payee, category id, date, dollars] each one charge (10 dollars when none is given). */
+function tallyOf(rows: [string, string, string?, number?][]): Tally {
+  const transactions = rows.map(([payee, categoryId, date, dollars], i) => ({
+    id: `t${i}`,
+    account_id: "a1",
+    date: date ?? "2026-01-01",
+    amount: -(dollars ?? 10) * 1000,
+    payee_name: payee,
+    category_id: categoryId,
+  }));
+  return { budgetId: "b1", since: "2024-11-05", readAt: 0, payees: tallyTransactions(transactions, new Set()), sizes: tallySizes(transactions, new Set()) };
 }
-const times = (count: number, payee: string, categoryId: string, date?: string): [string, string, string?][] =>
-  Array.from({ length: count }, () => [payee, categoryId, date]);
+const times = (count: number, payee: string, categoryId: string, date?: string, dollars?: number): [string, string, string?, number?][] =>
+  Array.from({ length: count }, () => [payee, categoryId, date, dollars]);
 
 beforeEach(() => localStorage.clear());
 
@@ -128,6 +132,38 @@ describe("what a merchant NORMALLY goes to, from YNAB's tally", () => {
 
   it("with no tally kept nothing is suggested at once", () => {
     expect(suggestAtOnce("Logos", all, null)).toBeNull();
+  });
+});
+
+describe("a merchant whose charges split by size (Mint Mobile: $585 renewals, $10 data top-ups)", () => {
+  // c3 Household stands for Utilities here, c4 for Stuff I Forgot to Budget For
+  const mint = tallyOf([...times(4, "Mint Mobile", "c3", undefined, 585), ...times(6, "Mint Mobile", "c4", undefined, 10)]);
+
+  it("suggests the category the charge's size went to, when it is given", () => {
+    expect(suggestAtOnce("MINT MOBILE", all, mint, 585)).toEqual({ source: "tally", categoryId: "c3", why: "Charges this size went to Household." });
+    expect(suggestAtOnce("MINT MOBILE", all, mint, 10)).toEqual({ source: "tally", categoryId: "c4", why: "Charges this size went to Jonathan's Spending." });
+    expect(suggestAtOnce("MINT MOBILE", all, mint, 12.5)?.categoryId).toBe("c4");
+  });
+
+  it("goes by size ahead of what he taught for the merchant, since a lesson of one size would claim the other", () => {
+    learnChoice("MINT MOBILE", { id: "c4", name: "Jonathan's Spending" });
+    expect(suggestAtOnce("MINT MOBILE", all, mint, 585)?.categoryId).toBe("c3");
+  });
+
+  it("falls back to the majority when the charge is of no category's size, or no amount is given", () => {
+    expect(suggestAtOnce("MINT MOBILE", all, mint, 100)).toMatchObject({ categoryId: "c4", why: "6 of 10 here went to Jonathan's Spending." });
+    expect(suggestAtOnce("MINT MOBILE", all, mint)?.categoryId).toBe("c4");
+  });
+
+  it("leaves a merchant whose sizes overlap, or whose tally has no sizes, to the majority", () => {
+    const overlapping = tallyOf([...times(4, "Costco", "c1", undefined, 80), ...times(2, "Costco", "c3", undefined, 120)]);
+    expect(suggestAtOnce("Costco", all, overlapping, 120)?.categoryId).toBe("c1");
+    const old: Tally = { budgetId: mint.budgetId, since: mint.since, readAt: mint.readAt, payees: mint.payees };
+    expect(suggestAtOnce("MINT MOBILE", all, old, 585)?.categoryId).toBe("c4");
+  });
+
+  it("a merchant whose tally is one category is suggested as before, whatever the size", () => {
+    expect(suggestAtOnce("Logos", all, tallyOf(times(3, "Logos", "c4", undefined, 10)), 585)).toEqual({ source: "tally", categoryId: "c4", why: "3 of 3 here went to Jonathan's Spending." });
   });
 });
 

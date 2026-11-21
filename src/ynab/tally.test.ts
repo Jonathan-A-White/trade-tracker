@@ -2,7 +2,7 @@ import { db } from "@/db/database";
 import { YnabRepository } from "@/db/repositories/ynab-repository";
 import { createYnabClient } from "./api";
 import { fakeYnab, groupOf, type FakeYnab, type FakeYnabTransaction } from "./fake-ynab";
-import { TALLY_FRESH_MS, TALLY_KEY, TALLY_WINDOW_DAYS, readTally, recentTransfers, refreshTally, staleTally, tallyTransactions } from "./tally";
+import { TALLY_FRESH_MS, TALLY_KEY, TALLY_WINDOW_DAYS, readTally, recentTransfers, refreshTally, staleTally, tallySizes, tallyTransactions } from "./tally";
 import { YNAB_BUSY_KEY } from "./writer";
 
 const repo = new YnabRepository();
@@ -153,6 +153,38 @@ describe("the tally of YNAB's transactions by payee and category", () => {
     expect(readTally()).toBeNull();
     localStorage.setItem(TALLY_KEY, JSON.stringify({ budgetId: "b1", payees: { Logos: { c4: "nine" } } }));
     expect(readTally()).toBeNull();
+  });
+});
+
+describe("how big each payee's charges were, kept with the tally (mw-6ww.148.79)", () => {
+  it("keeps the smallest and largest charge, in dollars, per payee and category; a split, a transfer, a deleted row and an inflow have none", () => {
+    const sizes = tallySizes(
+      [
+        charge("Mint Mobile", "c3", { amount: -585_000 }),
+        charge("Mint Mobile", "c3", { amount: -570_500 }),
+        charge("Mint Mobile", "c4", { amount: -10_000 }),
+        charge("Mint Mobile", "c4", { amount: -10_000, deleted: true }),
+        charge("Mint Mobile", "c4", { amount: 20_000 }),
+        charge("Costco", null, { category_id: "split-id", subtransactions: [{ amount: -50_000, category_id: "c1" }, { amount: -20_000, category_id: "c3" }] }),
+        charge("Costco", null, { amount: -30_000, transfer_account_id: "a9" }),
+        charge("Costco", "unc", { amount: -30_000 }),
+      ],
+      new Set(["unc"]),
+    );
+    expect(sizes).toEqual({ "Mint Mobile": { c3: { min: 570.5, max: 585 }, c4: { min: 10, max: 10 } } });
+  });
+
+  it("refreshTally keeps the sizes, and reads again a tally kept before it kept them", async () => {
+    ynab.transactions.push(charge("Mint Mobile", "c3", { amount: -585_000 }), charge("Mint Mobile", "c4", { amount: -10_000 }));
+    await refreshTally(client(), { now: NOW });
+    expect(readTally()?.sizes).toEqual({ "Mint Mobile": { c3: { min: 585, max: 585 }, c4: { min: 10, max: 10 } } });
+    const kept = JSON.parse(localStorage.getItem(TALLY_KEY)!) as Record<string, unknown>;
+    delete kept.sizes;
+    localStorage.setItem(TALLY_KEY, JSON.stringify(kept));
+    const before = reads().length;
+    await refreshTally(client(), { now: NOW + 1000 });
+    expect(reads().length).toBe(before + 1);
+    expect(readTally()?.sizes).toBeDefined();
   });
 });
 
