@@ -26,14 +26,14 @@ function budgets() {
     {
       id: "b1",
       name: "Our Budget",
-      categoryGroups: [groupOf("g1", "Food", [["c1", "Groceries"]])],
+      categoryGroups: [groupOf("g1", "Food", [["c1", "Groceries", 10000]])],
       accounts: [accountOf("a1", "Checking")],
       payees: [payeeOf("p1", "Trader Joe's")],
     },
     {
       id: "b2",
       name: "Side Budget",
-      categoryGroups: [groupOf("g9", "Fun", [["c9", "Movies"]])],
+      categoryGroups: [groupOf("g9", "Fun", [["c9", "Movies", 5000]])],
       accounts: [accountOf("a9", "Savings")],
       payees: [payeeOf("p9", "Cinema")],
     },
