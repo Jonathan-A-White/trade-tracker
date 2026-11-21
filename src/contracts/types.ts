@@ -76,15 +76,19 @@ export type PendingLookupStatus =
   | "applied"
   | "failed";
 
-/** What a lookup asks of the factory: the whole item from a new product, or only the price of a known item from its shelf tag. */
-export type LookupMode = "new-item" | "price-only";
+/**
+ * What a lookup asks of the factory: the whole item from a new product, only the price of a known
+ * item from its shelf tag, or an estimated price of a known item from its name alone (no photos;
+ * 'Use an estimate' on a line whose price he judges wrong).
+ */
+export type LookupMode = "new-item" | "price-only" | "estimate";
 
 /** A photographed product waiting for the factory to name and price it. */
 export interface PendingLookup {
   id: string;
   barcode: string;
   tripId: string;
-  /** The itemId its pending TripItem carries: a placeholder until the line is filled, then the real item. A price-only lookup carries the known item's id and has no pending line. */
+  /** The itemId its pending TripItem carries: a placeholder until the line is filled, then the real item. A price-only or estimate lookup carries the known item's id and has no pending line. */
   itemId: string;
   /** Absent on lookups made before price-only existed: those are "new-item". */
   mode?: LookupMode;

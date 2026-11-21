@@ -2,13 +2,13 @@
   "grind": 1,
   "app": "trade-tracker",
   "kind": "item-from-photos",
-  "versions": ["1.0"],
+  "versions": ["1.0", "1.1"],
   "model": "sonnet",
   "effort": "low",
   "instructions": "grinds/item-from-photos.md",
   "answerSchema": "schemas/item-from-photos-answer-1.0.schema.json",
   "attachments": {
-    "min": 1,
+    "min": 0,
     "max": 2,
     "mime": ["image/jpeg", "image/webp"],
     "maxBytes": 4194304

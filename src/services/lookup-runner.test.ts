@@ -1023,3 +1023,51 @@ describe("LookupRunner a lookup that lands after the receipt's answer", () => {
     expect((await db.trips.get(trip.id))?.receiptReconcile?.matchedTripItemIds).not.toContain(late!.id);
   });
 });
+
+describe("LookupRunner estimate lookups", () => {
+  it("sends the item's name, unit and category with no photos, and the estimate lands as a Guess on the line", async () => {
+    const trip = await startTrip();
+    const item = await itemRepo.create({
+      barcode: "0123",
+      name: "Italian Dressing",
+      currentPrice: 2.99,
+      unitType: "each",
+      category: "Condiments & Sauces",
+    });
+    const line = await tripItemRepo.addToTrip({
+      tripId: trip.id,
+      itemId: item.id,
+      price: 0.01,
+      quantity: 1,
+      onSale: false,
+    });
+    const lookup = (await lookups.askForEstimate(line.id))!;
+    const { client, sent, waiting } = fakeClient();
+    makeRunner(client);
+
+    await waitFor(() => expect(sent).toHaveLength(1));
+    expect(sent[0]).toMatchObject({
+      barcode: "0123",
+      mode: "estimate",
+      clientId: lookup.id,
+      photos: [],
+      estimate: { name: "Italian Dressing", unitType: "each", category: "Condiments & Sauces" },
+    });
+
+    await waitFor(() => expect(waiting.has("direct:tx1")).toBe(true));
+    waiting.get("direct:tx1")!.resolve(
+      answered("direct:tx1", {
+        name: "Italian Dressing",
+        category: "Condiments & Sauces",
+        unitType: "each",
+        price: null,
+        estimatedPrice: 3.49,
+        estimateNote: "Typical price for a bottle of dressing.",
+        confidence: "medium",
+      }),
+    );
+    await waitFor(async () => expect((await db.tripItems.get(line.id))?.price).toBe(3.49));
+    expect((await db.tripItems.get(line.id))?.guess?.basis).toBe("Typical price for a bottle of dressing.");
+    expect((await db.items.get(item.id))?.currentPrice).toBe(2.99);
+  });
+});

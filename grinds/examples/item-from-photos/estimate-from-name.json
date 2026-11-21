@@ -1,0 +1,23 @@
+{
+  "description": "A known item whose price the shopper judges wrong asks for an estimate by its name alone (no photos): the tag price stays null (nothing was read) and a sensible estimatedPrice for the same unit comes back with its note.",
+  "schemaVersion": "1.1",
+  "request": {
+    "barcode": "0123456789012",
+    "mode": "estimate",
+    "name": "Trader Joe's Reduced Sodium Italian Dressing",
+    "unitType": "each",
+    "category": "Condiments & Sauces"
+  },
+  "expect": {
+    "price": {
+      "is_null": true
+    },
+    "unitType": "each",
+    "estimatedPrice": {
+      "present": true
+    },
+    "estimateNote": {
+      "present": true
+    }
+  }
+}

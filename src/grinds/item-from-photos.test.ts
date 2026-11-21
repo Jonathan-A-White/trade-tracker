@@ -14,10 +14,12 @@ const instructions = readFileSync(
 );
 const answerSchema = readJson("schemas/item-from-photos-answer-1.0.schema.json");
 const inputSchema = readJson("schemas/item-from-photos-input-1.0.schema.json");
+const inputSchema11 = readJson("schemas/item-from-photos-input-1.1.schema.json");
 
 const ajv = new Ajv({ allErrors: true, strict: true });
 const validateAnswer = ajv.compile(answerSchema);
 const validateInput = ajv.compile(inputSchema);
+const validateInput11 = ajv.compile(inputSchema11);
 
 const tagAnswer = {
   name: "Kerrygold Salted Butter",
@@ -41,7 +43,7 @@ describe("grinds/item-from-photos.json", () => {
   it("names the app, kind, version, model, effort and attachment limits", () => {
     expect(grind.app).toBe("trade-tracker");
     expect(grind.kind).toBe("item-from-photos");
-    expect(grind.versions).toEqual(["1.0"]);
+    expect(grind.versions).toEqual(["1.0", "1.1"]);
     expect(grind.model).toBe("sonnet");
     expect(grind.effort).toBe("low");
     expect(grind.instructions).toBe("grinds/item-from-photos.md");
@@ -49,7 +51,7 @@ describe("grinds/item-from-photos.json", () => {
       "schemas/item-from-photos-answer-1.0.schema.json"
     );
     expect(grind.attachments).toEqual({
-      min: 1,
+      min: 0, // an estimate (input 1.1) has no photo; the 1.0 modes are told to expect one
       max: 2,
       mime: ["image/jpeg", "image/webp"],
       maxBytes: 4194304,
@@ -138,6 +140,42 @@ describe("item-from-photos input schema", () => {
   it("rejects an unknown mode or a missing barcode", () => {
     expect(validateInput({ barcode: "1", mode: "other" })).toBe(false);
     expect(validateInput({ mode: "new-item" })).toBe(false);
+  });
+});
+
+describe("item-from-photos input schema 1.1 (estimate)", () => {
+  const estimate = {
+    barcode: "0123456789012",
+    mode: "estimate",
+    name: "Italian Dressing",
+    unitType: "each",
+    category: "Condiments & Sauces",
+  };
+
+  it("accepts an estimate request with a name and unit, and every 1.0 request", () => {
+    expect(validateInput11(estimate)).toBe(true);
+    expect(validateInput11({ ...estimate, category: undefined })).toBe(true);
+    expect(validateInput11({ barcode: "1", mode: "new-item", categories: ["Produce"] })).toBe(true);
+    expect(validateInput11({ barcode: "1", mode: "price-only" })).toBe(true);
+  });
+
+  it("needs the name and unit for an estimate", () => {
+    expect(validateInput11({ barcode: "1", mode: "estimate" })).toBe(false);
+    expect(validateInput11({ ...estimate, name: undefined })).toBe(false);
+    expect(validateInput11({ ...estimate, unitType: undefined })).toBe(false);
+  });
+
+  it("is refused by 1.0, which the photo modes still use", () => {
+    expect(validateInput(estimate)).toBe(false);
+  });
+
+  it("is described by the instructions, field by field", () => {
+    const properties = inputSchema11.properties as Record<string, unknown>;
+    for (const field of Object.keys(properties)) {
+      expect(instructions).toContain(`\`${field}\``);
+    }
+    expect(instructions).toMatch(/`estimate`/);
+    expect(instructions).toMatch(/never 0/);
   });
 });
 

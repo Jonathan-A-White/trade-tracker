@@ -7,6 +7,8 @@ import type { ReceiptClient } from "@/services/receipt-reconcile";
 /** The grind the lookup runs: grinds/item-from-photos.json, version 1.0 of its input and answer. */
 export const LOOKUP_KIND = "item-from-photos";
 export const LOOKUP_VERSION = "1.0";
+/** An estimate lookup (no photos, the item's name instead) is the grind's input 1.1; the answer stays 1.0. */
+export const ESTIMATE_VERSION = "1.1";
 
 /**
  * The backend, key and licence reading of the latest lookup client: FactoryProvider builds one each
@@ -53,11 +55,12 @@ export function makeLookupClient(
     send: (request) =>
       mill.send({
         kind: LOOKUP_KIND,
-        v: LOOKUP_VERSION,
+        v: request.estimate ? ESTIMATE_VERSION : LOOKUP_VERSION,
         input: {
           barcode: request.barcode,
           mode: request.mode,
           categories: request.categories,
+          ...(request.estimate ?? {}),
         },
         photos: request.photos,
         clientId: request.clientId,

@@ -2,8 +2,9 @@ import { liveQuery, type Subscription } from "dexie";
 import { door } from "bsv-kit/bsv";
 import { AwaitAbortedError, GristInputError } from "@/factory/mill";
 import type { GristAnswer, Photo } from "@/factory/mill";
-import type { LookupMode, PendingLookup } from "@/contracts/types";
+import type { LookupMode, PendingLookup, UnitType } from "@/contracts/types";
 import { GROCERY_CATEGORIES } from "@/core/categories";
+import { db } from "@/db/database";
 import { PendingLookupRepository } from "@/db/repositories/pending-lookup-repository";
 import { GIVE_UP_AFTER_MS, RESEND_AFTER_MS, notBackAt, resendDueAt, type LookupWaitLimits } from "@/core/lookup-wait";
 import { parseItemAnswer } from "@/services/lookup-answer";
@@ -15,6 +16,8 @@ export interface LookupRequest {
   mode: LookupMode;
   categories: string[];
   photos: Photo[];
+  /** For mode 'estimate' only: what the factory is told of the item, since it has no photo to read. */
+  estimate?: { name: string; unitType: UnitType; category?: string };
   /** The lookup's id, so the backend stores a retried send once. */
   clientId: string;
 }
@@ -60,11 +63,24 @@ async function toPhoto(blob: Blob): Promise<Photo> {
 
 /** The request for a lookup; always the same request id (the lookup's own), so a send repeated reaches the factory once. */
 async function requestOf(lookup: PendingLookup): Promise<LookupRequest> {
+  const mode = lookup.mode ?? "new-item";
+  // an estimate has no photo: the factory is told the item's name, unit and category instead
+  const item = mode === "estimate" ? await db.items.get(lookup.itemId) : undefined;
+  if (mode === "estimate" && !item) throw new GristInputError("The item for this estimate is gone.");
   return {
     barcode: lookup.barcode,
-    mode: lookup.mode ?? "new-item",
+    mode,
     categories: [...GROCERY_CATEGORIES],
     photos: await Promise.all(lookup.photos.map(toPhoto)),
+    ...(item
+      ? {
+          estimate: {
+            name: item.name,
+            unitType: item.unitType,
+            ...(item.category ? { category: item.category } : {}),
+          },
+        }
+      : {}),
     clientId: lookup.id,
   };
 }
@@ -328,7 +344,7 @@ export class LookupRunner {
   private async matchLateReceipt(id: string): Promise<void> {
     try {
       const lookup = await this.repo.getById(id);
-      if (lookup && lookup.mode !== "price-only") await matchLateReceiptLines(lookup.tripId);
+      if (lookup && lookup.mode !== "price-only" && lookup.mode !== "estimate") await matchLateReceiptLines(lookup.tripId);
     } catch (err) {
       console.error("Failed to match the receipt to a lookup that landed:", err);
     }

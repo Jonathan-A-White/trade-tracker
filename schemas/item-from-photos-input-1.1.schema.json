@@ -1,0 +1,71 @@
+{
+  "$schema": "http://json-schema.org/draft-07/schema#",
+  "$id": "item-from-photos-input-1.1",
+  "title": "Item From Photos input 1.1",
+  "type": "object",
+  "additionalProperties": false,
+  "required": [
+    "barcode",
+    "mode"
+  ],
+  "properties": {
+    "barcode": {
+      "type": "string",
+      "minLength": 1
+    },
+    "mode": {
+      "enum": [
+        "new-item",
+        "price-only",
+        "estimate"
+      ]
+    },
+    "categories": {
+      "type": "array",
+      "items": {
+        "type": "string"
+      }
+    },
+    "name": {
+      "type": "string",
+      "minLength": 1,
+      "maxLength": 200
+    },
+    "unitType": {
+      "enum": [
+        "each",
+        "per_lb"
+      ]
+    },
+    "category": {
+      "type": "string",
+      "minLength": 1,
+      "maxLength": 60
+    }
+  },
+  "description": "Input 1.0 plus mode 'estimate': a known item asked for an estimated price from its name, unit and category alone, with no photos.",
+  "allOf": [
+    {
+      "if": {
+        "properties": {
+          "mode": {
+            "const": "estimate"
+          }
+        },
+        "required": [
+          "mode"
+        ]
+      },
+      "then": {
+        "properties": {
+          "name": true,
+          "unitType": true
+        },
+        "required": [
+          "name",
+          "unitType"
+        ]
+      }
+    }
+  ]
+}
