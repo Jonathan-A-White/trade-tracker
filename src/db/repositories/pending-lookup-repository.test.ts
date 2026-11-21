@@ -441,6 +441,33 @@ describe("PendingLookupRepository", () => {
       expect(line.priceFlag).toBe("add");
     });
 
+    it("a known item stored at $0.00 gets its last price here as a Guess, and the total counts it", async () => {
+      const trip = await startTrip();
+      const item = await itemRepo.create({
+        barcode: "0077",
+        name: "Oat Bars",
+        currentPrice: 0,
+        unitType: "each",
+      });
+      await db.priceHistory.put({
+        id: "h1",
+        itemId: item.id,
+        storeId: "s1",
+        tripItemId: "old",
+        price: 2.79,
+        recordedAt: 1000,
+      });
+      const lookup = await lookups.create({ barcode: "0077", tripId: trip.id, photos: [] });
+
+      await lookups.applyAnswer(lookup.id, { ...noTag, price: null });
+
+      const [line] = await tripItemRepo.getByTrip(trip.id);
+      expect(line.price).toBe(2.79);
+      expect(line.guess?.basis).toMatch(/last price here/i);
+      expect(line.priceFlag).toBeUndefined();
+      expect((await db.trips.get(trip.id))?.scannedSubtotal).toBeCloseTo(2.79, 2);
+    });
+
     it("a tag price beats any guess and is not marked", async () => {
       const trip = await startTrip();
       const lookup = await lookups.create({ barcode: "0066", tripId: trip.id, photos: [] });

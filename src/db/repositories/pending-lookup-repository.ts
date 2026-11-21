@@ -8,6 +8,7 @@ import type {
 } from "../../contracts/types";
 import { lookupNotBack } from "../../core/lookup-wait";
 import { TripItemRepository } from "./trip-item-repository";
+import { pastPriceGuess } from "./price-guess";
 
 const tripItemRepo = new TripItemRepository();
 
@@ -26,9 +27,9 @@ function weightChange(unitType: Item["unitType"], answer: ItemFromPhotosAnswer):
 }
 
 /**
- * The best guess for a line whose tag gave no price: the item's own last price
- * at this store, else its stored price, else the factory's estimate; null when
- * there is none. A guess is never written to the item.
+ * The best guess for a line whose tag gave no price: what the shopper already paid (see
+ * pastPriceGuess), else the factory's estimate; null when there is none. A guess is never
+ * written to the item.
  */
 async function bestGuess(
   item: Item,
@@ -36,21 +37,8 @@ async function bestGuess(
   storeName: string | undefined,
   answer: ItemFromPhotosAnswer,
 ): Promise<{ price: number; basis: string } | null> {
-  if (storeId) {
-    const history = await db.priceHistory.where("itemId").equals(item.id).toArray();
-    const last = history
-      .filter((entry) => entry.storeId === storeId && entry.price > 0)
-      .sort((a, b) => b.recordedAt - a.recordedAt)[0];
-    if (last) {
-      return {
-        price: last.price,
-        basis: `Last price here${storeName ? ` at ${storeName}` : ""}.`,
-      };
-    }
-  }
-  if (item.currentPrice > 0) {
-    return { price: item.currentPrice, basis: "Last price you paid." };
-  }
+  const past = await pastPriceGuess(item, storeId, storeName);
+  if (past) return past;
   if (answer.estimatedPrice !== undefined && answer.estimatedPrice > 0) {
     return {
       price: answer.estimatedPrice,

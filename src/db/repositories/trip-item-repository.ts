@@ -6,9 +6,17 @@ import type {
 } from "../../contracts/types";
 import { calculateLineTotal } from "../../core/pricing";
 import { tripTotals } from "../../core/trip-totals";
+import { pastPriceGuess } from "./price-guess";
 
 export class TripItemRepository {
+  /**
+   * Adds a line, or merges into the trip's line for the same item. A price of 0 is not a price:
+   * a new line then takes the best guess from what was paid before, marked as a Guess (counted in
+   * the totals), or is flagged 'Add price' when nothing is known; a merge keeps the price the line
+   * already has. No history entry is written for a price that was not given.
+   */
   async addToTrip(input: CreateTripItemInput): Promise<TripItem> {
+    const priceGiven = input.price > 0 && Number.isFinite(input.price);
     // Check if this item already exists in the trip
     const existing = await db.tripItems
       .where("tripId")
@@ -23,7 +31,7 @@ export class TripItemRepository {
         existing.weightLbs !== undefined && input.weightLbs !== undefined
           ? existing.weightLbs + input.weightLbs
           : existing.weightLbs ?? input.weightLbs;
-      const newPrice = input.price; // Use the latest price
+      const newPrice = priceGiven ? input.price : existing.price; // Use the latest price, when there is one
       const lineTotal = calculateLineTotal(newPrice, newQuantity, newWeight);
 
       await db.transaction("rw", [db.tripItems, db.priceHistory, db.trips], async () => {
@@ -34,11 +42,11 @@ export class TripItemRepository {
           lineTotal,
           onSale: input.onSale,
           // a price from a fresh scan is not a guess
-          guess: undefined,
+          ...(priceGiven ? { guess: undefined } : {}),
         });
 
         const trip = await db.trips.get(input.tripId);
-        if (trip) {
+        if (trip && priceGiven) {
           const priceEntry: PriceHistoryEntry = {
             id: crypto.randomUUID(),
             itemId: input.itemId,
@@ -53,18 +61,38 @@ export class TripItemRepository {
         await this.recalcTripSubtotal(input.tripId);
       });
 
-      return { ...existing, quantity: newQuantity, weightLbs: newWeight, price: newPrice, lineTotal, onSale: input.onSale };
+      return {
+        ...existing,
+        quantity: newQuantity,
+        weightLbs: newWeight,
+        price: newPrice,
+        lineTotal,
+        onSale: input.onSale,
+        ...(priceGiven ? { guess: undefined } : {}),
+      };
     }
 
-    const lineTotal = calculateLineTotal(
-      input.price,
-      input.quantity,
-      input.weightLbs
-    );
+    let price = input.price;
+    let guess = input.guess;
+    let priceFlag = input.priceFlag;
+    if (!priceGiven) {
+      const item = await db.items.get(input.itemId);
+      const trip = await db.trips.get(input.tripId);
+      const store = trip ? await db.stores.get(trip.storeId) : undefined;
+      const found = item ? await pastPriceGuess(item, trip?.storeId, store?.name) : null;
+      price = found?.price ?? 0;
+      if (found) guess = { basis: found.basis };
+      else priceFlag = priceFlag ?? "add";
+    }
+
+    const lineTotal = calculateLineTotal(price, input.quantity, input.weightLbs);
 
     const tripItem: TripItem = {
       id: crypto.randomUUID(),
       ...input,
+      price,
+      guess,
+      priceFlag,
       lineTotal,
       addedAt: Date.now(),
     };
@@ -74,7 +102,7 @@ export class TripItemRepository {
 
       // Look up the trip to get the storeId for the price history entry
       const trip = await db.trips.get(input.tripId);
-      if (trip) {
+      if (trip && priceGiven) {
         const priceEntry: PriceHistoryEntry = {
           id: crypto.randomUUID(),
           itemId: input.itemId,

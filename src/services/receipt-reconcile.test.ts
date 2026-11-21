@@ -155,6 +155,35 @@ describe("applyReceiptAnswer", () => {
     expect(history.some((entry) => entry.price === 4.29 && entry.tripItemId === line.id)).toBe(true);
   });
 
+  it("a line at $0.00 takes the receipt's price, and the item's current price follows", async () => {
+    const trip = await seedTrip();
+    const item = await itemRepo.create({
+      barcode: "0099",
+      name: "Reduced Sodium Italian Dressing",
+      currentPrice: 0,
+      unitType: "each",
+    });
+    const line = await tripItemRepo.addToTrip({
+      tripId: trip.id,
+      itemId: item.id,
+      price: 0,
+      quantity: 1,
+      onSale: false,
+    });
+
+    const result = await applyReceiptAnswer(trip.id, answer([receiptLine(line.id, 3.49)], 3.49));
+
+    expect(result.changes).toHaveLength(1);
+    expect(result.changes[0]).toMatchObject({ oldPrice: 0, newPrice: 3.49 });
+    const saved = await db.tripItems.get(line.id);
+    expect(saved?.price).toBe(3.49);
+    expect(saved?.lineTotal).toBeCloseTo(3.49, 2);
+    expect(saved?.priceFlag).toBeUndefined();
+    expect((await db.items.get(item.id))?.currentPrice).toBe(3.49);
+    const history = await db.priceHistory.where("itemId").equals(item.id).toArray();
+    expect(history.some((entry) => entry.price === 3.49 && entry.tripItemId === line.id)).toBe(true);
+  });
+
   it("takes the receipt's price for the whole line and divides it by the count", async () => {
     const trip = await seedTrip();
     const banana = await addLine(trip.id, "0001", "Bananas", 0.19, 7);
