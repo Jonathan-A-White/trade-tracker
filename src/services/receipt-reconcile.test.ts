@@ -688,3 +688,32 @@ describe("applyReceiptAnswer: lines still at the factory", () => {
     expect((await db.trips.get(trip.id))?.receiptReconcile?.stillAtFactoryIds).toEqual([pendingLine.id]);
   });
 });
+
+describe("a line priced by 'Use an estimate'", () => {
+  it("is replaced by the receipt's price like any guess, and the item takes the receipt's price", async () => {
+    const trip = await seedTrip();
+    const { item, line } = await addLine(trip.id, "0007", "Italian Dressing", 2.99, 1);
+    const { PendingLookupRepository } = await import("@/db/repositories/pending-lookup-repository");
+    const lookups = new PendingLookupRepository();
+    const lookup = (await lookups.askForEstimate(line.id))!;
+    await lookups.applyAnswer(lookup.id, {
+      name: "Italian Dressing",
+      category: "Condiments & Sauces",
+      unitType: "each",
+      price: null,
+      estimatedPrice: 3.49,
+      estimateNote: "Typical price.",
+      confidence: "medium",
+    });
+    expect((await db.tripItems.get(line.id))?.guess).toBeDefined();
+    expect((await db.items.get(item.id))?.currentPrice).toBe(2.99);
+
+    const result = await applyReceiptAnswer(trip.id, answer([receiptLine(line.id, 3.99)]));
+
+    expect(result.changes[0]).toMatchObject({ oldPrice: 3.49, newPrice: 3.99, wasGuess: true });
+    const saved = await db.tripItems.get(line.id);
+    expect(saved?.price).toBe(3.99);
+    expect(saved?.guess).toBeUndefined();
+    expect((await db.items.get(item.id))?.currentPrice).toBe(3.99);
+  });
+});

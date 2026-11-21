@@ -16,7 +16,7 @@ export interface TripLines {
   itemsById: Record<string, Item>;
   /** Open pending-line lookups, keyed by the itemId their pending line carries. */
   pendingByItemId: Record<string, PendingLookup>;
-  /** Latest price-only lookup of each known item on the trip. */
+  /** Latest price-only or estimate lookup of each known item on the trip. */
   priceLookupsByItemId: Record<string, PendingLookup>;
   /** True until the trip, its store, its lines, their items and its lookups have all been read. */
   loading: boolean;
@@ -32,7 +32,7 @@ export async function loadPendingByItemId(
 ): Promise<Record<string, PendingLookup>> {
   const map: Record<string, PendingLookup> = {};
   for (const lookup of await pendingLookupRepo.listByTrip(tripId)) {
-    if (lookup.mode !== "price-only" && lookup.status !== "applied") {
+    if (lookup.mode !== "price-only" && lookup.mode !== "estimate" && lookup.status !== "applied") {
       map[lookup.itemId] = lookup;
     }
   }
@@ -87,7 +87,7 @@ export function useTripLines(tripId: string | undefined): TripLines {
   const priceRead = useLiveQuery(async () => {
     const map: Record<string, PendingLookup> = {};
     if (tripId) {
-      for (const lookup of await pendingLookupRepo.listPriceOnlyByTrip(tripId)) {
+      for (const lookup of await pendingLookupRepo.listLineLookupsByTrip(tripId)) {
         map[lookup.itemId] = lookup;
       }
     }

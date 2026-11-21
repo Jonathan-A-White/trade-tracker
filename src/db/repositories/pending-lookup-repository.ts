@@ -56,6 +56,11 @@ function tagPrice(answer: ItemFromPhotosAnswer): number | null {
   return answer.price === null || answer.price === 0 ? null : answer.price;
 }
 
+/** A price-only or estimate lookup has no pending line of its own: the item's line stays. */
+function hasNoLineOfItsOwn(lookup: PendingLookup): boolean {
+  return lookup.mode === "price-only" || lookup.mode === "estimate";
+}
+
 /** A lookup thrown away and the pending line it had (none for a price-only lookup), kept so Discard can be undone. */
 export interface DiscardedLookup {
   lookup: PendingLookup;
@@ -134,6 +139,41 @@ export class PendingLookupRepository {
     return (await this.listByTrip(tripId)).filter((l) => l.mode === "price-only");
   }
 
+  /** The lookups a known item's line can be waiting on, price-only and estimate, oldest first. */
+  async listLineLookupsByTrip(tripId: string): Promise<PendingLookup[]> {
+    return (await this.listByTrip(tripId)).filter(hasNoLineOfItsOwn);
+  }
+
+  /**
+   * 'Use an estimate': drops the price of a trip line (its item's stored price stays) and queues an
+   * estimate lookup of the item for the factory. The line counts $0 until the answer; an earlier
+   * answered or failed estimate for the same item on the trip is replaced. Undefined when there is no
+   * such line or item.
+   */
+  async askForEstimate(tripItemId: string): Promise<PendingLookup | undefined> {
+    const line = await db.tripItems.get(tripItemId);
+    const item = line ? await db.items.get(line.itemId) : undefined;
+    if (!line || !item) return undefined;
+    const lookup: PendingLookup = {
+      id: crypto.randomUUID(),
+      barcode: item.barcode,
+      tripId: line.tripId,
+      itemId: item.id,
+      mode: "estimate",
+      photos: [],
+      status: "waiting-to-send",
+      createdAt: Date.now(),
+    };
+    await db.transaction("rw", [db.pendingLookups, db.tripItems, db.trips], async () => {
+      for (const old of await this.listByTrip(line.tripId)) {
+        if (old.mode === "estimate" && old.itemId === item.id) await db.pendingLookups.delete(old.id);
+      }
+      await db.pendingLookups.put(lookup);
+      await tripItemRepo.update(line.id, { price: 0, guess: undefined, priceFlag: undefined });
+    });
+    return lookup;
+  }
+
   async getById(id: string): Promise<PendingLookup | undefined> {
     return db.pendingLookups.get(id);
   }
@@ -179,7 +219,7 @@ export class PendingLookupRepository {
    */
   async setQuantity(id: string, quantity: number): Promise<void> {
     const lookup = await db.pendingLookups.get(id);
-    if (!lookup || lookup.mode === "price-only") return;
+    if (!lookup || hasNoLineOfItsOwn(lookup)) return;
     const line = await db.tripItems
       .where("[tripId+itemId]")
       .equals([lookup.tripId, lookup.itemId])
@@ -195,8 +235,8 @@ export class PendingLookupRepository {
   async discard(id: string): Promise<DiscardedLookup | undefined> {
     const lookup = await db.pendingLookups.get(id);
     if (!lookup) return undefined;
-    // a price-only lookup has no line of its own: the item's line stays
-    if (lookup.mode === "price-only") {
+    // a price-only or estimate lookup has no line of its own: the item's line stays
+    if (hasNoLineOfItsOwn(lookup)) {
       await db.pendingLookups.delete(id);
       return { lookup };
     }
@@ -265,7 +305,18 @@ export class PendingLookupRepository {
 
   /** The lookup will not be answered as it stands; the reason is shown with Retry. */
   async markFailed(id: string, error: string): Promise<void> {
+    const lookup = await db.pendingLookups.get(id);
     await db.pendingLookups.update(id, { status: "failed", error });
+    if (lookup?.mode === "estimate") await this.flagUnpriced(lookup);
+  }
+
+  /** An estimate that did not come: the line, still without a price, asks for one ('Add price'). */
+  private async flagUnpriced(lookup: PendingLookup): Promise<void> {
+    const line = await db.tripItems
+      .where("[tripId+itemId]")
+      .equals([lookup.tripId, lookup.itemId])
+      .first();
+    if (line && line.price === 0 && !line.guess) await tripItemRepo.update(line.id, { priceFlag: "add" });
   }
 
   /**
@@ -300,6 +351,7 @@ export class PendingLookupRepository {
     const lookup = await db.pendingLookups.get(id);
     if (!lookup || lookup.status === "applied") return;
     if (lookup.mode === "price-only") return this.applyPriceAnswer(lookup, answer);
+    if (lookup.mode === "estimate") return this.applyEstimateAnswer(lookup, answer);
 
     await db.transaction(
       "rw",
@@ -411,5 +463,47 @@ export class PendingLookupRepository {
         });
       },
     );
+  }
+
+  /**
+   * Fills an estimate lookup from a checked answer: the line of the item on the trip takes the
+   * factory's estimatedPrice as a Guess with its note, while it is still waiting (price 0, no guess:
+   * a price he typed meanwhile stays). Nothing is written to the item or the price history. An answer
+   * with no estimate, or one for another unit, fails the lookup with a reason.
+   */
+  private async applyEstimateAnswer(
+    lookup: PendingLookup,
+    answer: ItemFromPhotosAnswer,
+  ): Promise<void> {
+    const item = await db.items.get(lookup.itemId);
+    const estimate = answer.estimatedPrice;
+    const usable =
+      item !== undefined &&
+      estimate !== undefined &&
+      estimate > 0 &&
+      answer.unitType === item.unitType;
+    if (!usable) {
+      await this.markFailed(
+        lookup.id,
+        estimate !== undefined && estimate > 0
+          ? "The factory's estimate was for a different unit, so it was not used."
+          : "The factory could not estimate this one.",
+      );
+      return;
+    }
+    await db.transaction("rw", [db.pendingLookups, db.tripItems, db.trips], async () => {
+      const line = await db.tripItems
+        .where("[tripId+itemId]")
+        .equals([lookup.tripId, lookup.itemId])
+        .first();
+      if (line && line.price === 0 && !line.guess) {
+        await tripItemRepo.update(line.id, {
+          price: estimate,
+          priceFlag: undefined,
+          guess: { basis: answer.estimateNote?.trim() || "The factory's estimate." },
+        });
+      }
+      await db.pendingLookups.update(lookup.id, { status: "applied", error: undefined, notBack: undefined });
+    });
   }
 }

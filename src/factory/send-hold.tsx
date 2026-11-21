@@ -48,6 +48,20 @@ export function sendHoldText(hold: SendHold): string {
   return HOLD_TEXT[hold];
 }
 
+/** Why 'Use an estimate' cannot ask the factory now: unlike a scan, it is not queued for later. */
+const ESTIMATE_HOLD_TEXT: Record<SendHold, string> = {
+  "no-key": "Can't ask the factory: no factory key. Settings > Factory.",
+  locked: "Can't ask the factory: the factory key is locked. Settings > Factory > Unlock.",
+  offline: "Can't ask the factory while offline.",
+  "licence-checking": "Can't ask the factory yet: checking the licence.",
+  "no-licence": "Can't ask the factory: no licence.",
+  "backing-off": "Can't ask the factory just now: it is not answering. Try again in a moment.",
+};
+
+export function estimateHoldText(hold: SendHold): string {
+  return ESTIMATE_HOLD_TEXT[hold];
+}
+
 /** What a receipt already sent says while the phone is not asking for its answer. */
 const RECEIPT_HOLD_TEXT: Record<SendHold, string> = {
   "no-key": "Not checking for the answer: no factory key. Settings > Factory",
