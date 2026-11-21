@@ -136,6 +136,28 @@ function groupCharges(charges: readonly IdeaCharge[], kindOf: ProposeOptions["ki
 const sum = (charges: readonly IdeaCharge[]) => charges.reduce((s, c) => s + cents(c.amount), 0) / 100;
 const payeesOf = (charges: readonly IdeaCharge[]) => [...new Set(charges.map((c) => c.payee))];
 
+/** The most payees an idea's sentence names; the rest are counted ("and 9 more") and listed under "The charges behind it". PROVISIONAL, Governor to confirm. */
+export const PAYEES_NAMED = 3;
+/** The longest a payee name is in that sentence (an ellipsis counts); bank text runs on with card digits and addresses. PROVISIONAL. */
+export const PAYEE_NAME_LENGTH = 40;
+
+const shortName = (name: string): string => (name.length > PAYEE_NAME_LENGTH ? `${name.slice(0, PAYEE_NAME_LENGTH - 1).trimEnd()}…` : name);
+
+/**
+ * The payees of an idea as its sentence says them: up to PAYEES_NAMED names, each cut to PAYEE_NAME_LENGTH, alphabetical, then 'and N more'.
+ * When there are more than PAYEES_NAMED the ones named are the ones that took the most money (ties alphabetical), because those are what the
+ * idea is mostly about; with PAYEES_NAMED or fewer all are named.
+ */
+export function payeeSentence(idea: Pick<BudgetIdea, "payees" | "charges">): string {
+  const payees = [...idea.payees];
+  const spent = new Map<string, number>();
+  for (const c of idea.charges) spent.set(c.payee, (spent.get(c.payee) ?? 0) + cents(c.amount));
+  const named = payees.length <= PAYEES_NAMED ? payees : [...payees].sort((a, b) => (spent.get(b) ?? 0) - (spent.get(a) ?? 0) || (a < b ? -1 : a > b ? 1 : 0)).slice(0, PAYEES_NAMED);
+  const names = named.sort().map(shortName).join(", ");
+  const more = payees.length - named.length;
+  return more > 0 ? `${names}, and ${more} more` : names;
+}
+
 /** Whether the months with a charge include RECURRING_MONTHS in a row. */
 function monthsRunning(charges: readonly IdeaCharge[]): boolean {
   const months = [...new Set(charges.map((c) => monthIndex(c.date)))].sort((a, b) => a - b);

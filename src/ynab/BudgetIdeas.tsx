@@ -28,6 +28,7 @@ import {
   dismiss,
   isDismissed,
   chooseShown,
+  payeeSentence,
   proposeIdeas,
   readCharges,
   readDismissed,
@@ -251,7 +252,7 @@ export function BudgetIdeas() {
               <span className="text-base font-semibold text-gray-900 dark:text-gray-100">{amountLine(idea)}</span>
             </span>
             <span className="text-sm text-gray-600 dark:text-gray-400">
-              {idea.charges.length} {idea.charges.length === 1 ? "charge" : "charges"}, {money(idea.total)} in the last year went to {FALLBACK_NAME}: {[...idea.payees].sort().join(", ")}.
+              {idea.charges.length} {idea.charges.length === 1 ? "charge" : "charges"}, {money(idea.total)} in the last year went to {FALLBACK_NAME}: {payeeSentence(idea)}.
             </span>
             <span className="text-sm text-gray-600 dark:text-gray-400">{howToAdd(idea, forgot.groupName)}</span>
             <details>

@@ -10,6 +10,7 @@ import {
   dismiss,
   forgetBudgetIdeas,
   isDismissed,
+  payeeSentence,
   proposeIdeas,
   refreshIdeaCharges,
   readDismissed,
@@ -281,5 +282,25 @@ describe("refreshIdeaCharges: the year's charges read from YNAB", () => {
     await db.ynabCategories.where("id").equals("f1").delete();
     expect(await refreshIdeaCharges(createYnabClient("tok", ynab.fetch), { now: NOW })).toBeNull();
     expect(ynab.requests).toEqual([]);
+  });
+});
+
+describe("payeeSentence", () => {
+  const idea = (rows: [string, number][]) => {
+    const charges = rows.map(([payee, amount]) => c("2026-07-01", payee, amount));
+    return { payees: [...new Set(rows.map(([p]) => p))], charges };
+  };
+  it("names up to three payees alphabetically, as they are", () => {
+    expect(payeeSentence(idea([["Zed", 1], ["Aa", 2]]))).toBe("Aa, Zed");
+    expect(payeeSentence(idea([["Zed", 1], ["Aa", 2], ["Mm", 3]]))).toBe("Aa, Mm, Zed");
+  });
+  it("names the three that took the most money and counts the rest", () => {
+    const rows: [string, number][] = [["A", 1], ["B", 50], ["C", 2], ["D", 30], ["E", 40], ["B", 5]];
+    expect(payeeSentence(idea(rows))).toBe("B, D, E, and 2 more");
+  });
+  it("cuts a name over 40 characters to 40 with an ellipsis, and leaves one of 40 whole", () => {
+    const forty = "x".repeat(40);
+    expect(payeeSentence(idea([[forty, 1]]))).toBe(forty);
+    expect(payeeSentence(idea([[`${forty}y`, 1]]))).toBe(`${"x".repeat(39)}…`);
   });
 });
