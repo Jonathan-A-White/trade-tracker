@@ -932,3 +932,25 @@ describe("Clean up: already in a category in YNAB (his words, 2026-11-12: 'It lo
     expect(within(card).getByText("Split in YNAB into 2 parts: $20.00 Groceries, $10.00 Household.")).toBeInTheDocument();
   });
 });
+
+describe("Clean up: a payee whose history splits by size (his words, 2026-11-21: 'the big charge is utilities')", () => {
+  it("suggests Utilities for Mint Mobile's $585.28 and Stuff I Forgot to Budget For for its $10, each with why", async () => {
+    await new YnabRepository().applyCategories(
+      [groupOf("gi", "Internal Master Category", [["unc", "Uncategorized"]]), groupOf("g1", "Food", [["c1", "Groceries"], ["c2", "Eating Out"]]), groupOf("g2", "Home", [["c3", "Household"], ["c5", "Utilities"]]), groupOf("g3", "Surprises", [["c4", "Stuff I Forgot to Budget For"]])],
+      2,
+    );
+    ynab.transactions = ynab.transactions.filter((t) => t.approved);
+    ynab.transactions.push(
+      row("Mint Mobile", "c5", "2026-05-18", { amount: -585_000 }),
+      row("Mint Mobile", "c4", "2026-08-02", { amount: -10_000 }),
+      row("Mint Mobile", "c4", "2026-09-02", { amount: -10_000 }),
+      row("Mint Mobile", "c4", "2026-10-02", { amount: -10_000 }),
+      unapproved("Mint Mobile", null, "2026-10-18", { id: "mm1", amount: -585_280 }),
+      unapproved("Mint Mobile", null, "2026-10-19", { id: "mm2", amount: -10_000 }),
+    );
+    renderPage();
+    const card = await screen.findByRole("group", { name: "Mint Mobile" });
+    expect(within(card).getByText("Charges this size went to Utilities.")).toBeInTheDocument();
+    expect(within(card).getByText("Charges this size went to Stuff I Forgot to Budget For.")).toBeInTheDocument();
+  });
+});

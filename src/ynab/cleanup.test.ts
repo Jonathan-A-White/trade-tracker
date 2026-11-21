@@ -22,6 +22,40 @@ const tx = (payee: string, categoryId: string | null, date: string, over: Partia
   ...over,
 });
 
+describe("a payee whose history splits by the charge's size", () => {
+  const withUtilities = [...categories, cat("c5", "Utilities", "Bills")];
+  const mint = (category: string | null, date: string, dollars: number, over: Partial<YnabTransactionWire> = {}) => tx("Mint Mobile", category, date, { amount: -dollars * 1000, ...over });
+  const history = payeeHistory([mint("c5", "2026-05-18", 585), mint("c4", "2026-08-02", 10), mint("c4", "2026-09-02", 10), mint("c4", "2026-10-02", 10)], none);
+  const ctx = { categories: withUtilities, history, tally: null, notCounted: none };
+
+  it("suggests the category of past charges of like size, and says so", () => {
+    const [big] = buildItems([mint(null, "2026-10-18", 585.28, { approved: false })], ctx);
+    expect(big).toMatchObject({ categoryId: "c5", confidence: "likely", why: "Charges this size went to Utilities.", ticked: false });
+    const [small] = buildItems([mint(null, "2026-10-19", 10, { approved: false })], ctx);
+    expect(small).toMatchObject({ categoryId: "c4", why: "Charges this size went to Stuff I Forgot to Budget For.", ticked: true, confidence: "sure" });
+  });
+
+  it("answers per charge: two charges of one payee on one page get their own categories", () => {
+    const items = buildItems([mint(null, "2026-10-18", 585.28, { approved: false }), mint(null, "2026-10-19", 10, { approved: false })], ctx);
+    expect(items.map((i) => i.categoryId)).toEqual(["c5", "c4"]);
+  });
+
+  it("falls back to the payee's usual category for a size between the two", () => {
+    const [mid] = buildItems([mint(null, "2026-10-18", 75, { approved: false })], ctx);
+    expect(mid!.why).toBe("Its last 3 here all went to Stuff I Forgot to Budget For.");
+  });
+
+  it("does not split when the sizes of the categories overlap", () => {
+    const overlapping = payeeHistory([mint("c1", "2026-08-01", 90), mint("c1", "2026-08-08", 110), mint("c3", "2026-08-15", 100)], none);
+    expect(suggestForPayee("Mint Mobile", overlapping, withUtilities, null, "out", 100)?.why).toBe("2 of 3 here went to Groceries.");
+  });
+
+  it("leaves a payee whose history is one category as it was", () => {
+    const one = payeeHistory([mint("c1", "2026-08-01", 10), mint("c1", "2026-08-08", 600), mint("c1", "2026-08-15", 12)], none);
+    expect(suggestForPayee("Mint Mobile", one, withUtilities, null, "out", 585)).toMatchObject({ categoryId: "c1", confidence: "sure", why: "Its last 3 here all went to Groceries." });
+  });
+});
+
 describe("the cleanup's rules", () => {
   it("keeps the sure rule's N at three", () => {
     expect(SURE_FROM).toBe(3);
@@ -59,7 +93,7 @@ describe("the cleanup's rules", () => {
       ],
       new Set(["unc"]),
     );
-    expect(history.get("shell")).toEqual([{ date: "2026-09-01", categoryId: "c2" }]);
+    expect(history.get("shell")).toEqual([{ date: "2026-09-01", categoryId: "c2", amount: 10 }]);
   });
 
   it("matches the payee whatever the case and outer spaces", () => {

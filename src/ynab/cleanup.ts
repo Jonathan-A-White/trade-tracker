@@ -31,6 +31,8 @@ export interface Suggested {
 export interface HistoryEntry {
   date: string;
   categoryId: string;
+  /** dollars, always positive: what the size of a new charge is compared with */
+  amount: number;
   /** set when the transaction was money in; an inflow is judged by the payee's earlier inflows only, an outflow by its outflows */
   inflow?: true;
 }
@@ -75,16 +77,37 @@ export function payeeHistory(rows: readonly YnabTransactionWire[], notCounted: R
     if (row.subtransactions && row.subtransactions.length > 0) continue;
     if (isUncategorized(row.category_id, row.category_name, notCounted)) continue;
     const key = payeeKey(payee);
-    history.set(key, [...(history.get(key) ?? []), { date: row.date, categoryId: row.category_id!, ...(row.amount > 0 ? { inflow: true as const } : {}) }]);
+    history.set(key, [...(history.get(key) ?? []), { date: row.date, categoryId: row.category_id!, amount: Math.abs(row.amount) / 1000, ...(row.amount > 0 ? { inflow: true as const } : {}) }]);
   }
   for (const entries of history.values()) entries.sort((a, b) => (a.date < b.date ? 1 : a.date > b.date ? -1 : 0));
   return history;
 }
 
+/** How far outside the sizes a category has held a charge still counts as its size: from a third less to half as much again (PROVISIONAL). */
+const LIKE_SIZE = 1.5;
+
+/**
+ * The category of past charges of the new charge's size, when the payee's history splits by size (the Governor, 2026-11-21: Mint
+ * Mobile's $585 renewals go to Utilities, its $10 data top-ups to Stuff I Forgot to Budget For). It splits when two or more categories
+ * hold charges and no two categories' sizes (each widened by LIKE_SIZE) overlap; the charge then goes where charges of its size went.
+ * Null when the history is one category, the sizes overlap, or the charge is of no category's size, which leaves the payee's usual rule.
+ */
+function suggestBySize(entries: readonly HistoryEntry[], amount: number, nameOf: (id: string) => string | undefined): Suggested | null {
+  const byCategory = new Map<string, number[]>();
+  for (const e of entries) byCategory.set(e.categoryId, [...(byCategory.get(e.categoryId) ?? []), e.amount]);
+  if (byCategory.size < 2) return null;
+  const bands = [...byCategory].map(([categoryId, amounts]) => ({ categoryId, count: amounts.length, from: Math.min(...amounts) / LIKE_SIZE, to: Math.max(...amounts) * LIKE_SIZE }));
+  for (const a of bands) for (const b of bands) if (a !== b && a.from <= b.to && b.from <= a.to) return null;
+  const band = bands.find((b) => amount >= b.from && amount <= b.to);
+  const name = band && nameOf(band.categoryId);
+  return band && name ? { categoryId: band.categoryId, confidence: band.count >= SURE_FROM ? "sure" : "likely", why: `Charges this size went to ${name}.` } : null;
+}
+
 /**
  * The category a payee's uncategorized transactions go to, with how sure that is: sure when its last SURE_FROM all used one category;
  * else what he taught or the YNAB tally's majority (src/sort/suggest.ts), else the category holding over half of at least two of its
- * transactions, both likely. Null when nothing says.
+ * transactions, both likely. Null when nothing says. A payee whose charges split by size is judged first by the charge's `amount`
+ * (dollars) when it is given (see suggestBySize).
  */
 export function suggestForPayee(
   payee: string,
@@ -92,10 +115,14 @@ export function suggestForPayee(
   categories: readonly YnabCategory[],
   tally: Tally | null,
   direction: "out" | "in" = "out",
+  amount?: number,
 ): Suggested | null {
   const entries = (history.get(payeeKey(payee)) ?? []).filter((e) => (direction === "in") === (e.inflow === true));
   const nameOf = (id: string) => categories.find((c) => c.id === id)?.name;
   const offered = (id: string) => nameOf(id) !== undefined;
+
+  const bySize = direction === "out" && amount !== undefined ? suggestBySize(entries, amount, nameOf) : null;
+  if (bySize) return bySize;
 
   const latest = entries.slice(0, SURE_FROM);
   if (latest.length === SURE_FROM && latest.every((e) => e.categoryId === latest[0]!.categoryId) && offered(latest[0]!.categoryId)) {
@@ -247,9 +274,10 @@ export function buildItems(rows: readonly YnabTransactionWire[], context: Cleanu
   const spending = categories.filter((c) => !isInflowCategory(c));
   const forgotId = fallbackCategory(categories)?.id;
   const suggested = new Map<string, Suggested | null>();
-  const suggestion = (payee: string, inflow: boolean) => {
-    const key = `${inflow ? "in" : "out"}:${payeeKey(payee)}`;
-    if (!suggested.has(key)) suggested.set(key, inflow ? suggestForInflow(payee, history, categories, inflowCategory, forgotId) : suggestForPayee(payee, history, spending, tally));
+  // a charge is judged by its size too (a payee's history may split by size), so the answer is kept per payee and amount
+  const suggestion = (payee: string, inflow: boolean, dollars: number) => {
+    const key = `${inflow ? "in" : "out"}:${payeeKey(payee)}:${inflow ? "" : dollars}`;
+    if (!suggested.has(key)) suggested.set(key, inflow ? suggestForInflow(payee, history, categories, inflowCategory, forgotId) : suggestForPayee(payee, history, spending, tally, "out", dollars));
     return suggested.get(key)!;
   };
   const orderOf = (r: YnabTransactionWire) => ({ check: checkNumberOf(r.payee_name?.trim() ?? "") ?? undefined, date: r.date, id: r.id! });
@@ -276,7 +304,7 @@ export function buildItems(rows: readonly YnabTransactionWire[], context: Cleanu
         ? judgeTransfer({ merchant: payee, amount: Math.abs(row.amount) / 1000, date: row.date, account: accounts.find((a) => a.id === row.account_id), accounts, payees: context.payees ?? [], categories, tally, soldAsExpense: seen.length > 0 })
         : null;
       const payment = judged !== null && (judged.offer !== null || judged.missing.length > 0);
-      const found = check === null && !payment ? suggestion(payee, isInflow) : null;
+      const found = check === null && !payment ? suggestion(payee, isInflow, Math.abs(row.amount) / 1000) : null;
       if (!isUncategorized(row.category_id, row.category_name, notCounted)) {
         const own = categories.find((c) => c.id === row.category_id);
         if (!own) {
