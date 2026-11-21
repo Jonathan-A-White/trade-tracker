@@ -161,7 +161,8 @@ describe("the service worker's push", () => {
     const kinds: Record<FamilyAlertKind, "own wording" | "charge wording"> = {
       charge: "charge wording",
       "forward-confirm": "own wording",
-      // the backend pushes only charge and forward-confirm (Postern pushesKind); these two never reach the phone as a push
+      // the backend pushes only charge and forward-confirm (Postern pushesKind); these three never reach the phone as a push
+      hold: "charge wording",
       amazon: "charge wording",
       unread: "charge wording",
     };
