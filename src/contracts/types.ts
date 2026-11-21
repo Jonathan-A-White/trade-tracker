@@ -292,8 +292,8 @@ export interface YnabAccount {
 export interface YnabPayee {
   id: string;
   name: string;
-  /** for a transfer payee, the account it moves money to (YNAB's transfer_account_id); not set on a row cached before it was kept */
-  transferAccountId?: string;
+  /** for a transfer payee, the account it moves money to (YNAB's transfer_account_id); null when YNAB gave none; absent on a row cached before it was kept */
+  transferAccountId?: string | null;
 }
 
 /** A transaction the app enters in YNAB. `amount` is dollars spent (positive); the writer sends it as negative milliunits. */

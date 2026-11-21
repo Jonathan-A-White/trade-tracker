@@ -1,5 +1,5 @@
 import { db } from "@/db/database";
-import { YnabRepository } from "@/db/repositories/ynab-repository";
+import { YnabRepository, namedLikeTransfer } from "@/db/repositories/ynab-repository";
 import type { YnabClient } from "./api";
 import type { YnabBudgetSummary } from "./types";
 
@@ -38,9 +38,12 @@ export async function refreshCache(client: YnabClient): Promise<void> {
   await repo.applyPayees(payees.rows, payees.serverKnowledge);
 }
 
-/** Whether a cached payee is named like YNAB's "Transfer : <account>" payee yet holds no transfer account id. */
+/**
+ * Whether a cached payee is named like YNAB's "Transfer : <account>" payee yet was cached before its transfer account id was kept
+ * (the field is absent; a payee YNAB gave no id, such as one a user named that way, holds null and is not read again).
+ */
 async function hasTransferPayeeWithoutId(): Promise<boolean> {
-  return (await repo.listPayees()).some((p) => !p.transferAccountId && /^transfer\s*:/i.test(p.name.trim()));
+  return (await repo.listPayees()).some((p) => p.transferAccountId === undefined && namedLikeTransfer(p.name));
 }
 
 /** Whether a cached category holds no balance (it was cached before the balance was kept). */

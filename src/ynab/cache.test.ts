@@ -97,6 +97,23 @@ describe("caching a YNAB budget in Dexie", () => {
     expect((await repo.getConnection())?.payeesKnowledge).toBe(100);
   });
 
+  it("a refresh after a full read does not read all payees again for a Transfer payee YNAB gives no account id", async () => {
+    const named = budgets();
+    // a payee a user named like a transfer: YNAB gives it no transfer_account_id
+    named[0].payees.push(payeeOf("p3", "Transfer : Chase Amazon"));
+    const ynab = fakeYnab("good", named);
+    const client = createYnabClient("good", ynab.fetch);
+    await connectBudget(client, { id: "b1", name: "Our Budget" });
+    ynab.calls.length = 0;
+    ynab.knowledge = 120;
+    await refreshCache(client);
+    expect(ynab.calls.map((c) => c.path)).toEqual([
+      "/v1/budgets/b1/categories?last_knowledge_of_server=100",
+      "/v1/budgets/b1/accounts?last_knowledge_of_server=100",
+      "/v1/budgets/b1/payees?last_knowledge_of_server=100",
+    ]);
+  });
+
   it("a refresh gives a category cached without its balance that balance, though the delta is empty", async () => {
     const withBalance = budgets();
     withBalance[0].categoryGroups = [groupOf("g1", "Food", [["c1", "Groceries", 42500]])];

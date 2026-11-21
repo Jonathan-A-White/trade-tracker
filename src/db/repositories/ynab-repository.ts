@@ -8,6 +8,17 @@ function byName<T extends { name: string }>(rows: T[]): T[] {
   return rows.sort((a, b) => a.name.localeCompare(b.name));
 }
 
+/** Whether a payee is named like YNAB's "Transfer : <account>" payee. */
+export function namedLikeTransfer(name: string): boolean {
+  return /^transfer\s*:/i.test(name.trim());
+}
+
+/** The transfer account id a payee is cached with: YNAB's, or null for a transfer-named payee YNAB gave none, so a later refresh knows it was read. */
+function transferIdOf(p: YnabPayeeWire): { transferAccountId?: string | null } {
+  if (p.transfer_account_id) return { transferAccountId: p.transfer_account_id };
+  return namedLikeTransfer(p.name) ? { transferAccountId: null } : {};
+}
+
 /** The YNAB connection and the lists cached from its budget. Each apply* takes a delta (rows YNAB marks deleted are removed) and the knowledge it is at. */
 export class YnabRepository {
   async getConnection(): Promise<YnabConnection | undefined> {
@@ -66,7 +77,7 @@ export class YnabRepository {
     await db.transaction("rw", [db.ynabPayees, db.ynabConnection], async () => {
       for (const p of payees) {
         if (p.deleted) await db.ynabPayees.delete(p.id);
-        else await db.ynabPayees.put({ id: p.id, name: p.name, ...(p.transfer_account_id ? { transferAccountId: p.transfer_account_id } : {}) });
+        else await db.ynabPayees.put({ id: p.id, name: p.name, ...transferIdOf(p) });
       }
       await db.ynabConnection.update(CONNECTION_ID, { payeesKnowledge: knowledge });
     });
