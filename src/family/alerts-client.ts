@@ -22,6 +22,8 @@ export interface FamilyAlert {
   code?: string;
   /** a forward-confirm alert's confirm link: https://mail.google.com/mail/vf-..., as Gmail's real mail carries it (no code) */
   link?: string;
+  /** an amazon alert's items, as the order mail names them: "2 Widgets, 1 Kitchen Gadgets" */
+  items?: string;
 }
 
 export interface AlertsPage {

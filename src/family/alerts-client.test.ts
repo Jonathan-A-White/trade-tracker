@@ -30,6 +30,14 @@ describe("makeAlertsClient", () => {
     expect(backend.requests.some((r) => r.path === `/api/alerts?since=${second.seq}`)).toBe(true);
   });
 
+  it("reads an amazon alert's items", async () => {
+    const backend = fakeAlerts();
+    backend.receive({ kind: "amazon", merchant: "Amazon", amount: "92.05", items: "2 Widgets, 1 Kitchen Gadgets" });
+    const client = makeAlertsClient(BACKEND, key, backend.fetch);
+    const { alerts } = await client.list(0);
+    expect(alerts[0]?.items).toBe("2 Widgets, 1 Kitchen Gadgets");
+  });
+
   it("claims one alert with DELETE /api/alerts/{id}", async () => {
     const backend = fakeAlerts();
     const alert = backend.receive({ kind: "amazon", merchant: "Amazon" });

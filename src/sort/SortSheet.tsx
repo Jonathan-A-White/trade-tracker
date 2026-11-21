@@ -13,6 +13,7 @@ import type { YnabCategory, YnabTransactionInput } from "@/contracts/types";
 import { ANYONE, rememberAccount } from "@/family/cards";
 import { useYnabOn } from "@/settings/connections";
 import { AvailableLines, CategoryPicker } from "./CategoryPicker";
+import { MEMO_LIMIT, orderMemo } from "./amazon-memo";
 import { SplitEditor } from "./SplitEditor";
 import { newPart, partCents, remainderCents, splitReady, type SplitPart } from "./split";
 import { dropReceiptShots, receiptShotsOf, type ReceiptReader } from "./receipt-read";
@@ -40,7 +41,7 @@ import { chargeDate, handOff, money, readSorted, takeBack, whenLine, type Waitin
 
 const ynab = new YnabRepository();
 /** The memo's longest: YNAB keeps 200 characters, and the writer adds its marker to the tail. */
-const MEMO_MAX = 150;
+const MEMO_MAX = MEMO_LIMIT;
 /** The balances' deadline: slow at 3 s, Try again at 6 s, given up at 12 s. */
 const BALANCE_TIMING: Required<LaunchTiming> = { slowAfterMs: 3_000, tryAgainAfterMs: 6_000, timeoutMs: 12_000 };
 /** YNAB's own groups, not ones a charge is sorted into. */
@@ -379,7 +380,8 @@ function ChargeSheet({ family, charge, onClose }: { family: FamilyFeed; charge: 
   const [categoryId, setCategoryId] = useState<string | null>(null);
   const [splitting, setSplitting] = useState(false);
   const [parts, setParts] = useState<SplitPart[]>(() => [newPart(), newPart()]);
-  const [memo, setMemo] = useState("");
+  // an Amazon charge's memo is written from its order mail's items; he can edit or clear it before Done
+  const [memo, setMemo] = useState(() => orderMemo(family.feed.alerts ?? [], charge.merchant, amount, alert.when));
   const [saving, setSaving] = useState(false);
   const [saveError, setSaveError] = useState<string | null>(null);
 

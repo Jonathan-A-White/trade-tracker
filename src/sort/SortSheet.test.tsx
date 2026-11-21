@@ -1246,3 +1246,31 @@ describe("the account chosen on the sheet is remembered by the card", () => {
     expect(await cardsOf("8235")).toEqual([]);
   });
 });
+
+describe("the Sort sheet's Memo for an Amazon charge", () => {
+  const ORDERED = new Date(2026, 9, 28, 9, 30).toISOString();
+
+  it("opens with the memo written from the matching order mail's items, counted, and he can edit it", async () => {
+    const user = userEvent.setup();
+    backend.receive({ kind: "amazon", merchant: "Amazon", amount: "92.05", when: ORDERED, items: "2 Widgets, 1 Kitchen Gadgets" });
+    const charge = backend.receive({ kind: "charge", amount: "92.05", merchant: "AMAZON MKTPLACE PMTS", last4: "1234", when: WHEN });
+    renderPhone(`/sort/${charge.id}`);
+
+    const sheet = await screen.findByRole("dialog", { name: "$92.05 at AMAZON MKTPLACE PMTS" });
+    const memo = await within(sheet).findByLabelText("Memo");
+    expect(memo).toHaveValue("2 Widgets; 1 Kitchen Gadgets");
+    expect(within(sheet).getByText("28 of 150")).toBeInTheDocument();
+    await user.clear(memo);
+    expect(within(sheet).getByText("0 of 150")).toBeInTheDocument();
+  });
+
+  it("leaves the memo empty when no order matches", async () => {
+    backend.receive({ kind: "amazon", merchant: "Amazon", amount: "10.00", when: ORDERED, items: "A Widget" });
+    const charge = backend.receive({ kind: "charge", amount: "92.05", merchant: "AMAZON MKTPLACE PMTS", last4: "1234", when: WHEN });
+    renderPhone(`/sort/${charge.id}`);
+
+    const sheet = await screen.findByRole("dialog", { name: "$92.05 at AMAZON MKTPLACE PMTS" });
+    expect(await within(sheet).findByLabelText("Memo")).toHaveValue("");
+    expect(within(sheet).getByText("0 of 150")).toBeInTheDocument();
+  });
+});
