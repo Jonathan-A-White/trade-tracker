@@ -2,7 +2,7 @@ import { db } from "@/db/database";
 import { YnabRepository } from "@/db/repositories/ynab-repository";
 import { createYnabClient } from "./api";
 import { fakeYnab, groupOf, type FakeYnab, type FakeYnabTransaction } from "./fake-ynab";
-import { PayeeRuleRepository, RuleApprovalRepository, RULE_APPROVAL_DAYS, SHORT_RULE_KEY, readShortRule, setAlways, undoAlways, undoRuleApproval, unapprovedWithRules, writeShortRule } from "./payee-rules";
+import { PayeeRuleRepository, RuleApprovalRepository, RULE_APPROVAL_DAYS, SHORT_RULE_KEY, putBackOf, readShortRule, removeRule, setAlways, undoAlways, undoRuleApproval, unapprovedWithRules, writeShortRule } from "./payee-rules";
 import { createYnabWriter, type YnabWriter } from "./writer";
 
 const groups = [groupOf("gi", "Internal Master Category", [["unc", "Uncategorized"], ["rta", "Inflow: Ready to Assign"]]), groupOf("g1", "Food", [["c1", "Groceries"], ["c2", "Eating Out"]])];
@@ -186,6 +186,80 @@ describe("Always", () => {
     const done = await setAlways({ budgetId: "b1", payee: "Chewy", key: "chewy", categoryId: "c1", items }, writer.approve);
     ynab.failNextBulk = 500;
     await expect(undoAlways(done, writer.restore)).rejects.toThrow();
+    expect(await rules.get("chewy")).toBeDefined();
+    expect(ynab.transactions[0]?.approved).toBe(true);
+  });
+});
+
+describe("Remove a rule and put back what it approved (his words, 2026-11-23: Always on Aritzia by mistake)", () => {
+  const approvals = new RuleApprovalRepository();
+  const items = [
+    { id: "t1", ynabCategoryId: null },
+    { id: "t2", ynabCategoryId: "c2" },
+  ];
+  const state = () => ynab.transactions.map((t) => [t.id, t.approved, t.category_id]);
+
+  beforeEach(() => {
+    ynab.transactions.push(tx("t1", "Chewy"), tx("t2", "Chewy", { category_id: "c2" }), tx("t3", "Shell"));
+  });
+
+  it("after Always on 2 charges, Remove with put-back restores both to their old categories in one PATCH and the rule is gone", async () => {
+    await setAlways({ budgetId: "b1", payee: "Chewy", key: "chewy", categoryId: "c1", items }, writer.approve);
+    const rule = (await rules.get("chewy"))!;
+    expect(await putBackOf(rule)).toEqual([{ id: "t1", categoryId: null }, { id: "t2", categoryId: "c2" }]);
+    const restore = vi.fn(writer.restore);
+    await removeRule(rule, restore);
+    expect(restore).toHaveBeenCalledTimes(1);
+    expect(restore.mock.calls[0]![0]).toEqual([{ id: "t1", categoryId: null }, { id: "t2", categoryId: "c2" }]);
+    expect(patches()).toHaveLength(2);
+    expect(state()).toEqual([["t1", false, null], ["t2", false, "c2"], ["t3", false, null]]);
+    expect(await rules.get("chewy")).toBeUndefined();
+  });
+
+  it("the restores outlive the Always tap: they are kept on the rule, and a second Always adds to them", async () => {
+    await setAlways({ budgetId: "b1", payee: "Chewy", key: "chewy", categoryId: "c1", items: [items[0]!] }, writer.approve);
+    await setAlways({ budgetId: "b1", payee: "Chewy", key: "chewy", categoryId: "c1", items: [items[1]!] }, writer.approve);
+    expect(await putBackOf((await rules.get("chewy"))!)).toHaveLength(2);
+  });
+
+  it("counts what the rule approved later too, and not what was put back from Home", async () => {
+    await setAlways({ budgetId: "b1", payee: "Chewy", key: "chewy", categoryId: "c1", items }, writer.approve);
+    ynab.transactions.push(tx("t4", "Chewy"), tx("t5", "Chewy", { category_id: "c2" }));
+    await unapprovedWithRules(client(), "b1", writer.approve);
+    await undoRuleApproval((await approvals.recent("b1")).find((a) => a.id === "t5")!, writer.restore);
+    const rule = (await rules.get("chewy"))!;
+    expect((await putBackOf(rule)).map((r) => r.id).sort()).toEqual(["t1", "t2", "t4"]);
+    await removeRule(rule, writer.restore);
+    expect(state()).toEqual([["t1", false, null], ["t2", false, "c2"], ["t3", false, null], ["t4", false, null], ["t5", false, "c2"]]);
+    expect(await approvals.recent("b1")).toEqual([]);
+  });
+
+  it("a rule made before the restores were kept still removes, offering only what its approvals hold", async () => {
+    await rule("chewy");
+    ynab.transactions.push(tx("t4", "Chewy"));
+    await unapprovedWithRules(client(), "b1", writer.approve);
+    const old = (await rules.get("chewy"))!;
+    expect(old.alwaysRestores).toBeUndefined();
+    // t1 and t2 were approved by the rule as well; no Always tap was kept for any of them
+    expect((await putBackOf(old)).map((r) => r.id).sort()).toEqual(["t1", "t2", "t4"]);
+    await removeRule(old, writer.restore);
+    expect(await rules.get("chewy")).toBeUndefined();
+    expect(state().find((r) => r[0] === "t4")).toEqual(["t4", false, null]);
+  });
+
+  it("a rule with nothing to put back removes without writing to YNAB", async () => {
+    await rule("shell");
+    const old = (await rules.get("shell"))!;
+    expect(await putBackOf(old)).toEqual([]);
+    await removeRule(old, null);
+    expect(await rules.get("shell")).toBeUndefined();
+    expect(patches()).toHaveLength(0);
+  });
+
+  it("keeps the rule when the put-back write fails", async () => {
+    await setAlways({ budgetId: "b1", payee: "Chewy", key: "chewy", categoryId: "c1", items }, writer.approve);
+    ynab.failNextBulk = 500;
+    await expect(removeRule((await rules.get("chewy"))!, writer.restore)).rejects.toThrow();
     expect(await rules.get("chewy")).toBeDefined();
     expect(ynab.transactions[0]?.approved).toBe(true);
   });

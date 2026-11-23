@@ -2,13 +2,13 @@
 // payee usually goes to and how sure that is (src/ynab/cleanup.ts); the sure ones are ticked and first, the rest wait unticked.
 // Nothing reaches YNAB until he taps Approve, and then only the ticked ones, in one request. "Always <category>" on a card approves all
 // of that payee's unapproved transactions at once and keeps a payee rule (src/ynab/payee-rules.ts): the payee's new ones are approved as
-// they are read, before this lists them; Undo takes the last "Always" back for 10 seconds, and Payee rules lists the rules to remove, with an Undo for the last one removed.
+// they are read, before this lists them; Undo takes the last "Always" back for 10 seconds, and Payee rules lists the rules to remove (asking whether to put back what the rule approved), with an Undo for the last one removed.
 // A check (payee text 'CHECK <number>') is its own card in a Checks pile at the end: "Add check image" keeps an image on the device
 // (never sent to YNAB), and the mill reads its payee and memo to suggest the category; Approve writes the payee read into the memo.
 import { useLiveQuery } from "dexie-react-hooks";
 import { useCallback, useEffect, useMemo, useRef, useState, type ClipboardEvent } from "react";
 import { Link } from "react-router";
-import type { CheckImage, YnabCategory, YnabPayeeRule } from "@/contracts/types";
+import type { CheckImage, YnabCategory, YnabPayeeRule, YnabRestore } from "@/contracts/types";
 import { ConfirmDialog } from "@/components/feedback/confirm-dialog";
 import { PageHeader } from "@/components/layout/page-header";
 import { UndoNotice } from "@/components/undo-notice";
@@ -24,7 +24,7 @@ import { money } from "@/sort/waiting";
 import { refreshCache } from "@/ynab/cache";
 import { resolveCheckRead } from "@/ynab/check-read";
 import { applyCheckRead, compareItems, groupPage, isInflowCategory, loadCleanup, pageAfter, withHeldNotes, type CleanupGroup, type CleanupItem, type Confidence } from "@/ynab/cleanup";
-import { PayeeRuleRepository, setAlways, undoAlways, unapprovedWithRules, type AlwaysDone } from "@/ynab/payee-rules";
+import { PayeeRuleRepository, putBackOf, removeRule, setAlways, undoAlways, unapprovedWithRules, type AlwaysDone } from "@/ynab/payee-rules";
 import { readTally } from "@/ynab/tally";
 
 const BUTTON = "min-h-12 rounded-lg px-4 text-base font-medium";
@@ -310,18 +310,39 @@ function CheckCard({
   );
 }
 
-/** The payee rules: each with its payee, category and how many it has approved; Remove stops it and changes nothing already written, and Undo puts the rule back as it was. */
-function PayeeRules() {
+/** The payee rules: each with its payee, category and how many it has approved; Remove stops it and, when it approved charges, asks whether to put those back ("Just remove" changes nothing already written), and Undo puts the rule back as it was. */
+function PayeeRules({ restore }: { restore: ((restores: readonly YnabRestore[]) => Promise<void>) | null }) {
   const rules = useLiveQuery(() => new PayeeRuleRepository().list(), []);
   const names = useLiveQuery(async () => new Map((await db.ynabCategories.toArray()).map((c) => [c.id, c.name])), []);
   // the rule he removed last, kept until he leaves the panel (the shared Undo, as for the check images)
   const removed = useUndo<YnabPayeeRule>("payee-rules");
   const removedRule = Object.values(removed.kept)[0];
 
+  // the rule he is removing, with what it approved, waiting for his answer to "Also put back the N it approved?"
+  const [asking, setAsking] = useState<{ rule: YnabPayeeRule; count: number } | null>(null);
+  const [busy, setBusy] = useState(false);
+  const [error, setError] = useState<string | null>(null);
+
+  const finish = async (rule: YnabPayeeRule, putBack: boolean) => {
+    setBusy(true);
+    setError(null);
+    try {
+      await removeRule(rule, putBack ? (restore ?? null) : null);
+      removed.drop();
+      removed.keep(rule.key, rule);
+      setAsking(null);
+    } catch (err) {
+      setAsking(null);
+      setError(`Could not put them back: ${err instanceof Error ? err.message : "YNAB did not answer."}`);
+    } finally {
+      setBusy(false);
+    }
+  };
   const remove = async (rule: YnabPayeeRule) => {
-    await new PayeeRuleRepository().remove(rule.key);
-    removed.drop();
-    removed.keep(rule.key, rule);
+    setError(null);
+    const count = restore ? (await putBackOf(rule)).length : 0;
+    if (count === 0) await finish(rule, false);
+    else setAsking({ rule, count });
   };
   const undo = async (rule: YnabPayeeRule) => {
     await new PayeeRuleRepository().put(rule);
@@ -332,6 +353,20 @@ function PayeeRules() {
   return (
     <div className="space-y-2">
       {removedRule && <UndoNotice onUndo={() => void undo(removedRule)}>The rule for {removedRule.payee} was removed.</UndoNotice>}
+      {error && (
+        <p role="alert" className="text-base text-red-700 dark:text-red-400">
+          {error}
+        </p>
+      )}
+      <ConfirmDialog
+        open={asking !== null}
+        title={`Remove the rule for ${asking?.rule.payee ?? ""}?`}
+        message={`Also put back the ${asking?.count ?? 0} it approved?`}
+        confirmLabel="Yes"
+        cancelLabel="Just remove"
+        onConfirm={() => asking && !busy && void finish(asking.rule, true)}
+        onCancel={() => asking && !busy && void finish(asking.rule, false)}
+      />
       {rules.length === 0 ? (
         <p className="text-base text-gray-700 dark:text-gray-300">No payee rules yet.</p>
       ) : (
@@ -627,7 +662,7 @@ export default function CleanupPage() {
         <button type="button" aria-expanded={showRules} className={SECONDARY} onClick={() => setShowRules((v) => !v)}>
           Payee rules
         </button>
-        {showRules && <PayeeRules />}
+        {showRules && <PayeeRules restore={restore} />}
         {ruleError && (
           <p role="alert" className="text-base text-red-700 dark:text-red-400">
             {ruleError}

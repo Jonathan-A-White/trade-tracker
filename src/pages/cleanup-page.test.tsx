@@ -541,6 +541,8 @@ describe("Clean up: Always", () => {
     expect(item).toHaveTextContent("Groceries");
     expect(item).toHaveTextContent("Approved 2");
     await user.click(within(item).getByRole("button", { name: "Remove" }));
+    expect(await screen.findByText("Also put back the 2 it approved?")).toBeInTheDocument();
+    await user.click(screen.getByRole("button", { name: "Just remove" }));
     await waitFor(() => expect(db.ynabPayeeRules.count()).resolves.toBe(0));
     expect(await screen.findByText("No payee rules yet.")).toBeInTheDocument();
     expect(patches()).toHaveLength(1);
@@ -552,6 +554,38 @@ describe("Clean up: Always", () => {
     renderPage();
     expect(await screen.findByRole("group", { name: "Trader Joe's" })).toBeInTheDocument();
     expect(patches()).toHaveLength(1);
+  });
+
+  it("Remove asks 'Also put back the 2 it approved?'; Yes puts both back unapproved in the category they had, in one PATCH, and the rule goes", async () => {
+    const user = userEvent.setup();
+    renderPage();
+    const tj = await screen.findByRole("group", { name: "Trader Joe's" });
+    await user.click(within(tj).getByRole("button", { name: "Always Groceries" }));
+    await waitFor(() => expect(patches()).toHaveLength(1));
+    // the ten seconds of the Undo are long gone: the put-back does not depend on them
+    await user.click(screen.getByRole("button", { name: "Payee rules" }));
+    const item = within(await screen.findByRole("list", { name: "Payee rules" })).getByRole("listitem");
+    await user.click(within(item).getByRole("button", { name: "Remove" }));
+    expect(await screen.findByText("Also put back the 2 it approved?")).toBeInTheDocument();
+    await user.click(screen.getByRole("button", { name: "Yes" }));
+    await waitFor(() => expect(db.ynabPayeeRules.count()).resolves.toBe(0));
+    expect(patches()).toHaveLength(2);
+    expect(byId("tj1")).toMatchObject({ approved: false, category_id: null });
+    expect(byId("tj2")).toMatchObject({ approved: false, category_id: null });
+    expect(await screen.findByText("No payee rules yet.")).toBeInTheDocument();
+  });
+
+  it("a rule made before the restores were kept removes at once when it approved nothing", async () => {
+    const user = userEvent.setup();
+    renderPage();
+    await screen.findByRole("group", { name: "Trader Joe's" });
+    await db.ynabPayeeRules.put({ key: "shell", budgetId: "b1", payee: "Shell", categoryId: "c2", createdAt: 5, approved: 4 });
+    await user.click(screen.getByRole("button", { name: "Payee rules" }));
+    const list = await screen.findByRole("list", { name: "Payee rules" });
+    await user.click(within(within(list).getByRole("listitem")).getByRole("button", { name: "Remove" }));
+    await waitFor(() => expect(db.ynabPayeeRules.count()).resolves.toBe(0));
+    expect(screen.queryByText(/Also put back/)).not.toBeInTheDocument();
+    expect(patches()).toHaveLength(0);
   });
 
   it("Remove on a payee rule can be taken back with Undo, and the rule comes back as it was", async () => {

@@ -361,6 +361,8 @@ export interface YnabPayeeRule {
   createdAt: number;
   /** how many transactions the rule has approved */
   approved: number;
+  /** What each "Always" tap approved, as it was before (kept so Remove can offer to put them back long after the Undo's ten seconds); absent on a rule made before this was kept */
+  alwaysRestores?: YnabRestore[];
 }
 
 /** A transaction a payee rule approved without his tapping, kept so Home can show it and Undo it (Home's "Approved for you"). One per YNAB transaction. */

@@ -251,8 +251,11 @@ export async function setAlways(input: AlwaysInput, approve: Approve): Promise<A
     const { budgetId, payee, key, categoryId, items } = input;
     await approve(items.map((i) => ({ id: i.id, categoryId })));
     const previous = (await repo.get(key)) ?? null;
-    await repo.put({ key, budgetId, payee, categoryId, createdAt: previous?.createdAt ?? Date.now(), approved: (previous?.approved ?? 0) + items.length });
-    return { payee, key, categoryId, restores: items.map((i) => ({ id: i.id, categoryId: i.ynabCategoryId })), previous };
+    const restores = items.map((i) => ({ id: i.id, categoryId: i.ynabCategoryId }));
+    // kept with the rule, so Remove can offer to put them back after the Undo is gone; what an earlier Always of the payee approved stays
+    const kept = [...(previous?.alwaysRestores ?? []).filter((r) => !restores.some((n) => n.id === r.id)), ...restores];
+    await repo.put({ key, budgetId, payee, categoryId, createdAt: previous?.createdAt ?? Date.now(), approved: (previous?.approved ?? 0) + items.length, alwaysRestores: kept });
+    return { payee, key, categoryId, restores, previous };
   });
 }
 
@@ -270,5 +273,37 @@ export async function undoRuleApproval(approval: YnabRuleApproval, restore: Rest
   return inTurn(async () => {
     await restore([{ id: approval.id, categoryId: approval.previousCategoryId }]);
     await approvals.markUndone(approval.id);
+  });
+}
+
+/**
+ * What removing `rule` can put back: the transactions its Always taps approved (kept on the rule) and those it approved since that
+ * Home has not put back (its not-undone RuleApprovals), each with the category it had. Nothing for a rule that approved nothing kept.
+ */
+export async function putBackOf(rule: YnabPayeeRule): Promise<YnabRestore[]> {
+  const recent = (await approvals.recent(rule.budgetId).catch(() => [])).filter((a) => a.ruleKey === rule.key);
+  const out = new Map<string, YnabRestore>();
+  for (const r of rule.alwaysRestores ?? []) out.set(r.id, r);
+  for (const a of recent) if (!out.has(a.id)) out.set(a.id, { id: a.id, categoryId: a.previousCategoryId });
+  return [...out.values()];
+}
+
+/**
+ * Removes the rule. With a `restore` writer it first puts back what the rule approved (`putBackOf`) in one PATCH: a failed write
+ * rejects and leaves the rule. Without one, it only stops the rule and changes nothing already written.
+ */
+export async function removeRule(rule: YnabPayeeRule, restore: Restore | null): Promise<void> {
+  return inTurn(async () => {
+    if (restore) {
+      const back = await putBackOf(rule);
+      if (back.length > 0) {
+        await restore(back);
+        // Home no longer lists them as approved for him
+        const ids = new Set(back.map((r) => r.id));
+        const listed = (await approvals.recent(rule.budgetId).catch(() => [])).filter((a) => ids.has(a.id));
+        await Promise.all(listed.map((a) => approvals.markUndone(a.id))).catch(() => {});
+      }
+    }
+    await repo.remove(rule.key);
   });
 }
