@@ -344,10 +344,12 @@ export interface CheckImage {
   read?: CheckReadAnswer;
 }
 
-/** A transaction to put back as it was before an approval: unapproved, in its old category (null: it had none). */
+/** A transaction to put back as it was before an approval: unapproved, in its old category (null: it had none), and in its old memo when the approval wrote one. */
 export interface YnabRestore {
   id: string;
   categoryId: string | null;
+  /** the memo it had, put back too; left out when the approval wrote no memo (YNAB's memo is then not touched) */
+  memo?: string;
 }
 
 /** A payee rule: unapproved transactions of this payee in the connected budget are approved into `categoryId` as they are read. */

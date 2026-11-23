@@ -487,6 +487,24 @@ describe("the YNAB writer: restore", () => {
     expect(ynab.transactions.map((t) => [t.approved, t.category_id])).toEqual([[false, "c2"], [false, null]]);
   });
 
+  it("puts a memo back when the restore carries one (an empty one clears it), and leaves the memo alone when it does not", async () => {
+    await setup();
+    ynab.transactions.push(
+      { id: "u1", account_id: "a1", date: "2026-10-01", amount: -1000, approved: true, category_id: "c1", memo: "Paid to X" },
+      { id: "u2", account_id: "a1", date: "2026-10-02", amount: -2000, approved: true, category_id: "c1", memo: "Paid to Y" },
+      { id: "u3", account_id: "a1", date: "2026-10-03", amount: -3000, approved: true, category_id: "c1", memo: "kept" },
+    );
+    await writer.restore([{ id: "u1", categoryId: null, memo: "bank words" }, { id: "u2", categoryId: null, memo: "" }, { id: "u3", categoryId: null }]);
+    expect(ynab.requests.filter((r) => r.method === "PATCH")[0]?.body).toEqual({
+      transactions: [
+        { id: "u1", category_id: null, memo: "bank words", approved: false },
+        { id: "u2", category_id: null, memo: null, approved: false },
+        { id: "u3", category_id: null, approved: false },
+      ],
+    });
+    expect(ynab.transactions.map((t) => t.memo)).toEqual(["bank words", null, "kept"]);
+  });
+
   it("sends nothing for an empty list and rejects when YNAB refuses", async () => {
     await setup();
     ynab.transactions.push({ id: "u1", account_id: "a1", date: "2026-10-01", amount: -1000, approved: true, category_id: "c1" });

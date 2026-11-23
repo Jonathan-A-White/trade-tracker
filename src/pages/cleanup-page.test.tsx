@@ -777,6 +777,31 @@ describe("Clean up: the Checks pile (his words, 2026-11-12)", () => {
     expect(sent.find((t) => t.id === "tj1")).not.toHaveProperty("memo");
   });
 
+  it("Undo of the page's Approve puts back the memo the Approve wrote, and leaves a memo it did not write alone", async () => {
+    ynab.transactions.push(
+      unapproved("CHECK 1089 *8368", null, "2026-01-22", { id: "ck1", amount: -15_000, memo: "from the bank" }),
+      unapproved("CHECK 1090 *8368", null, "2026-01-23", { id: "ck2", amount: -40_000 }),
+    );
+    const user = userEvent.setup();
+    renderPage({ readCheck: diner });
+    const card = await screen.findByRole("group", { name: "CHECK 1089 *8368" });
+    await user.upload(within(card).getByTestId("check-file-input"), jpeg());
+    await waitFor(() => expect(within(card).getByLabelText("Category for CHECK 1089 *8368")).toHaveValue("c2"));
+    await user.click(within(card).getByRole("checkbox", { name: /^Approve / }));
+    await user.click(screen.getByRole("button", { name: "Approve 3" }));
+    await screen.findByRole("button", { name: "Undo" });
+    expect(ynab.transactions.find((t) => t.id === "ck1")?.memo).toBe("from the bank · Paid to Joe's Diner (lunch)");
+
+    await user.click(screen.getByRole("button", { name: "Undo" }));
+
+    await waitFor(() => expect(ynab.transactions.find((t) => t.id === "ck1")?.approved).toBe(false));
+    expect(ynab.transactions.find((t) => t.id === "ck1")).toMatchObject({ memo: "from the bank", category_id: null });
+    // a transaction whose memo the Approve did not touch is put back without a memo in the request
+    const put = (patches().at(-1)?.body as { transactions: Record<string, unknown>[] }).transactions;
+    expect(put.find((t) => t.id === "ck1")).toEqual({ id: "ck1", category_id: null, memo: "from the bank", approved: false });
+    expect(put.find((t) => t.id === "tj1")).not.toHaveProperty("memo");
+  });
+
   it("shows the kept image and its read when Clean up is opened again, and asks the mill nothing", async () => {
     checks();
     const user = userEvent.setup();

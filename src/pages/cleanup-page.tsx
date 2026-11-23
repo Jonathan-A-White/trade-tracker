@@ -57,7 +57,7 @@ type Undoable =
   | {
       /** the page's Approve of the ticked cards */
       kind: "page";
-      /** each approved transaction as it was before: unapproved, in its old category */
+      /** each approved transaction as it was before: unapproved, in its old category, and in its old memo where the Approve wrote one */
       restores: YnabRestore[];
       items: CleanupItem[];
     };
@@ -643,7 +643,7 @@ export default function CleanupPage() {
       // the ones left unticked are passed by: the next page starts after them
       setStart((s) => s + (page.length - picked.length));
       // kept for Undo, as the YNAB writer's restore() takes them
-      setUndoable({ kind: "page", restores: picked.map((i) => ({ id: i.id, categoryId: i.ynabCategoryId })), items: picked });
+      setUndoable({ kind: "page", restores: picked.map((i) => ({ id: i.id, categoryId: i.ynabCategoryId, ...(i.writeMemo ? { memo: i.memo } : {}) })), items: picked });
     } catch (err) {
       setWriteError(`Could not approve these: ${err instanceof Error ? err.message : "YNAB did not answer."}`);
     } finally {
