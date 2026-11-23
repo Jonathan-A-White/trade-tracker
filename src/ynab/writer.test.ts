@@ -487,6 +487,13 @@ describe("the YNAB writer: restore", () => {
     expect(ynab.transactions.map((t) => [t.approved, t.category_id])).toEqual([[false, "c2"], [false, null]]);
   });
 
+  it("sends no category for a restore that names none (a split or transfer Approve did not change)", async () => {
+    await setup();
+    ynab.transactions.push({ id: "u1", account_id: "a1", date: "2026-10-01", amount: -1000, payee_name: "A", approved: true, category_id: "c1" });
+    await writer.restore([{ id: "u1" }]);
+    expect(ynab.requests.filter((r) => r.method === "PATCH")[0]?.body).toEqual({ transactions: [{ id: "u1", approved: false }] });
+  });
+
   it("puts a memo back when the restore carries one (an empty one clears it), and leaves the memo alone when it does not", async () => {
     await setup();
     ynab.transactions.push(

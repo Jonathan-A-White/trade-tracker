@@ -267,7 +267,7 @@ export function createYnabWriter(options: YnabWriterOptions): YnabWriter {
     },
     async restore(restores) {
       await patchBulk(
-        restores.map((r) => ({ id: r.id, category_id: r.categoryId, ...(r.memo === undefined ? {} : { memo: r.memo || null }), approved: false })),
+        restores.map((r) => ({ id: r.id, ...(r.categoryId === undefined ? {} : { category_id: r.categoryId }), ...(r.memo === undefined ? {} : { memo: r.memo || null }), approved: false })),
       );
     },
     retry: (clientId) => outbox.retry(clientId),

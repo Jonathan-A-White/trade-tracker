@@ -642,8 +642,8 @@ export default function CleanupPage() {
       setItems((all) => all.filter((i) => !gone.has(i.id)));
       // the ones left unticked are passed by: the next page starts after them
       setStart((s) => s + (page.length - picked.length));
-      // kept for Undo, as the YNAB writer's restore() takes them
-      setUndoable({ kind: "page", restores: picked.map((i) => ({ id: i.id, categoryId: i.ynabCategoryId, ...(i.writeMemo ? { memo: i.memo } : {}) })), items: picked });
+      // kept for Undo, as the YNAB writer's restore() takes them; a split or transfer keeps the category Approve never touched
+      setUndoable({ kind: "page", restores: picked.map((i) => ({ id: i.id, ...(i.fixedLabel ? {} : { categoryId: i.ynabCategoryId }), ...(i.writeMemo ? { memo: i.memo } : {}) })), items: picked });
     } catch (err) {
       setWriteError(`Could not approve these: ${err instanceof Error ? err.message : "YNAB did not answer."}`);
     } finally {

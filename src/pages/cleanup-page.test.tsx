@@ -205,6 +205,33 @@ describe("Clean up", () => {
     expect(screen.queryByRole("button", { name: "Undo" })).not.toBeInTheDocument();
   });
 
+  it("Undo of a page Approve that ticked a split and a transfer does not send a category for them", async () => {
+    const user = userEvent.setup();
+    ynab.transactions.push(
+      unapproved("Costco", null, "2026-10-06", { id: "sp1", amount: -30_000, category_id: "split-cat", subtransactions: [{ amount: -20_000, category_id: "c1" }, { amount: -10_000, category_id: "c3" }] }),
+      unapproved("Ally Savings", null, "2026-10-07", { id: "tr1", amount: -50_000, transfer_account_id: "a2" }),
+    );
+    renderPage();
+    const split = await screen.findByRole("group", { name: "Costco" });
+    const transfer = screen.getByRole("group", { name: "Ally Savings" });
+    for (const card of [split, transfer]) {
+      for (const box of within(card).getAllByRole("checkbox", { name: /^Approve / })) if (!(box as HTMLInputElement).checked) await user.click(box);
+    }
+    await user.click(screen.getByRole("button", { name: /^Approve \d/ }));
+    await screen.findByRole("button", { name: "Undo" });
+    expect(patches().at(-1)?.body).toMatchObject({ transactions: expect.arrayContaining([{ id: "sp1", approved: true }, { id: "tr1", approved: true }]) });
+
+    await user.click(screen.getByRole("button", { name: "Undo" }));
+
+    await waitFor(() => expect(byId("sp1")?.approved).toBe(false));
+    const put = (patches().at(-1)?.body as { transactions: Record<string, unknown>[] }).transactions;
+    expect(put.find((t) => t.id === "sp1")).toEqual({ id: "sp1", approved: false });
+    expect(put.find((t) => t.id === "tr1")).toEqual({ id: "tr1", approved: false });
+    // the split still holds its parts and its category as YNAB had them
+    expect(byId("sp1")).toMatchObject({ category_id: "split-cat" });
+    expect(byId("sp1")?.subtransactions).toHaveLength(2);
+  });
+
   it("says when the page's Undo could not write, keeps the Undo, and a second tap works", async () => {
     const user = userEvent.setup();
     renderPage();

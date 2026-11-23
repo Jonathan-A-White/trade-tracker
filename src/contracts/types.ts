@@ -347,7 +347,8 @@ export interface CheckImage {
 /** A transaction to put back as it was before an approval: unapproved, in its old category (null: it had none), and in its old memo when the approval wrote one. */
 export interface YnabRestore {
   id: string;
-  categoryId: string | null;
+  /** the category it had (null: none); left out for a split or transfer, whose category Approve never changed, so the restore sends none */
+  categoryId?: string | null;
   /** the memo it had, put back too; left out when the approval wrote no memo (YNAB's memo is then not touched) */
   memo?: string;
 }
