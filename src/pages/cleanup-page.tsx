@@ -46,12 +46,21 @@ const YOUR_PICK = "Your pick.";
 /** How long Undo stays after "Always". */
 const UNDO_MS = 10_000;
 
-interface Undoable {
-  done: AlwaysDone;
-  /** the items that left the list, as they were */
-  items: CleanupItem[];
-  categoryName: string;
-}
+type Undoable =
+  | {
+      kind: "always";
+      done: AlwaysDone;
+      /** the items that left the list, as they were */
+      items: CleanupItem[];
+      categoryName: string;
+    }
+  | {
+      /** the page's Approve of the ticked cards */
+      kind: "page";
+      /** each approved transaction as it was before: unapproved, in its old category */
+      restores: YnabRestore[];
+      items: CleanupItem[];
+    };
 
 const plural = (n: number) => (n === 1 ? "1 transaction" : `${n} transactions`);
 /** Dollars as said on a row: money out plain, money in marked. */
@@ -595,7 +604,7 @@ export default function CleanupPage() {
       const before = items.slice(0, start).filter((i) => gone.has(i.id)).length;
       setItems((all) => all.filter((i) => !gone.has(i.id)));
       setStart((s) => Math.max(0, s - before));
-      setUndoable({ done, items: targets, categoryName: categories.find((c) => c.id === categoryId)?.name ?? "that category" });
+      setUndoable({ kind: "always", done, items: targets, categoryName: categories.find((c) => c.id === categoryId)?.name ?? "that category" });
     } catch (err) {
       setWriteError(`Could not approve these: ${err instanceof Error ? err.message : "YNAB did not answer."}`);
     } finally {
@@ -608,7 +617,8 @@ export default function CleanupPage() {
     setSaving(true);
     setWriteError(null);
     try {
-      await undoAlways(undoable.done, restore);
+      if (undoable.kind === "always") await undoAlways(undoable.done, restore);
+      else await restore(undoable.restores);
       const back = undoable.items;
       setItems((all) => [...all, ...back].sort(compareItems));
       setStart(0);
@@ -632,6 +642,8 @@ export default function CleanupPage() {
       setItems((all) => all.filter((i) => !gone.has(i.id)));
       // the ones left unticked are passed by: the next page starts after them
       setStart((s) => s + (page.length - picked.length));
+      // kept for Undo, as the YNAB writer's restore() takes them
+      setUndoable({ kind: "page", restores: picked.map((i) => ({ id: i.id, categoryId: i.ynabCategoryId })), items: picked });
     } catch (err) {
       setWriteError(`Could not approve these: ${err instanceof Error ? err.message : "YNAB did not answer."}`);
     } finally {
@@ -670,7 +682,7 @@ export default function CleanupPage() {
         )}
         {undoable && (
           <UndoNotice className="rounded-lg bg-gray-800 px-3 py-2 text-base text-white" disabled={saving || !restore} onUndo={() => void undo()}>
-            Approved {undoable.items.length} from {undoable.done.payee} as {undoable.categoryName} ·
+            {undoable.kind === "always" ? `Approved ${undoable.items.length} from ${undoable.done.payee} as ${undoable.categoryName} ·` : `Approved ${undoable.items.length} ·`}
           </UndoNotice>
         )}
         <ConfirmDialog
@@ -682,6 +694,11 @@ export default function CleanupPage() {
           onConfirm={() => void replaceImage()}
           onCancel={() => setPendingImage(null)}
         />
+        {phase.state === "ready" && writeError && (
+          <p role="alert" className="text-base text-red-700 dark:text-red-400">
+            {writeError}
+          </p>
+        )}
         {phase.state === "loading" && <p role="status" className="text-base text-gray-700 dark:text-gray-300">Reading the transactions…</p>}
         {phase.state === "failed" && (
           <div role="alert" className="space-y-2">
@@ -726,11 +743,6 @@ export default function CleanupPage() {
               ) : (
                 <GroupCard key={group.key} group={group} categories={categories} onGroupCategory={onGroupCategory} onItemCategory={onItemCategory} onTick={onTick} onTickAll={onTickAll} onAlways={approve ? (g, id) => void always(g, id) : null} busy={saving} />
               ),
-            )}
-            {writeError && (
-              <p role="alert" className="text-base text-red-700 dark:text-red-400">
-                {writeError}
-              </p>
             )}
             <div className="sticky bottom-(--tt-nav-h) flex flex-wrap gap-2 bg-gray-50 dark:bg-gray-900 py-2">
               <button

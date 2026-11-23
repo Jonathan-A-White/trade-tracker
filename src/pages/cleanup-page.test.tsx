@@ -175,6 +175,51 @@ describe("Clean up", () => {
     expect(screen.getAllByRole("checkbox", { name: /^Approve \$/ })).toHaveLength(5);
   });
 
+  const byId = (id: string) => ynab.transactions.find((t) => t.id === id);
+
+  it("shows 'Approved N · Undo' after the page's Approve, and Undo puts each back through restore() as it was", async () => {
+    const user = userEvent.setup();
+    ynab.transactions.push(unapproved("Shell", "c2", "2026-10-06", { id: "sh2", category_name: "Eating Out" }));
+    renderPage();
+    await screen.findByRole("group", { name: "Trader Joe's" });
+    // the two Trader Joe's (no category yet, guessed Groceries) and Shell's two (kept as they are) are ticked
+    await user.click(within(groupOfPayee("Shell")).getAllByRole("checkbox", { name: /^Approve / })[0]!);
+    await user.click(screen.getByRole("button", { name: /^Approve \d/ }));
+    expect(await screen.findByText("Approved 3 ·")).toBeInTheDocument();
+    expect(byId("tj1")).toMatchObject({ approved: true, category_id: "c1" });
+    const written = patches().length;
+
+    await user.click(screen.getByRole("button", { name: "Undo" }));
+
+    await waitFor(() => expect(patches()).toHaveLength(written + 1));
+    const put = (patches()[written]?.body as { transactions: { id: string }[] }).transactions;
+    expect([...put].sort((a, b) => a.id.localeCompare(b.id))).toEqual([
+      { id: "sh1", category_id: "c2", approved: false },
+      { id: "tj1", category_id: null, approved: false },
+      { id: "tj2", category_id: null, approved: false },
+    ]);
+    expect([byId("tj1"), byId("tj2"), byId("sh1")].map((t) => [t?.approved, t?.category_id])).toEqual([[false, null], [false, null], [false, "c2"]]);
+    // they are on the page again, and the notice is gone
+    expect(await screen.findByRole("group", { name: "Trader Joe's" })).toBeInTheDocument();
+    expect(screen.queryByText(/^Approved 3 ·/)).not.toBeInTheDocument();
+    expect(screen.queryByRole("button", { name: "Undo" })).not.toBeInTheDocument();
+  });
+
+  it("says when the page's Undo could not write, keeps the Undo, and a second tap works", async () => {
+    const user = userEvent.setup();
+    renderPage();
+    await screen.findByRole("group", { name: "Trader Joe's" });
+    await user.click(screen.getByRole("button", { name: "Approve 2" }));
+    const undo = await screen.findByRole("button", { name: "Undo" });
+    ynab.failNextBulk = 500;
+    await user.click(undo);
+    expect(await screen.findByRole("alert")).toHaveTextContent(/could not undo/i);
+    expect(byId("tj1")?.approved).toBe(true);
+    await user.click(screen.getByRole("button", { name: "Undo" }));
+    await waitFor(() => expect(byId("tj1")?.approved).toBe(false));
+    expect(await screen.findByRole("group", { name: "Trader Joe's" })).toBeInTheDocument();
+  });
+
   it("says when a write failed and leaves the page as it was, nothing approved", async () => {
     const user = userEvent.setup();
     renderPage();
