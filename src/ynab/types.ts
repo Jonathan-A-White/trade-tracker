@@ -72,6 +72,6 @@ export interface YnabTransactionWire {
 export interface YnabTransactionPatch {
   id: string;
   category_id?: string | null;
-  memo?: string;
+  memo?: string | null;
   approved?: boolean;
 }
