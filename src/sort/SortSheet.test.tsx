@@ -1295,7 +1295,7 @@ describe("the reason Done is off is beside a control he can reach (mw-mr4xgrw.64
     const footer = footerOf(sheet);
     const select = within(footer).getByLabelText("YNAB account");
     expect(select.closest("[data-sheet-footer]")).toBe(footer);
-    expect(within(footer).getByText("Choose the YNAB account this card goes with.")).toBeInTheDocument();
+    expect(within(footer).getByText("Choose the YNAB account first.")).toBeInTheDocument();
     expect(done(sheet)).toBeDisabled();
 
     await user.selectOptions(select, "a2");
@@ -1430,5 +1430,68 @@ describe("every other reason line on the Sort sheet names something he can reach
     expect(await within(footerOf(sheet)).findByText("Give every part a category and an amount.")).toBeInTheDocument();
     expect(within(sheet).getByLabelText("Category for part 1")).toBeInTheDocument();
     expect(within(sheet).getByRole("button", { name: "Done" })).toBeDisabled();
+  });
+});
+
+describe("a short category warns and never blocks Done, and a grey Done says why under it (mw-mr4xgrw.65)", () => {
+  const footerOf = (sheet: HTMLElement) => sheet.querySelector<HTMLElement>("[data-sheet-footer]")!;
+  const done = (sheet: HTMLElement) => within(sheet).getByRole("button", { name: "Done" });
+
+  it("with the account chosen and the category short, a line warns it will be short and Done is on and records the charge", async () => {
+    const user = userEvent.setup();
+    const alert = backend.receive({ kind: "charge", amount: "323.58", merchant: "COSTCO", last4: "1234", when: WHEN });
+    renderPhone(`/sort/${alert.id}`);
+    const sheet = await screen.findByRole("dialog", { name: "$323.58 at COSTCO" });
+    await user.click(await within(sheet).findByRole("radio", { name: "Household · $61 left · short by $263.08" }));
+
+    expect(await within(footerOf(sheet)).findByText("Household will be short by $263.08")).toBeInTheDocument();
+    expect(done(sheet)).toBeEnabled();
+    await user.click(done(sheet));
+    await waitFor(() => expect(where()).toBe("/"));
+    expect(create).toHaveBeenCalledWith(expect.objectContaining({ accountId: "a1", categoryId: "c3", amount: 323.58 }), { localId: `alert-${alert.id}` });
+  });
+
+  it("a category with enough in it shows no warning line", async () => {
+    const user = userEvent.setup();
+    const alert = backend.receive({ kind: "charge", amount: "43.12", merchant: "Trader Joe's", last4: "1234", when: WHEN });
+    renderPhone(`/sort/${alert.id}`);
+    const sheet = await screen.findByRole("dialog", { name: "$43.12 at Trader Joe's" });
+    await user.click(await within(sheet).findByRole("radio", { name: /Groceries/ }));
+    expect(within(footerOf(sheet)).queryByText(/will be short/)).not.toBeInTheDocument();
+  });
+
+  it("a split with a part its category cannot cover warns for that category and still lets Done through", async () => {
+    const user = userEvent.setup();
+    const alert = backend.receive({ kind: "charge", amount: "100.00", merchant: "Target", last4: "1234", when: WHEN });
+    renderPhone(`/sort/${alert.id}`);
+    const sheet = await screen.findByRole("dialog", { name: "$100.00 at Target" });
+    await user.click(await within(sheet).findByRole("button", { name: "Split" }));
+    await user.selectOptions(within(sheet).getByLabelText("Category for part 1"), "c1");
+    await user.type(within(sheet).getByLabelText("Amount for part 1"), "20");
+    await user.selectOptions(within(sheet).getByLabelText("Category for part 2"), "c3");
+    await user.type(within(sheet).getByLabelText("Amount for part 2"), "80");
+    expect(await within(footerOf(sheet)).findByText("Household will be short by $19.50")).toBeInTheDocument();
+    expect(done(sheet)).toBeEnabled();
+  });
+
+  it("with no account chosen and the category short, Done is grey and says under itself to choose the account; the warning is there too", async () => {
+    const user = userEvent.setup();
+    const alert = backend.receive({ kind: "charge", amount: "323.58", merchant: "COSTCO", last4: "9999", when: WHEN });
+    renderPhone(`/sort/${alert.id}`);
+    const sheet = await screen.findByRole("dialog", { name: "$323.58 at COSTCO" });
+    await user.click(await within(sheet).findByRole("radio", { name: /Household/ }));
+
+    const footer = footerOf(sheet);
+    expect(done(sheet)).toBeDisabled();
+    expect(within(footer).getByText("Household will be short by $263.08")).toBeInTheDocument();
+    const why = within(footer).getByText("Choose the YNAB account first.");
+    // under the button, and the button names it
+    expect(done(sheet).compareDocumentPosition(why) & Node.DOCUMENT_POSITION_FOLLOWING).toBeTruthy();
+    expect(done(sheet)).toHaveAccessibleDescription("Choose the YNAB account first.");
+
+    await user.selectOptions(within(footer).getByLabelText("YNAB account"), "a2");
+    expect(done(sheet)).toBeEnabled();
+    expect(within(footer).queryByText(/Choose the YNAB account/)).not.toBeInTheDocument();
+    expect(within(footer).getByText("Household will be short by $263.08")).toBeInTheDocument();
   });
 });

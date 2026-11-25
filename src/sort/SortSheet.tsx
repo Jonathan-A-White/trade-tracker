@@ -37,7 +37,7 @@ import { readTally, TALLY_FRESH_MS } from "@/ynab/tally";
 import { judgeTransfer, missingPayeeLine, transferPayee, transferTitle } from "./transfer";
 import type { FamilyFeed } from "./sort-context";
 import type { FeedPhase } from "./useAlerts";
-import { chargeDate, handOff, money, readSorted, takeBack, whenLine, type WaitingCharge } from "./waiting";
+import { chargeDate, handOff, money, readSorted, shortBy, takeBack, whenLine, type WaitingCharge } from "./waiting";
 
 const ynab = new YnabRepository();
 /** The memo's longest: YNAB keeps 200 characters, and the writer adds its marker to the tail. */
@@ -508,7 +508,7 @@ function ChargeSheet({ family, charge, onClose }: { family: FamilyFeed; charge: 
           ? "YNAB's account list has not loaded yet."
           : accounts.length === 0
             ? "YNAB has no open account to choose. Refresh YNAB under Settings."
-            : "Choose the YNAB account this card goes with."
+            : "Choose the YNAB account first."
         : transferMode
           ? transferPayeeId
             ? offer?.sources && !transferSource
@@ -524,6 +524,19 @@ function ChargeSheet({ family, charge, onClose }: { family: FamilyFeed; charge: 
           : categoryId === null
             ? "Choose a category."
             : null;
+  // a category that cannot cover its part of the charge warns, and never blocks Done: YNAB takes the overspend
+  const shortLines = transferMode
+    ? []
+    : (splitting
+        ? parts.map((p) => ({ categoryId: p.categoryId, amount: (partCents(p.amount) ?? 0) / 100 }))
+        : categoryId !== null
+          ? [{ categoryId, amount }]
+          : []
+      ).flatMap((p) => {
+        const category = categories?.find((c) => c.id === p.categoryId);
+        const lack = category && p.amount > 0 ? shortBy(category, p.amount) : null;
+        return category && lack !== null ? [`${category.name} will be short by ${money(lack)}`] : [];
+      });
   // a card the book does not map is asked its account in the footer, beside the line that says why Done is off, where no scrolling hides it
   const askAccount = ynabOn && !cardAccount && !heldMode;
   const canDone = ynabOn && (heldMode || (!!family.writer && !!account)) && ready && !saving;
@@ -607,11 +620,12 @@ function ChargeSheet({ family, charge, onClose }: { family: FamilyFeed; charge: 
           </select>
         </div>
       )}
-      {reason && ynabOn && (
-        <p id={reasonId} className="text-sm text-gray-600 dark:text-gray-400">
-          {reason}
-        </p>
-      )}
+      {ynabOn &&
+        shortLines.map((line) => (
+          <p key={line} className="text-sm font-medium text-amber-700 dark:text-amber-400">
+            {line}
+          </p>
+        ))}
       {saveError && <p className="text-sm text-red-700 dark:text-red-400">{saveError}</p>}
       {ynabOn && (
         <button
@@ -623,6 +637,11 @@ function ChargeSheet({ family, charge, onClose }: { family: FamilyFeed; charge: 
         >
           Done
         </button>
+      )}
+      {reason && ynabOn && (
+        <p id={reasonId} className="text-center text-sm font-medium text-gray-700 dark:text-gray-300">
+          {reason}
+        </p>
       )}
       <div className="grid grid-cols-2 gap-2">
         <button type="button" onClick={guard(onClose)} className={SECONDARY}>
