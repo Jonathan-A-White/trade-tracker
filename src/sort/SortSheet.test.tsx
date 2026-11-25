@@ -16,6 +16,7 @@ import type { PasskeyPort } from "@/services/passkey";
 import { setFamilyOn, setYnabOn } from "@/settings/connections";
 import { createYnabClient } from "@/ynab/api";
 import { accountOf, fakeYnab, groupOf, type FakeYnab, type FakeYnabTransaction } from "@/ynab/fake-ynab";
+import { SHORT_RULE_KEY } from "@/ynab/payee-rules";
 import { refreshTally, TALLY_KEY } from "@/ynab/tally";
 import { SortProvider, type SortSeams } from "./sort-context";
 import { NotAllowed } from "@/factory/mill";
@@ -80,6 +81,7 @@ beforeEach(async () => {
   await Promise.all(db.tables.map((table) => table.clear()));
   localStorage.clear();
   localStorage.setItem("tradetracker-theme", "light");
+  localStorage.setItem(SHORT_RULE_KEY, "cleanup");
   vi.stubGlobal("matchMedia", (query: string) => ({ matches: false, media: query, addEventListener: () => {}, removeEventListener: () => {} }));
   tapSettings.ms = 0;
   backend = fakeAlerts();
@@ -1433,11 +1435,44 @@ describe("every other reason line on the Sort sheet names something he can reach
   });
 });
 
-describe("a short category warns and never blocks Done, and a grey Done says why under it (mw-mr4xgrw.65)", () => {
+describe("a short category: Strict blocks Done and says why, Cleanup mode warns and lets it through (mw-mr4xgrw.65, .66)", () => {
   const footerOf = (sheet: HTMLElement) => sheet.querySelector<HTMLElement>("[data-sheet-footer]")!;
   const done = (sheet: HTMLElement) => within(sheet).getByRole("button", { name: "Done" });
 
-  it("with the account chosen and the category short, a line warns it will be short and Done is on and records the charge", async () => {
+  // the file starts every test in Cleanup mode (its older tests tap Done on short categories); Strict is the setting's default
+  beforeEach(() => localStorage.removeItem(SHORT_RULE_KEY));
+
+  it("Strict (the default): with the account chosen and the category short, Done is grey and says 'Household is short by $263.08'", async () => {
+    const user = userEvent.setup();
+    const alert = backend.receive({ kind: "charge", amount: "323.58", merchant: "COSTCO", last4: "1234", when: WHEN });
+    renderPhone(`/sort/${alert.id}`);
+    const sheet = await screen.findByRole("dialog", { name: "$323.58 at COSTCO" });
+    await user.click(await within(sheet).findByRole("radio", { name: "Household · $61 left · short by $263.08" }));
+
+    const why = await within(footerOf(sheet)).findByText("Household is short by $263.08");
+    expect(done(sheet)).toBeDisabled();
+    expect(done(sheet)).toHaveAccessibleDescription("Household is short by $263.08");
+    expect(done(sheet).compareDocumentPosition(why) & Node.DOCUMENT_POSITION_FOLLOWING).toBeTruthy();
+    expect(within(footerOf(sheet)).queryByText(/will be short/)).not.toBeInTheDocument();
+    expect(create).not.toHaveBeenCalled();
+  });
+
+  it("Strict: a split with a part its category cannot cover blocks Done and names the category", async () => {
+    const user = userEvent.setup();
+    const alert = backend.receive({ kind: "charge", amount: "100.00", merchant: "Target", last4: "1234", when: WHEN });
+    renderPhone(`/sort/${alert.id}`);
+    const sheet = await screen.findByRole("dialog", { name: "$100.00 at Target" });
+    await user.click(await within(sheet).findByRole("button", { name: "Split" }));
+    await user.selectOptions(within(sheet).getByLabelText("Category for part 1"), "c1");
+    await user.type(within(sheet).getByLabelText("Amount for part 1"), "20");
+    await user.selectOptions(within(sheet).getByLabelText("Category for part 2"), "c3");
+    await user.type(within(sheet).getByLabelText("Amount for part 2"), "80");
+    expect(await within(footerOf(sheet)).findByText("Household is short by $19.50")).toBeInTheDocument();
+    expect(done(sheet)).toBeDisabled();
+  });
+
+  it("Cleanup mode: with the account chosen and the category short, a line warns it will be short and Done is on and records the charge", async () => {
+    localStorage.setItem(SHORT_RULE_KEY, "cleanup");
     const user = userEvent.setup();
     const alert = backend.receive({ kind: "charge", amount: "323.58", merchant: "COSTCO", last4: "1234", when: WHEN });
     renderPhone(`/sort/${alert.id}`);
@@ -1452,6 +1487,7 @@ describe("a short category warns and never blocks Done, and a grey Done says why
   });
 
   it("a category with enough in it shows no warning line", async () => {
+    localStorage.setItem(SHORT_RULE_KEY, "cleanup");
     const user = userEvent.setup();
     const alert = backend.receive({ kind: "charge", amount: "43.12", merchant: "Trader Joe's", last4: "1234", when: WHEN });
     renderPhone(`/sort/${alert.id}`);
@@ -1460,7 +1496,8 @@ describe("a short category warns and never blocks Done, and a grey Done says why
     expect(within(footerOf(sheet)).queryByText(/will be short/)).not.toBeInTheDocument();
   });
 
-  it("a split with a part its category cannot cover warns for that category and still lets Done through", async () => {
+  it("Cleanup mode: a split with a part its category cannot cover warns for that category and still lets Done through", async () => {
+    localStorage.setItem(SHORT_RULE_KEY, "cleanup");
     const user = userEvent.setup();
     const alert = backend.receive({ kind: "charge", amount: "100.00", merchant: "Target", last4: "1234", when: WHEN });
     renderPhone(`/sort/${alert.id}`);
@@ -1474,7 +1511,8 @@ describe("a short category warns and never blocks Done, and a grey Done says why
     expect(done(sheet)).toBeEnabled();
   });
 
-  it("with no account chosen and the category short, Done is grey and says under itself to choose the account; the warning is there too", async () => {
+  it("Cleanup mode: with no account chosen and the category short, Done is grey and says under itself to choose the account; the warning is there too", async () => {
+    localStorage.setItem(SHORT_RULE_KEY, "cleanup");
     const user = userEvent.setup();
     const alert = backend.receive({ kind: "charge", amount: "323.58", merchant: "COSTCO", last4: "9999", when: WHEN });
     renderPhone(`/sort/${alert.id}`);

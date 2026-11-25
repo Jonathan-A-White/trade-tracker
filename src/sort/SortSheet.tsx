@@ -33,6 +33,7 @@ import {
   type SortChargeAsk,
   type Suggestion,
 } from "./suggest";
+import { readShortMode } from "@/ynab/payee-rules";
 import { readTally, TALLY_FRESH_MS } from "@/ynab/tally";
 import { judgeTransfer, missingPayeeLine, transferPayee, transferTitle } from "./transfer";
 import type { FamilyFeed } from "./sort-context";
@@ -378,6 +379,8 @@ function ChargeSheet({ family, charge, onClose }: { family: FamilyFeed; charge: 
   const account = cardAccount ?? (chosenAccount || null);
   const accountName = accounts?.find((a) => a.id === account)?.name;
   const [categoryId, setCategoryId] = useState<string | null>(null);
+  // Strict or Cleanup mode (Settings > YNAB), read as the sheet opens
+  const [shortMode] = useState(readShortMode);
   const [splitting, setSplitting] = useState(false);
   const [parts, setParts] = useState<SplitPart[]>(() => [newPart(), newPart()]);
   // an Amazon charge's memo is written from its order mail's items; he can edit or clear it before Done
@@ -497,6 +500,23 @@ function ChargeSheet({ family, charge, onClose }: { family: FamilyFeed; charge: 
   // the transfer YNAB already holds needs no account chosen and no write
   const heldMode = transferMode && offer?.held === true;
   const ready = heldMode ? true : transferMode ? !!transferPayeeId && (!offer?.sources || !!transferSource) : splitting ? splitReady(parts, amount) : categoryId !== null;
+  // a category that cannot cover its part of the charge: in Strict mode (the setting, the default) Done is off and says which is short; in
+  // Cleanup mode it warns and Done goes through, YNAB takes the overspend
+  const shortNames = transferMode
+    ? []
+    : (splitting
+        ? parts.map((p) => ({ categoryId: p.categoryId, amount: (partCents(p.amount) ?? 0) / 100 }))
+        : categoryId !== null
+          ? [{ categoryId, amount }]
+          : []
+      ).flatMap((p) => {
+        const category = categories?.find((c) => c.id === p.categoryId);
+        const lack = category && p.amount > 0 ? shortBy(category, p.amount) : null;
+        return category && lack !== null ? [{ name: category.name, lack: money(lack) }] : [];
+      });
+  const strict = shortMode === "strict";
+  const shortReason = strict && shortNames.length > 0 ? shortNames.map((n) => `${n.name} is short by ${n.lack}`).join("; ") : null;
+  const shortLines = strict ? [] : shortNames.map((n) => `${n.name} will be short by ${n.lack}`);
   const reason = !ynabOn
     ? null
     : heldMode
@@ -520,26 +540,13 @@ function ChargeSheet({ family, charge, onClose }: { family: FamilyFeed; charge: 
             ? "The parts must add up to the charge."
             : parts.some((p) => p.categoryId === "" || (partCents(p.amount) ?? 0) <= 0)
               ? "Give every part a category and an amount."
-              : null
+              : shortReason
           : categoryId === null
             ? "Choose a category."
-            : null;
-  // a category that cannot cover its part of the charge warns, and never blocks Done: YNAB takes the overspend
-  const shortLines = transferMode
-    ? []
-    : (splitting
-        ? parts.map((p) => ({ categoryId: p.categoryId, amount: (partCents(p.amount) ?? 0) / 100 }))
-        : categoryId !== null
-          ? [{ categoryId, amount }]
-          : []
-      ).flatMap((p) => {
-        const category = categories?.find((c) => c.id === p.categoryId);
-        const lack = category && p.amount > 0 ? shortBy(category, p.amount) : null;
-        return category && lack !== null ? [`${category.name} will be short by ${money(lack)}`] : [];
-      });
+            : shortReason;
   // a card the book does not map is asked its account in the footer, beside the line that says why Done is off, where no scrolling hides it
   const askAccount = ynabOn && !cardAccount && !heldMode;
-  const canDone = ynabOn && (heldMode || (!!family.writer && !!account)) && ready && !saving;
+  const canDone = ynabOn && (heldMode || (!!family.writer && !!account)) && ready && !shortReason && !saving;
 
   function inputFor(accountId: string): YnabTransactionInput {
     return {
