@@ -326,6 +326,9 @@ describe("the Sort sheet: a credit-card payment is a transfer, not an expense (m
     const sheet = await screen.findByRole("dialog", { name: "$120.00 at Chase Bank bill" });
     const which = await within(sheet).findByLabelText("Which card");
     expect(within(sheet).getByRole("button", { name: "Done" })).toBeDisabled();
+    // the line names the "Which card" select, which is in the sheet's short transfer view, with no category list to scroll past
+    expect(within(sheet.querySelector<HTMLElement>("[data-sheet-footer]")!).getByText("Choose which card this pays.")).toBeInTheDocument();
+    expect(within(sheet).queryByRole("radio")).not.toBeInTheDocument();
     await user.selectOptions(which, "a4");
     await user.click(within(sheet).getByRole("button", { name: "Done" }));
     await waitFor(() => expect(create).toHaveBeenCalled());
@@ -368,6 +371,9 @@ describe("the Sort sheet: a credit-card payment is a transfer, not an expense (m
     await user.selectOptions(await within(sheet).findByLabelText(/account/i), "a3");
     const paidFrom = await within(sheet).findByLabelText("Paid from");
     expect(within(sheet).getByRole("button", { name: "Done" })).toBeDisabled();
+    // the line names the "Paid from" select, which is in the sheet's short transfer view
+    expect(within(sheet.querySelector<HTMLElement>("[data-sheet-footer]")!).getByText("Choose which account paid it.")).toBeInTheDocument();
+    expect(within(sheet).queryByRole("radio")).not.toBeInTheDocument();
     await user.selectOptions(paidFrom, "a2");
     expect(await within(sheet).findByText("Transfer from Citi Double")).toBeInTheDocument();
     await user.click(within(sheet).getByRole("button", { name: "Done" }));
@@ -1272,5 +1278,157 @@ describe("the Sort sheet's Memo for an Amazon charge", () => {
     const sheet = await screen.findByRole("dialog", { name: "$92.05 at AMAZON MKTPLACE PMTS" });
     expect(await within(sheet).findByLabelText("Memo")).toHaveValue("");
     expect(within(sheet).getByText("0 of 150")).toBeInTheDocument();
+  });
+});
+
+describe("the reason Done is off is beside a control he can reach (mw-mr4xgrw.64)", () => {
+  const footerOf = (sheet: HTMLElement) => sheet.querySelector<HTMLElement>("[data-sheet-footer]")!;
+  const done = (sheet: HTMLElement) => within(sheet).getByRole("button", { name: "Done" });
+
+  it("an unmapped card with a category chosen: the YNAB account select is in the footer, Done is off, and choosing an account there turns Done on and writes to it", async () => {
+    const user = userEvent.setup();
+    const alert = backend.receive({ kind: "charge", amount: "10.00", merchant: "Farm Stand", last4: "9999", when: WHEN });
+    renderPhone(`/sort/${alert.id}`);
+    const sheet = await screen.findByRole("dialog", { name: "$10.00 at Farm Stand" });
+    await user.click(await within(sheet).findByRole("radio", { name: /Groceries/ }));
+
+    const footer = footerOf(sheet);
+    const select = within(footer).getByLabelText("YNAB account");
+    expect(select.closest("[data-sheet-footer]")).toBe(footer);
+    expect(within(footer).getByText("Choose the YNAB account this card goes with.")).toBeInTheDocument();
+    expect(done(sheet)).toBeDisabled();
+
+    await user.selectOptions(select, "a2");
+    expect(done(sheet)).toBeEnabled();
+    expect(within(footer).queryByText(/Choose the YNAB account/)).not.toBeInTheDocument();
+    await user.click(done(sheet));
+    await waitFor(() => expect(where()).toBe("/"));
+    expect(create).toHaveBeenCalledWith(expect.objectContaining({ accountId: "a2", categoryId: "c1" }), { localId: `alert-${alert.id}` });
+  });
+
+  it("an unmapped card whose account list has not loaded says so, not 'Choose the YNAB account', and Done turns on when the list arrives and one is chosen", async () => {
+    const user = userEvent.setup();
+    let release: (accounts: Awaited<ReturnType<YnabRepository["listAccounts"]>>) => void = () => {};
+    const real = YnabRepository.prototype.listAccounts;
+    const spy = vi.spyOn(YnabRepository.prototype, "listAccounts").mockImplementation(function (this: YnabRepository) {
+      return new Promise((resolve) => {
+        release = resolve;
+      }).then(() => real.call(this)) as ReturnType<YnabRepository["listAccounts"]>;
+    });
+    try {
+      const alert = backend.receive({ kind: "charge", amount: "10.00", merchant: "Farm Stand", last4: "9999", when: WHEN });
+      renderPhone(`/sort/${alert.id}`);
+      const sheet = await screen.findByRole("dialog", { name: "$10.00 at Farm Stand" });
+      await user.click(await within(sheet).findByRole("radio", { name: /Groceries/ }));
+      const footer = footerOf(sheet);
+      expect(within(footer).getByText("YNAB's account list has not loaded yet.")).toBeInTheDocument();
+      expect(within(footer).queryByText(/Choose the YNAB account/)).not.toBeInTheDocument();
+      expect(within(sheet).queryByLabelText("YNAB account")).not.toBeInTheDocument();
+      expect(done(sheet)).toBeDisabled();
+
+      release([]);
+      spy.mockRestore();
+      await user.selectOptions(await within(footer).findByLabelText("YNAB account"), "a1");
+      expect(done(sheet)).toBeEnabled();
+    } finally {
+      spy.mockRestore();
+    }
+  });
+
+  it("an unmapped card whose account list is empty says so, and the account arriving on a refresh brings the select", async () => {
+    const user = userEvent.setup();
+    const repo = new YnabRepository();
+    await repo.applyAccounts([{ ...accountOf("a1", "Chase Freedom"), deleted: true }, { ...accountOf("a2", "Citi Double"), deleted: true }], 2);
+    const alert = backend.receive({ kind: "charge", amount: "10.00", merchant: "Farm Stand", last4: "9999", when: WHEN });
+    renderPhone(`/sort/${alert.id}`);
+    const sheet = await screen.findByRole("dialog", { name: "$10.00 at Farm Stand" });
+    await user.click(await within(sheet).findByRole("radio", { name: /Groceries/ }));
+    const footer = footerOf(sheet);
+    expect(await within(footer).findByText("YNAB has no open account to choose. Refresh YNAB under Settings.")).toBeInTheDocument();
+    expect(within(sheet).queryByLabelText("YNAB account")).not.toBeInTheDocument();
+    expect(done(sheet)).toBeDisabled();
+
+    await repo.applyAccounts([accountOf("a3", "Fresh Account")], 3);
+    await user.selectOptions(await within(footer).findByLabelText("YNAB account"), "a3");
+    expect(done(sheet)).toBeEnabled();
+  });
+
+  it("a card the book maps shows no account field and no account reason", async () => {
+    const user = userEvent.setup();
+    const alert = backend.receive({ kind: "charge", amount: "43.12", merchant: "Trader Joe's", last4: "1234", when: WHEN });
+    renderPhone(`/sort/${alert.id}`);
+    const sheet = await screen.findByRole("dialog", { name: "$43.12 at Trader Joe's" });
+    expect(await within(sheet).findByRole("radio", { name: /Groceries/ })).toBeInTheDocument();
+    expect(within(sheet).queryByLabelText("YNAB account")).not.toBeInTheDocument();
+    expect(within(sheet).queryByText(/account/i, { selector: "p" })).not.toBeInTheDocument();
+    expect(await within(footerOf(sheet)).findByText("Choose a category.")).toBeInTheDocument();
+    await user.click(within(sheet).getByRole("radio", { name: /Groceries/ }));
+    expect(done(sheet)).toBeEnabled();
+  });
+
+  it("a failed remember does not stop the row reaching YNAB, is logged, and the next charge of the card asks for the account again", async () => {
+    const user = userEvent.setup();
+    const warn = vi.spyOn(console, "warn").mockImplementation(() => {});
+    const setAccount = vi.spyOn(FamilyRepository.prototype, "setAccount").mockRejectedValue(new Error("disk full"));
+    try {
+      const first = backend.receive({ kind: "charge", amount: "10.00", merchant: "Farm Stand", last4: "9999", when: WHEN });
+      const second = backend.receive({ kind: "charge", amount: "12.00", merchant: "Bakery", last4: "9999", when: WHEN });
+      renderPhone(`/sort/${first.id}`);
+      const sheet = await screen.findByRole("dialog", { name: "$10.00 at Farm Stand" });
+      await user.selectOptions(await within(sheet).findByLabelText("YNAB account"), "a2");
+      await user.click(await within(sheet).findByRole("radio", { name: /Groceries/ }));
+      await user.click(done(sheet));
+      await waitFor(() => expect(where()).toBe("/"));
+      expect(create).toHaveBeenCalledWith(expect.objectContaining({ accountId: "a2" }), { localId: `alert-${first.id}` });
+      expect(setAccount).toHaveBeenCalled();
+      expect(warn).toHaveBeenCalledWith(expect.stringContaining("9999"), expect.anything());
+
+      await user.click(await screen.findByRole("link", { name: /Bakery/ }));
+      const next = await screen.findByRole("dialog", { name: "$12.00 at Bakery" });
+      expect(await within(next).findByLabelText("YNAB account")).toHaveValue("");
+      expect(second.id).toBeTruthy();
+    } finally {
+      setAccount.mockRestore();
+      warn.mockRestore();
+    }
+  });
+});
+
+describe("every other reason line on the Sort sheet names something he can reach or act on (mw-mr4xgrw.64)", () => {
+  const footerOf = (sheet: HTMLElement) => sheet.querySelector<HTMLElement>("[data-sheet-footer]")!;
+
+  it("'This phone cannot write to YNAB yet.' says the cause: the phone has no writer", async () => {
+    const alert = backend.receive({ kind: "charge", amount: "43.12", merchant: "Trader Joe's", last4: "1234", when: WHEN });
+    renderPhone(`/sort/${alert.id}`, { writer: null });
+    const sheet = await screen.findByRole("dialog", { name: "$43.12 at Trader Joe's" });
+    expect(await within(footerOf(sheet)).findByText("This phone cannot write to YNAB yet.")).toBeInTheDocument();
+    expect(within(sheet).getByRole("button", { name: "Done" })).toBeDisabled();
+  });
+
+  it("'Choose a category.' sits with the category list he is choosing from, and goes when one is chosen", async () => {
+    const user = userEvent.setup();
+    const alert = backend.receive({ kind: "charge", amount: "43.12", merchant: "Trader Joe's", last4: "1234", when: WHEN });
+    renderPhone(`/sort/${alert.id}`);
+    const sheet = await screen.findByRole("dialog", { name: "$43.12 at Trader Joe's" });
+    expect(await within(footerOf(sheet)).findByText("Choose a category.")).toBeInTheDocument();
+    expect(within(sheet).getByRole("heading", { name: "Category" })).toBeInTheDocument();
+    await user.click(await within(sheet).findByRole("radio", { name: /Groceries/ }));
+    expect(within(footerOf(sheet)).queryByText("Choose a category.")).not.toBeInTheDocument();
+  });
+
+  it("'Give every part a category and an amount.' sits with the split editor he is filling in", async () => {
+    const user = userEvent.setup();
+    const alert = backend.receive({ kind: "charge", amount: "43.12", merchant: "Trader Joe's", last4: "1234", when: WHEN });
+    renderPhone(`/sort/${alert.id}`);
+    const sheet = await screen.findByRole("dialog", { name: "$43.12 at Trader Joe's" });
+    await user.click(await within(sheet).findByRole("button", { name: "Split" }));
+    expect(within(sheet).getByRole("heading", { name: "Split" })).toBeInTheDocument();
+    expect(await within(footerOf(sheet)).findByText("The parts must add up to the charge.")).toBeInTheDocument();
+    await user.type(within(sheet).getByLabelText("Amount for part 1"), "20");
+    await user.type(within(sheet).getByLabelText("Amount for part 2"), "23.12");
+    // the parts add up and the categories are the split editor's own selects, in the same sheet
+    expect(await within(footerOf(sheet)).findByText("Give every part a category and an amount.")).toBeInTheDocument();
+    expect(within(sheet).getByLabelText("Category for part 1")).toBeInTheDocument();
+    expect(within(sheet).getByRole("button", { name: "Done" })).toBeDisabled();
   });
 });

@@ -504,7 +504,11 @@ function ChargeSheet({ family, charge, onClose }: { family: FamilyFeed; charge: 
       : !family.writer
       ? "This phone cannot write to YNAB yet."
       : !account
-        ? "Choose the YNAB account this card goes with."
+        ? accounts === undefined
+          ? "YNAB's account list has not loaded yet."
+          : accounts.length === 0
+            ? "YNAB has no open account to choose. Refresh YNAB under Settings."
+            : "Choose the YNAB account this card goes with."
         : transferMode
           ? transferPayeeId
             ? offer?.sources && !transferSource
@@ -520,6 +524,8 @@ function ChargeSheet({ family, charge, onClose }: { family: FamilyFeed; charge: 
           : categoryId === null
             ? "Choose a category."
             : null;
+  // a card the book does not map is asked its account in the footer, beside the line that says why Done is off, where no scrolling hides it
+  const askAccount = ynabOn && !cardAccount && !heldMode;
   const canDone = ynabOn && (heldMode || (!!family.writer && !!account)) && ready && !saving;
 
   function inputFor(accountId: string): YnabTransactionInput {
@@ -556,7 +562,7 @@ function ChargeSheet({ family, charge, onClose }: { family: FamilyFeed; charge: 
     try {
       if (write) await write.writer.create(write.input, { localId: `alert-${alert.id}` });
       // the account he chose for a card the book did not map is kept for its next charge; failing to keep it loses nothing sent
-      if (!cardAccount && chosenAccount && alert.last4) await rememberAccount(alert.last4, chosenAccount).catch(() => {});
+      if (!cardAccount && chosenAccount && alert.last4) await rememberAccount(alert.last4, chosenAccount).catch((err: unknown) => console.warn(`The account for the card ending ${alert.last4} was not kept, so the next charge on it asks again.`, err));
       family.sortedHere(charge, taken === "claimed");
       if (transferMode) {
         // a transfer is not a charge sorted into a category: nothing is recorded to suggest from, nothing taught
@@ -581,6 +587,26 @@ function ChargeSheet({ family, charge, onClose }: { family: FamilyFeed; charge: 
 
   const footer = (
     <div className="space-y-2">
+      {askAccount && accounts && accounts.length > 0 && (
+        <div className="space-y-1">
+          <label htmlFor={accountId} className="text-sm font-medium text-gray-700 dark:text-gray-300">
+            YNAB account
+          </label>
+          <select
+            id={accountId}
+            value={chosenAccount}
+            onChange={(e) => setChosenAccount(e.target.value)}
+            className="min-h-12 w-full rounded-lg border border-gray-300 dark:border-gray-600 bg-white dark:bg-gray-900 px-3 text-base text-gray-900 dark:text-gray-100"
+          >
+            <option value="">Choose the account</option>
+            {accounts.map((a) => (
+              <option key={a.id} value={a.id}>
+                {a.name}
+              </option>
+            ))}
+          </select>
+        </div>
+      )}
       {reason && ynabOn && (
         <p id={reasonId} className="text-sm text-gray-600 dark:text-gray-400">
           {reason}
@@ -650,27 +676,6 @@ function ChargeSheet({ family, charge, onClose }: { family: FamilyFeed; charge: 
         <p className="mt-4 text-base text-gray-700 dark:text-gray-300">Connect YNAB under Settings to sort a charge into a category.</p>
       ) : (
         <div className="mt-4 space-y-4">
-          {!cardAccount && accounts && !heldMode && (
-            <div className="space-y-1">
-              <label htmlFor={accountId} className="text-sm font-medium text-gray-700 dark:text-gray-300">
-                YNAB account
-              </label>
-              <select
-                id={accountId}
-                value={chosenAccount}
-                onChange={(e) => setChosenAccount(e.target.value)}
-                className="min-h-12 w-full rounded-lg border border-gray-300 dark:border-gray-600 bg-white dark:bg-gray-900 px-3 text-base text-gray-900 dark:text-gray-100"
-              >
-                <option value="">Choose the account</option>
-                {accounts.map((a) => (
-                  <option key={a.id} value={a.id}>
-                    {a.name}
-                  </option>
-                ))}
-              </select>
-            </div>
-          )}
-
           {transferMode && offer && (
             <div className="space-y-3">
               <div role="status" className="rounded-lg bg-blue-50 dark:bg-blue-950 px-3 py-2 text-sm text-gray-800 dark:text-gray-100">
