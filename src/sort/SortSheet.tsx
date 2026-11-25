@@ -621,8 +621,8 @@ function ChargeSheet({ family, charge, onClose }: { family: FamilyFeed; charge: 
         </div>
       )}
       {ynabOn &&
-        shortLines.map((line) => (
-          <p key={line} className="text-sm font-medium text-amber-700 dark:text-amber-400">
+        shortLines.map((line, index) => (
+          <p key={`${index}-${line}`} className="text-sm font-medium text-amber-700 dark:text-amber-400">
             {line}
           </p>
         ))}
