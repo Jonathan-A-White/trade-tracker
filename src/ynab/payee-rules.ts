@@ -88,18 +88,24 @@ function inTurn<T>(job: () => Promise<T>): Promise<T> {
 const ruleable = (row: YnabTransactionWire): boolean =>
   typeof row.id === "string" && !row.deleted && row.approved !== true && !row.transfer_account_id && !(row.subtransactions && row.subtransactions.length > 0) && !!row.payee_name?.trim();
 
-/** What a rule does when its category lacks the money for a charge: 'approve' approves it and notes the shortfall, 'hold' leaves it for him in Clean up. A setting; PROVISIONAL default 'approve' (his words, 2026-11-12: "Right now though, auto approve should note but disregard lack of funds"). */
-export type ShortRule = "approve" | "hold";
+/**
+ * How the app treats a category that lacks the money for a charge, one setting for every place that checks (his words, 2026-11-25: real dollars
+ * need accounting, "there should be a setting for that ... and a cleanup mode as well"). 'strict' (the default) holds back: the Sort sheet's Done is
+ * grey and says why, and a payee rule leaves the charge for him in Clean up. 'cleanup' lets it through: Done warns and records the charge, and a
+ * rule approves it and notes how far over budget it went. The key is the older rule setting's: 'hold' reads as strict, 'approve' as cleanup.
+ */
+export type ShortMode = "strict" | "cleanup";
 export const SHORT_RULE_KEY = "tradetracker-short-rule";
 
-export function readShortRule(): ShortRule {
+export function readShortMode(): ShortMode {
   try {
-    return localStorage.getItem(SHORT_RULE_KEY) === "hold" ? "hold" : "approve";
+    const kept = localStorage.getItem(SHORT_RULE_KEY);
+    return kept === "cleanup" || kept === "approve" ? "cleanup" : "strict";
   } catch {
-    return "approve";
+    return "strict";
   }
 }
-export function writeShortRule(value: ShortRule): void {
+export function writeShortMode(value: ShortMode): void {
   try {
     localStorage.setItem(SHORT_RULE_KEY, value);
   } catch {
@@ -107,7 +113,7 @@ export function writeShortRule(value: ShortRule): void {
   }
 }
 
-/** A charge a rule left for him because its category lacks the money (the setting 'Leave it for me'). Dollars. */
+/** A charge a rule left for him because its category lacks the money (Strict mode). Dollars. */
 export interface HeldByRule {
   categoryId: string;
   short: number;
@@ -159,7 +165,7 @@ export function unapprovedWithRules(client: YnabClient, budgetId: string, approv
     if (candidates.length === 0) return { rows, approved: 0, error: null, held: {} };
     // each category's available now (a fresh read; the cache when YNAB cannot be asked), less what this same read already puts into it
     const balances = await availableNow(client, budgetId);
-    const hold = readShortRule() === "hold";
+    const hold = readShortMode() === "strict";
     const held: Record<string, HeldByRule> = {};
     const picks: { row: YnabTransactionWire; rule: YnabPayeeRule; short: number | null }[] = [];
     for (const { row, rule } of candidates) {

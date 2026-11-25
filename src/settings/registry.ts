@@ -111,11 +111,11 @@ export const ROWS: readonly SettingsRow<SectionId>[] = rowsInOrder<SectionId, Se
     help: "A reply that gives a reason is kept here and read with your next reply. A payee a reason rules out is not proposed again. Remove a reason to let its ideas come back.",
   },
   {
-    key: "rule-short",
+    key: "short-mode",
     section: "ynab",
-    label: "Auto-approve when the category is short",
-    hint: "What a payee rule does with a charge its category does not have the money for.",
-    help: "Approve and note (the default) approves it and says on Home how far over budget the category went. Leave it for me does not approve it: it waits in Clean up with the shortfall.",
+    label: "When a category is short",
+    hint: "Strict holds back a charge its category cannot cover; Cleanup mode lets it through with a warning.",
+    help: "Strict (the default) keeps the books in real dollars: on the Sort sheet Done is off and says which category is short, and a payee rule does not approve the charge, it waits in Clean up with the shortfall. Cleanup mode lets it through: Done warns that the category will be short and records the charge, and a payee rule approves it and says on Home how far over budget the category went.",
   },
   {
     key: "family",

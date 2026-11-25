@@ -11,7 +11,7 @@ import { connectBudget, refreshCache } from "@/ynab/cache";
 import { staleTally } from "@/ynab/tally";
 import { readIdeaSettings, writeIdeaSettings } from "@/ynab/budget-ideas";
 import { readReasons, removeReason } from "@/ynab/budget-idea-reply";
-import { readShortRule, writeShortRule, type ShortRule } from "@/ynab/payee-rules";
+import { readShortMode, writeShortMode, type ShortMode } from "@/ynab/payee-rules";
 import { disconnectYnab } from "@/ynab/disconnect";
 import { openToken, sealToken } from "@/ynab/token";
 import type { YnabBudgetSummary } from "@/ynab/types";
@@ -45,7 +45,7 @@ export function YnabSection() {
   const [typed, setTyped] = useState(() => ({ spend: String(ideas.minSpend), charges: String(ideas.minCharges) }));
 
   const [reasons, setReasons] = useState(readReasons);
-  const [shortRule, setShortRule] = useState<ShortRule>(readShortRule);
+  const [shortMode, setShortMode] = useState<ShortMode>(readShortMode);
 
   const connected = on && !!connection;
   const switchedOn = connected || setup;
@@ -294,20 +294,20 @@ export function YnabSection() {
           )}
         </div>
       </SettingRow>
-      <SettingRow settingKey="rule-short">
+      <SettingRow settingKey="short-mode">
         <label className="block space-y-1">
-          <span className="text-xs text-gray-600 dark:text-gray-400">Auto-approve when the category is short</span>
+          <span className="text-xs text-gray-600 dark:text-gray-400">When a category is short</span>
           <select
-            value={shortRule}
+            value={shortMode}
             onChange={(e) => {
-              const next: ShortRule = e.target.value === "hold" ? "hold" : "approve";
-              setShortRule(next);
-              writeShortRule(next);
+              const next: ShortMode = e.target.value === "cleanup" ? "cleanup" : "strict";
+              setShortMode(next);
+              writeShortMode(next);
             }}
             className={INPUT_CLASS}
           >
-            <option value="approve">Approve and note</option>
-            <option value="hold">Leave it for me</option>
+            <option value="strict">Strict</option>
+            <option value="cleanup">Cleanup mode</option>
           </select>
         </label>
       </SettingRow>

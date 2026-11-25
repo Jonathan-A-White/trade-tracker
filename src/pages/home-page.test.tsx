@@ -316,7 +316,8 @@ describe("Home: Approved for you (what the payee rules approved)", () => {
       await new PayeeRuleRepository().put({ key: "chewy", budgetId: "b1", payee: "Chewy", categoryId: "c3", createdAt: 1, approved: 0 });
     });
 
-    it("approves it and the row says how far over budget the category went", async () => {
+    it("in Cleanup mode it approves it and the row says how far over budget the category went", async () => {
+      localStorage.setItem(SHORT_RULE_KEY, "cleanup");
       ynab.transactions.push(tx("t1", "Chewy"), tx("t2", "Chewy", { amount: -1_000 }));
       renderYnabHome();
       expect(await screen.findByRole("heading", { name: "Approved for you · 2" })).toBeInTheDocument();
@@ -326,8 +327,7 @@ describe("Home: Approved for you (what the payee rules approved)", () => {
       expect(ynab.transactions.find((t) => t.id === "t1")?.approved).toBe(true);
     });
 
-    it("with 'Leave it for me' it is not approved, and waits in Clean up with the shortfall", async () => {
-      localStorage.setItem(SHORT_RULE_KEY, "hold");
+    it("in Strict mode (the default) it is not approved, and waits in Clean up with the shortfall", async () => {
       ynab.transactions.push(tx("t1", "Chewy"));
       const user = userEvent.setup();
       renderYnabHome();

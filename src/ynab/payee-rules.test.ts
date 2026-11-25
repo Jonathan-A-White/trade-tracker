@@ -2,7 +2,7 @@ import { db } from "@/db/database";
 import { YnabRepository } from "@/db/repositories/ynab-repository";
 import { createYnabClient } from "./api";
 import { fakeYnab, groupOf, type FakeYnab, type FakeYnabTransaction } from "./fake-ynab";
-import { PayeeRuleRepository, RuleApprovalRepository, RULE_APPROVAL_DAYS, SHORT_RULE_KEY, putBackOf, readShortRule, removeRule, setAlways, undoAlways, undoRuleApproval, unapprovedWithRules, writeShortRule } from "./payee-rules";
+import { PayeeRuleRepository, RuleApprovalRepository, RULE_APPROVAL_DAYS, SHORT_RULE_KEY, putBackOf, readShortMode, removeRule, setAlways, undoAlways, undoRuleApproval, unapprovedWithRules, writeShortMode } from "./payee-rules";
 import { createYnabWriter, type YnabWriter } from "./writer";
 
 const groups = [groupOf("gi", "Internal Master Category", [["unc", "Uncategorized"], ["rta", "Inflow: Ready to Assign"]]), groupOf("g1", "Food", [["c1", "Groceries"], ["c2", "Eating Out"]])];
@@ -345,15 +345,20 @@ describe("a rule's category that lacks the money (his words, 2026-11-12)", () =>
     await new YnabRepository().applyCategories(withBalance, 2);
   });
 
-  it("defaults to approving and noting", () => {
-    expect(readShortRule()).toBe("approve");
-    writeShortRule("hold");
-    expect(readShortRule()).toBe("hold");
+  it("defaults to Strict, and still reads the older rule setting's two values", () => {
+    expect(readShortMode()).toBe("strict");
+    writeShortMode("cleanup");
+    expect(readShortMode()).toBe("cleanup");
     localStorage.setItem(SHORT_RULE_KEY, "nonsense");
-    expect(readShortRule()).toBe("approve");
+    expect(readShortMode()).toBe("strict");
+    localStorage.setItem(SHORT_RULE_KEY, "approve");
+    expect(readShortMode()).toBe("cleanup");
+    localStorage.setItem(SHORT_RULE_KEY, "hold");
+    expect(readShortMode()).toBe("strict");
   });
 
-  it("approves anyway by default and records how far over budget it left the category", async () => {
+  it("in Cleanup mode approves anyway and records how far over budget it left the category", async () => {
+    writeShortMode("cleanup");
     await rule("shell", "c3");
     ynab.transactions.push(tx("t1", "Shell", { amount: -12_500 }));
     const read = await unapprovedWithRules(client(), "b1", writer.approve);
@@ -364,6 +369,7 @@ describe("a rule's category that lacks the money (his words, 2026-11-12)", () =>
   });
 
   it("notes nothing when the category holds enough, or its balance is not known", async () => {
+    writeShortMode("cleanup");
     await rule("shell", "c3");
     await rule("chewy", "c1");
     ynab.transactions.push(tx("t1", "Shell", { amount: -5_000 }), tx("t2", "Chewy", { amount: -900_000 }));
@@ -374,6 +380,7 @@ describe("a rule's category that lacks the money (his words, 2026-11-12)", () =>
   });
 
   it("counts what the same read already put into the category", async () => {
+    writeShortMode("cleanup");
     await rule("shell", "c3");
     ynab.transactions.push(tx("t1", "Shell", { amount: -3_000 }), tx("t2", "Shell", { amount: -3_000 }));
     await unapprovedWithRules(client(), "b1", writer.approve);
@@ -382,8 +389,8 @@ describe("a rule's category that lacks the money (his words, 2026-11-12)", () =>
     expect(kept.find((a) => a.id === "t2")?.shortBy).toBe(1);
   });
 
-  it("with the setting on Leave it for me, does not approve a short one, lists it with its shortfall, and approves the rest", async () => {
-    writeShortRule("hold");
+  it("in Strict mode, does not approve a short one, lists it with its shortfall, and approves the rest", async () => {
+    writeShortMode("strict");
     await rule("shell", "c3");
     await rule("chewy", "c1");
     ynab.transactions.push(tx("t1", "Shell", { amount: -12_500 }), tx("t2", "Chewy"));
@@ -397,8 +404,8 @@ describe("a rule's category that lacks the money (his words, 2026-11-12)", () =>
     expect((await rules.get("shell"))?.approved).toBe(0);
   });
 
-  it("with the setting on Leave it for me still approves one the category can cover", async () => {
-    writeShortRule("hold");
+  it("in Strict mode still approves one the category can cover", async () => {
+    writeShortMode("strict");
     await rule("shell", "c3");
     ynab.transactions.push(tx("t1", "Shell", { amount: -5_000 }));
     const read = await unapprovedWithRules(client(), "b1", writer.approve);
@@ -407,7 +414,7 @@ describe("a rule's category that lacks the money (his words, 2026-11-12)", () =>
   });
 
   it("never calls money in short", async () => {
-    writeShortRule("hold");
+    writeShortMode("strict");
     await rule("shell", "c3");
     ynab.transactions.push(tx("t1", "Shell", { amount: 40_000 }));
     const read = await unapprovedWithRules(client(), "b1", writer.approve);

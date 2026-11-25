@@ -104,15 +104,15 @@ describe("Settings > YNAB", () => {
     expect(await screen.findByText("None kept. Reply to a Budget idea on Home to give one.")).toBeInTheDocument();
   });
 
-  it("keeps the choice for a payee rule whose category is short, starting on Approve and note", async () => {
+  it("keeps the Strict or Cleanup mode choice for a short category, starting on Strict", async () => {
     const user = userEvent.setup();
     renderSettings();
-    const choice = await screen.findByLabelText("Auto-approve when the category is short");
-    expect(choice).toHaveValue("approve");
-    await user.selectOptions(choice, "Leave it for me");
-    expect(localStorage.getItem("tradetracker-short-rule")).toBe("hold");
-    await user.selectOptions(choice, "Approve and note");
-    expect(localStorage.getItem("tradetracker-short-rule")).toBe("approve");
+    const choice = await screen.findByLabelText("When a category is short");
+    expect(choice).toHaveValue("strict");
+    await user.selectOptions(choice, "Cleanup mode");
+    expect(localStorage.getItem("tradetracker-short-rule")).toBe("cleanup");
+    await user.selectOptions(choice, "Strict");
+    expect(localStorage.getItem("tradetracker-short-rule")).toBe("strict");
   });
 
   it("with no key yet, turning it on says to make the key first, and Check waits", async () => {

@@ -338,7 +338,7 @@ export function buildItems(rows: readonly YnabTransactionWire[], context: Cleanu
 }
 
 /**
- * The items a payee rule left for him because its category lacks the money (the setting 'Leave it for me'), each with a first line
+ * The items a payee rule left for him because its category lacks the money (Strict mode, the setting under YNAB), each with a first line
  * naming the category and the shortfall. Its own category is not changed.
  */
 export function withHeldNotes(items: readonly CleanupItem[], held: Readonly<Record<string, { categoryId: string; short: number }>>, categories: readonly YnabCategory[]): CleanupItem[] {
